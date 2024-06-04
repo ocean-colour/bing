@@ -1,13 +1,13 @@
-""" Models for non-water absorption """
+""" Models for non-water backscattering """
 import numpy as np
 
-from oceancolor.water import absorption as water_abs
+from oceancolor.water import scattering as water_bb
 
 from abc import ABCMeta
 
-class aNWModel:
+class bbNWModel:
     """
-    Abstract base class for non-water absoprtion
+    Abstract base class for non-water backscattering
 
     Attributes:
 
@@ -24,34 +24,34 @@ class aNWModel:
         self.internals = {}
 
         # Initialize water
-        self.init_aw()
+        self.init_bbw()
 
-    def init_aw(self, data:str='IOCCG'):
+    def init_bbw(self):
         """
-        Initialize the absorption coefficient of water
+        Initialize the backscattering coefficient of water
 
         Args:
-            data (str, optional): The data source to use. Defaults to 'IOCCG'.
 
         Returns:
             np.ndarray: The absorption coefficient of water
         """
-        self.a_w = water_abs.a_water(self.wave, data=data)
+        self.bb_w = water_bb.betasw_ZHH2009(
+            self.wave, 20, [0], 33)
 
-    def eval_anw(self, params:np.ndarray):
+    def eval_bbnw(self, params:np.ndarray):
         """
-        Evaluate the non-water absorption coefficient
+        Evaluate the non-water backscattering coefficients
 
         Parameters:
             params (np.ndarray): The parameters for the model
 
         Returns:
-            np.ndarray: The non-water absorption coefficient
+            np.ndarray: The non-water backscattering coefficient
         """
         return np.zeros_like(self.wave)
 
 
-    def eval_a(self, params:np.ndarray):
+    def eval_bb(self, params:np.ndarray):
         """
         Evaluate the absorption coefficient
 
@@ -61,12 +61,12 @@ class aNWModel:
         Returns:
             np.ndarray: The absorption coefficient
         """
-        return self.a_w + self.eval_anw(params)
+        return self.bb_w + self.eval_bbnw(params)
         
-class aNWExp(aNWModel):
+class bbNWPow(bbNWModel):
     """
-    Exponential model for non-water absorption
-        Anw * exp(-Snw*(wave-400))
+    Power-law model for non-water backscattering
+        bb_nw = Bnw * (600/wave)^beta
 
     Attributes:
 
@@ -74,21 +74,21 @@ class aNWExp(aNWModel):
     name = 'Exp'
 
     def __init__(self, wave:np.ndarray):
-        aNWModel.__init__(self, wave)
+        bbNWModel.__init__(self, wave)
 
-    def eval_anw(self, params:np.ndarray):
+    def eval_bbnw(self, params:np.ndarray):
         """
         Evaluate the model
 
         Parameters:
             params (np.ndarray): The parameters for the model
-                params[0] = log10(Anw)
-                params[1] = log10(Snw)
+                params[0] = log10(Bnw)
+                params[1] = log10(beta)
 
         Returns:
             np.ndarray: The non-water absorption coefficient 
         """
-        a_nw = np.outer(10**params[...,0], np.ones_like(self.wave)) *\
-            np.exp(np.outer(-10**params[...,1],self.wave-400.))
+        bb_nw = np.outer(10**params[...,0], np.ones_like(self.wave)) *\
+                       (600./self.wave)**(10**params[...,1]).reshape(-1,1)
 
-        return a_nw
+        return bb_nw
