@@ -5,6 +5,8 @@ from big import rt as big_rt
 
 import emcee
 
+from IPython import embed
+
 def log_prob(params, models:list, Rrs:np.ndarray, varRrs):
     """
     Calculate the logarithm of the probability of the given parameters.
@@ -23,9 +25,10 @@ def log_prob(params, models:list, Rrs:np.ndarray, varRrs):
 
     # Priors
     # TODO -- allow for more complex priors
-    a_priors = models[0].priors.calc(aparams)
-    b_priors = models[1].priors.calc(bparams)
-    if np.any(a_priors) or np.any(b_priors):
+    a_prior = models[0].priors.calc(aparams)
+    b_prior = models[1].priors.calc(bparams)
+
+    if a_prior or b_prior:
         return -np.inf
 
     # Proceed
@@ -67,11 +70,12 @@ def init_mcmc(models:list, nsteps:int=10000, nburn:int=1000):
     return pdict
 
 
-def fit_one(items:list, pdict:dict=None, chains_only:bool=False):
+def fit_one(models, items:list, pdict:dict=None, chains_only:bool=False):
     """
     Fits a model to a set of input data using the MCMC algorithm.
 
     Args:
+        models (list): The list of model objects, a_nw, bb_nw
         items (list): A list containing the input data, errors, response data, and index.
         pdict (dict, optional): A dictionary containing the model and fitting parameters. Defaults to None.
         chains_only (bool, optional): If True, only the chains are returned. Defaults to False.
@@ -85,7 +89,7 @@ def fit_one(items:list, pdict:dict=None, chains_only:bool=False):
     # Run
     print(f"idx={idx}")
     sampler = run_emcee(
-        pdict['model'], Rs, varRs,
+        models, Rs, varRs,
         nwalkers=pdict['nwalkers'],
         nsteps=pdict['nsteps'],
         nburn=pdict['nburn'],
@@ -124,9 +128,10 @@ def run_emcee(models:list, Rrs, varRrs, nwalkers:int=32,
 
     # Initialize
     if p0 is None:
-        priors = grab_priors(model)
-        ndim = priors.shape[0]
-        p0 = np.random.uniform(priors[:,0], priors[:,1], size=(nwalkers, ndim))
+        raise ValueError("Must provide p0")
+        #priors = grab_priors(model)
+        #ndim = priors.shape[0]
+        #p0 = np.random.uniform(priors[:,0], priors[:,1], size=(nwalkers, ndim))
     else:
         # Replicate for nwalkers
         ndim = len(p0)
@@ -149,7 +154,7 @@ def run_emcee(models:list, Rrs, varRrs, nwalkers:int=32,
     # Init
     sampler = emcee.EnsembleSampler(
         nwalkers, ndim, log_prob,
-        args=[model, Rrs, varRrs, pdict],
+        args=[models, Rrs, varRrs],
         backend=backend)#, pool=pool)
 
     # Burn in

@@ -6,6 +6,22 @@ from abc import ABCMeta
 from oceancolor.water import absorption as water_abs
 from big import priors as big_priors
 
+def init_model(model_name:str, wave:np.ndarray, prior_choice:str):
+    """
+    Initialize a model for non-water absorption
+
+    Args:
+        model_name (str): The name of the model
+        wave (np.ndarray): The wavelengths
+        prior_choice (str): The choice of priors
+
+    Returns:
+        aNWModel: The model
+    """
+    if model_name == 'Exp':
+        return aNWExp(wave, prior_choice)
+    else:
+        raise ValueError(f"Unknown model: {model_name}")
 
 class aNWModel:
     """
@@ -87,6 +103,14 @@ class aNWModel:
         """
         return self.a_w + self.eval_anw(params)
 
+    def init_guess(self, a_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            a_nw (np.ndarray): The non-water absorption coefficient
+        """
+
         
 class aNWExp(aNWModel):
     """
@@ -118,3 +142,18 @@ class aNWExp(aNWModel):
             np.exp(np.outer(-10**params[...,1],self.wave-400.))
 
         return a_nw
+
+    def init_guess(self, a_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            a_nw (np.ndarray): The non-water absorption coefficient
+
+        Returns:
+            np.ndarray: The initial guess for the parameters
+        """
+        i400 = np.argmin(np.abs(self.wave-400))
+        p0_a = np.array([a_nw[i400], 0.017])
+        # Return
+        return p0_a

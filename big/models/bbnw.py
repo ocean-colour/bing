@@ -1,11 +1,32 @@
 """ Models for non-water backscattering """
 import numpy as np
 
+from scipy.interpolate import interp1d
+
 from oceancolor.water import scattering as water_bb
+from oceancolor.hydrolight import loisel23
 
 from abc import ABCMeta
 
 from big import priors as big_priors
+
+def init_model(model_name:str, wave:np.ndarray, prior_choice:str):
+    """
+    Initialize a model for non-water absorption
+
+    Args:
+        model_name (str): The name of the model
+        wave (np.ndarray): The wavelengths
+        prior_choice (str): The choice of priors
+
+    Returns:
+        bbNWModel: The model
+    """
+    if model_name == 'Pow':
+        return bbNWPow(wave, prior_choice)
+    else:
+        raise ValueError(f"Unknown model: {model_name}")
+
 
 class bbNWModel:
     """
@@ -61,8 +82,18 @@ class bbNWModel:
         Returns:
             np.ndarray: The absorption coefficient of water
         """
-        self.bb_w = water_bb.betasw_ZHH2009(
-            self.wave, 20, [0], 33)
+        # TODO -- replace this with a proper calculation!
+        #_, _, b_w = water_bb.betasw_ZHH2009(
+        #    self.wave, 20, [0], 33)
+        #self.bb_w = b_w/2.
+        idx = 0
+        ds = loisel23.load_ds(4,0)
+        wave = ds.Lambda.data
+        bbw = ds.bb.data[idx,:]-ds.bbnw.data[idx,:]
+        # Interpolate
+        f = interp1d(wave, bbw, kind='linear', fill_value='extrapolate')
+        self.bb_w = f(self.wave)
+        
 
     def eval_bbnw(self, params:np.ndarray):
         """
@@ -88,6 +119,16 @@ class bbNWModel:
             np.ndarray: The absorption coefficient
         """
         return self.bb_w + self.eval_bbnw(params)
+
+    def init_guess(self, bb_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            bb_nw (np.ndarray): The non-water absorption coefficient
+        """
+
+        
         
 class bbNWPow(bbNWModel):
     """
@@ -119,3 +160,19 @@ class bbNWPow(bbNWModel):
                        (600./self.wave)**(10**params[...,1]).reshape(-1,1)
 
         return bb_nw
+
+    def init_guess(self, bb_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            a_nw (np.ndarray): The non-water absorption coefficient
+
+        Returns:
+            np.ndarray: The initial guess for the parameters
+        """
+        i600 = np.argmin(np.abs(self.wave-600))
+        p0_b = np.array([bb_nw[i600], 1.])
+
+        # Return
+        return p0_b

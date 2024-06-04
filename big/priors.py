@@ -45,7 +45,7 @@ class Priors:
 
     def calc(self, params:np.ndarray):
         if self.approach == 'log':
-            return (params < self.priors[:,0]) or \
+            return np.any(params < self.priors[:,0]) or \
                 np.any(params > self.priors[:,1])
         else:
             raise ValueError(f"Unknown prior approach: {self.prior_approach}")
