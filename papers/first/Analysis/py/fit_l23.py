@@ -115,18 +115,37 @@ def reconstruct(model_names:list, wstep:int=1,
 
     # Loop me
     recon_Rrs = []
+    recon_sigRs = []
+    recon_a = []
+    recon_bb = []
+    recon_a_5 = []
+    recon_a_95 = []
+    recon_bb_5 = []
+    recon_bb_95 = []
     # Parallize?
     for ss in range(d_chains['chains'].shape[0]):
+        if ss % 100 == 0:
+            print(f'Working on {ss}')
         # Reconstruct
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95, Rrs, sigRs =\
             anly_utils.reconstruct(models, d_chains['chains'][ss])
         # Save what we want
         recon_Rrs.append(Rrs)
+        recon_sigRs.append(sigRs)
+        recon_a.append(a_mean)
+        recon_bb.append(bb_mean)
+        recon_a_5.append(a_5)
+        recon_a_95.append(a_95)
+        recon_bb_5.append(bb_5)
+        recon_bb_95.append(bb_95)
 
     # Save
     basename = os.path.basename(chain_file)
     outfile = 'recon_' + basename
-    np.savez(outfile, Rrs=recon_Rrs, idx=d_chains['idx'])
+    np.savez(outfile, Rrs=recon_Rrs, idx=d_chains['idx'],
+             sigRs=recon_sigRs, a=recon_a, bb=recon_bb,
+             a_5=recon_a_5, a_95=recon_a_95,
+             bb_5=recon_bb_5, bb_95=recon_bb_95)
     print(f'Saved: {outfile}')
 
 def main(flg):
