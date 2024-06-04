@@ -1,9 +1,11 @@
 """ Models for non-water absorption """
 import numpy as np
 
-from oceancolor.water import absorption as water_abs
-
 from abc import ABCMeta
+
+from oceancolor.water import absorption as water_abs
+from big import priors as big_priors
+
 
 class aNWModel:
     """
@@ -29,12 +31,25 @@ class aNWModel:
     The absorption coefficient of water
     """
 
-    def __init__(self, wave:np.ndarray):
+    prior_approach:str = None
+    """
+    Approach to priors
+    """
+
+    priors:big_priors.Priors = None
+    """
+    The priors for the model
+    """
+
+    def __init__(self, wave:np.ndarray, prior_choice:str):
         self.wave = wave
         self.internals = {}
 
         # Initialize water
         self.init_aw()
+
+        # Set priors
+        self.priors = big_priors.Priors(prior_choice, self.nparam)
 
     def init_aw(self, data:str='IOCCG'):
         """
@@ -59,8 +74,6 @@ class aNWModel:
             np.ndarray: The non-water absorption coefficient
                 This is always a multi-dimensional array
         """
-        
-
 
     def eval_a(self, params:np.ndarray):
         """
@@ -73,6 +86,7 @@ class aNWModel:
             np.ndarray: The absorption coefficient
         """
         return self.a_w + self.eval_anw(params)
+
         
 class aNWExp(aNWModel):
     """
@@ -85,8 +99,8 @@ class aNWExp(aNWModel):
     name = 'Exp'
     nparam = 2
 
-    def __init__(self, wave:np.ndarray):
-        aNWModel.__init__(self, wave)
+    def __init__(self, wave:np.ndarray, prior_choice:str):
+        aNWModel.__init__(self, wave, prior_choice)
 
     def eval_anw(self, params:np.ndarray):
         """

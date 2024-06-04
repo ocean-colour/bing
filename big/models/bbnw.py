@@ -5,6 +5,8 @@ from oceancolor.water import scattering as water_bb
 
 from abc import ABCMeta
 
+from big import priors as big_priors
+
 class bbNWModel:
     """
     Abstract base class for non-water backscattering
@@ -24,13 +26,31 @@ class bbNWModel:
     The number of parameters for the model
     """
 
+    bb_w:np.ndarray = None
+    """
+    The backscattering of water
+    """
 
-    def __init__(self, wave:np.ndarray):
+    prior_approach:str = None
+    """
+    Approach to priors
+    """
+
+    priors:big_priors.Priors = None
+    """
+    The priors for the model
+    """
+
+
+    def __init__(self, wave:np.ndarray, prior_choice:str):
         self.wave = wave
         self.internals = {}
 
         # Initialize water
         self.init_bbw()
+
+        # Set priors
+        self.priors = big_priors.Priors(prior_choice, self.nparam)
 
     def init_bbw(self):
         """
@@ -80,8 +100,8 @@ class bbNWPow(bbNWModel):
     name = 'Pow'
     nparam = 2
 
-    def __init__(self, wave:np.ndarray):
-        bbNWModel.__init__(self, wave)
+    def __init__(self, wave:np.ndarray, prior_choice:str):
+        bbNWModel.__init__(self, wave, prior_choice)
 
     def eval_bbnw(self, params:np.ndarray):
         """
