@@ -1,4 +1,5 @@
 """ Fit the full L23 dataset """
+import os
 import numpy as np
 
 from oceancolor.hydrolight import loisel23
@@ -9,6 +10,8 @@ from big import inference as big_inf
 from big import rt as big_rt
 
 import anly_utils 
+
+from IPython import embed
 
 def fit(model_names:list, 
         Nspec:int=None, abs_sig:float=None,
@@ -87,16 +90,44 @@ def fit(model_names:list,
     all_samples, all_idx = big_inf.fit_batch(
         models, pdict, items, n_cores=n_cores)
 
+    outfile = anly_utils.chain_filename(
+        model_names, scl_noise, add_noise)
     # Save
-    outfile = f'BIG_{model_names[0]}{model_names[1]}_L23'
-    if add_noise:
-        # Add noise to the outfile with padding of 2
-        outfile += f'_N{int(100*scl_noise):02d}'
-    else:
-        outfile += f'_n{int(100*scl_noise):02d}'
     anly_utils.save_fits(all_samples, all_idx, outfile,
                          extras=dict(Rrs=Rrs))
 
+def reconstruct(model_names:list, wstep:int=1,
+        prior_approach:str='log',
+        scl_noise:float=0.02, add_noise:bool=False):
+    # Load L23
+    ds = loisel23.load_ds(4,0)
+    wave = ds.Lambda.data[::wstep]
+
+    # Init the models
+    anw_model = big_anw.init_model(model_names[0], wave, prior_approach)
+    bbnw_model = big_bbnw.init_model(model_names[1], wave, prior_approach)
+    models = [anw_model, bbnw_model]
+
+    # Load the chains
+    chain_file = anly_utils.chain_filename(
+        model_names, scl_noise, add_noise)
+    d_chains = np.load(chain_file)
+
+    # Loop me
+    recon_Rrs = []
+    # Parallize?
+    for ss in range(d_chains['chains'].shape[0]):
+        # Reconstruct
+        a_mean, bb_mean, a_5, a_95, bb_5, bb_95, Rrs, sigRs =\
+            anly_utils.reconstruct(models, d_chains['chains'][ss])
+        # Save what we want
+        recon_Rrs.append(Rrs)
+
+    # Save
+    basename = os.path.basename(chain_file)
+    outfile = 'recon_' + basename
+    np.savez(outfile, Rrs=recon_Rrs, idx=d_chains['idx'])
+    print(f'Saved: {outfile}')
 
 def main(flg):
     flg = int(flg)
@@ -104,6 +135,11 @@ def main(flg):
     # Testing
     if flg == 1:
         fit(['Exp', 'Pow'], Nspec=50, nsteps=10000, nburn=1000)
+
+    # Full L23
+    if flg == 2:
+        #fit(['Exp', 'Pow'], nsteps=80000, nburn=8000)
+        reconstruct(['Exp', 'Pow']) 
 
 # Command line execution
 if __name__ == '__main__':

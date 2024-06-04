@@ -9,6 +9,20 @@ from big import rt as big_rt
 
 from IPython import embed
 
+def chain_filename(model_names:list, scl_noise, add_noise,
+                       idx:int=None): 
+    outfile = f'../Analysis/Fits/BIG_{model_names[0]}{model_names[1]}'
+
+    if idx is not None:
+        outfile += f'_{idx}'
+    else:
+        outfile += '_L23'
+    if add_noise:
+        outfile += f'_N{int(100*scl_noise):02d}'
+    else:
+        outfile += f'_n{int(100*scl_noise):02d}'
+    outfile += '.npz'
+    return outfile
 
 def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
                   ds=None):
@@ -58,6 +72,26 @@ def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
     return odict
 
 def reconstruct(models:list, chains, burn=7000, thin=1):
+    """
+    Reconstructs the parameters and calculates statistics from chains of model parameters.
+
+    Parameters:
+        - models (list): A list of model objects.
+        - chains (ndarray): An array of shape (n_samples, n_chains, n_params) containing the chains of model parameters.
+        - burn (int): The number of burn-in samples to discard from the chains. Default is 7000.
+        - thin (int): The thinning factor to apply to the chains. Default is 1.
+
+    Returns:
+        - a_mean (ndarray): The mean of the parameter 'a' across the chains.
+        - bb_mean (ndarray): The mean of the parameter 'bb' across the chains.
+        - a_5 (ndarray): The 5th percentile of the parameter 'a' across the chains.
+        - a_95 (ndarray): The 95th percentile of the parameter 'a' across the chains.
+        - bb_5 (ndarray): The 5th percentile of the parameter 'bb' across the chains.
+        - bb_95 (ndarray): The 95th percentile of the parameter 'bb' across the chains.
+        - Rrs (ndarray): The calculated model Rrs.
+        - sigRs (ndarray): The standard deviation of Rrs.
+
+    """
     # Burn the chains
     chains = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
     # Calc
@@ -84,7 +118,8 @@ def reconstruct(models:list, chains, burn=7000, thin=1):
     return a_mean, bb_mean, a_5, a_95, bb_5, bb_95, Rrs, sigRs 
 
 
-def save_fits(all_samples, all_idx, outroot, extras:dict=None):
+def save_fits(all_samples, all_idx, outfile, 
+              extras:dict=None):
     """
     Save the fitting results to a file.
 
@@ -95,11 +130,6 @@ def save_fits(all_samples, all_idx, outroot, extras:dict=None):
         use_Rs (numpy.ndarray): Array of observed Rs values.
         outroot (str): Root name for the output file.
     """  
-    # Save
-    outdir = 'Fits/'
-    if not os.path.isdir(outdir):
-        os.makedirs(outdir)
-    outfile = os.path.join(outdir, outroot)
     # Outdict
     outdict = dict()
     outdict['chains'] = all_samples

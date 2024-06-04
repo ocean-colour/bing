@@ -69,12 +69,7 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     chains, idx = big_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
 
     # Save
-    outfile = f'BIG_{model_names[0]}{model_names[1]}_{idx}'
-    if add_noise:
-        # Add noise to the outfile with padding of 2
-        outfile += f'_N{int(100*scl_noise):02d}'
-    else:
-        outfile += f'_n{int(100*scl_noise):02d}'
+    outfile = anly_utils.chain_filename(model_names, scl_noise, add_noise, idx=idx)
     anly_utils.save_fits(chains, idx, outfile,
               extras=dict(wave=wave, obs_Rrs=gordon_Rrs, varRrs=varRrs))
 
