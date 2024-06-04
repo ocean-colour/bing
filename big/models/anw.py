@@ -19,6 +19,16 @@ class aNWModel:
     The name of the model
     """
 
+    nparam:int = None
+    """
+    The number of parameters for the model
+    """
+
+    a_w:np.ndarray = None
+    """
+    The absorption coefficient of water
+    """
+
     def __init__(self, wave:np.ndarray):
         self.wave = wave
         self.internals = {}
@@ -47,8 +57,9 @@ class aNWModel:
 
         Returns:
             np.ndarray: The non-water absorption coefficient
+                This is always a multi-dimensional array
         """
-        return np.zeros_like(self.wave)
+        
 
 
     def eval_a(self, params:np.ndarray):
@@ -72,6 +83,7 @@ class aNWExp(aNWModel):
 
     """
     name = 'Exp'
+    nparam = 2
 
     def __init__(self, wave:np.ndarray):
         aNWModel.__init__(self, wave)

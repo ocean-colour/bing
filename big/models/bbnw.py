@@ -14,10 +14,16 @@ class bbNWModel:
     """
     __metaclass__ = ABCMeta
 
-    name = None
+    name:str = None
     """
     The name of the model
     """
+
+    nparam:int = None
+    """
+    The number of parameters for the model
+    """
+
 
     def __init__(self, wave:np.ndarray):
         self.wave = wave
@@ -71,7 +77,8 @@ class bbNWPow(bbNWModel):
     Attributes:
 
     """
-    name = 'Exp'
+    name = 'Pow'
+    nparam = 2
 
     def __init__(self, wave:np.ndarray):
         bbNWModel.__init__(self, wave)
