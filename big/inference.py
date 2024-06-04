@@ -1,6 +1,10 @@
 """ Inference methods for BIG """
 import numpy as np
 
+from functools import partial
+from concurrent.futures import ProcessPoolExecutor
+from tqdm import tqdm
+
 from big import rt as big_rt
 
 import emcee
@@ -70,7 +74,7 @@ def init_mcmc(models:list, nsteps:int=10000, nburn:int=1000):
     return pdict
 
 
-def fit_one(models, items:list, pdict:dict=None, chains_only:bool=False):
+def fit_one(items:list, models:list=None, pdict:dict=None, chains_only:bool=False):
     """
     Fits a model to a set of input data using the MCMC algorithm.
 
@@ -175,3 +179,37 @@ def run_emcee(models:list, Rrs, varRrs, nwalkers:int=32,
 
     # Return
     return sampler
+
+def fit_batch(models:list, pdict:dict, items:list, 
+              n_cores:int=1, fit_method=None): 
+    """
+    Fits a batch of items using parallel processing.
+
+    Args:
+        models (list): The list of model objects, a_nw, bb_nw
+        pdict (dict): A dictionary containing the parameters for fitting.
+        items (list): A list of items to be fitted.
+        n_cores (int, optional): The number of CPU cores to use for parallel processing. Defaults to 1.
+        fit_method (function, optional): The fitting method to be used. Defaults to None.
+
+    Returns:
+        tuple: A tuple containing the fitted samples and their corresponding indices.
+    """
+    if fit_method is None:
+        fit_method = fit_one
+
+    # Setup for parallel
+    map_fn = partial(fit_one, models=models, pdict=pdict, chains_only=True)
+    
+    # Parallel
+    with ProcessPoolExecutor(max_workers=n_cores) as executor:
+        chunksize = len(items) // n_cores if len(items) // n_cores > 0 else 1
+        answers = list(tqdm(executor.map(map_fn, items,
+                                            chunksize=chunksize), total=len(items)))
+
+    # Need to avoid blowing up the memory!
+    # Slurp
+    all_idx = np.array([item[1] for item in answers])
+    answers = np.array([item[0].astype(np.float32) for item in answers])
+
+    return answers, all_idx

@@ -10,11 +10,13 @@ from big import rt as big_rt
 from IPython import embed
 
 
-def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02):
+def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
+                  ds=None):
     """ Prepare L23 the data for the fit """
 
     # Load
-    ds = loisel23.load_ds(4,0)
+    if ds is None:
+        ds = loisel23.load_ds(4,0)
 
     # Grab
     Rrs = ds.Rrs.data[idx,:]

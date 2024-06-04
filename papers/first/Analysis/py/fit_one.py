@@ -4,8 +4,6 @@ import os
 
 import numpy as np
 
-from oceancolor.hydrolight import loisel23
-
 from ihop.inference import noise
 
 from big import rt as big_rt
@@ -68,7 +66,7 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     items = [(gordon_Rrs, varRrs, p0, idx)]
 
     # Fit
-    chains, idx = big_inf.fit_one(models, items[0], pdict=pdict, chains_only=True)
+    chains, idx = big_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
 
     # Save
     outfile = f'BIG_{model_names[0]}{model_names[1]}_{idx}'
