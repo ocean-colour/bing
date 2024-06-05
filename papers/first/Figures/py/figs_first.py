@@ -3,6 +3,9 @@ import os, sys
 
 import numpy as np
 
+from scipy.optimize import curve_fit
+
+
 from matplotlib import pyplot as plt
 import matplotlib as mpl
 import matplotlib.gridspec as gridspec
@@ -12,6 +15,7 @@ import corner
 
 from oceancolor.utils import plotting 
 from oceancolor.water import absorption
+from oceancolor.hydrolight import loisel23
 
 
 from big import rt as big_rt
@@ -31,6 +35,70 @@ def get_chain_file(model_names, scl_noise, add_noise, idx):
     return chain_file, noises, noise_lbl
 
 from IPython import embed
+
+
+def fig_u(outfile='fig_u.png'):
+    # Load
+    ds = loisel23.load_ds(4,0)
+    # Unpack
+    wave = ds.Lambda.data
+    Rrs = ds.Rrs.data
+    a = ds.a.data
+    bb = ds.bb.data
+    # u
+    u = bb / (a+bb)
+    # rrs
+    A, B = 0.52, 1.17
+    rrs = Rrs / (A + B*Rrs)
+    # Select wavelengths
+    i370 = np.argmin(np.abs(wave-370.))
+    i440 = np.argmin(np.abs(wave-440.))
+    i500 = np.argmin(np.abs(wave-500.))
+    i600 = np.argmin(np.abs(wave-600.))
+
+    # Gordon
+    G1, G2 = 0.0949, 0.0794  # Gordon
+
+    def rrs_func(uval, G1, G2):
+        rrs = G1*uval + G2*uval**2
+        return rrs
+
+    # GIOP
+    uval = np.linspace(0., 0.25, 1000)
+    rrs_GIOP = rrs_func(uval, G1, G2)
+    Rrs_GIOP = A*rrs_GIOP / (1 - B*rrs_GIOP)
+
+    # Fit
+    save_ans = []
+    for ii in [i370, i440, i500, i600]:
+        ans, cov = curve_fit(rrs_func, u[:,ii], rrs[:,ii], p0=[0.1, 0.1], sigma=np.ones_like(u[:,ii])*0.0003)
+        save_ans.append(ans)
+
+    #
+    fig = plt.figure(figsize=(9,5))
+
+    plt.clf()
+    ax = plt.gca()
+    for lbl, clr, idx, ans in zip(['370nm', '440nm', '500nm', '600nm'],
+                                ['purple', 'b','g', 'r'],
+                                [i370, i440, i500, i600],
+                                save_ans):
+        ax.scatter(u[:,idx], rrs[:,idx], color=clr, s=1., label=lbl)
+        irrs = rrs_func(u[:,idx], ans[0], ans[1])
+        usrt = np.argsort(u[:,idx])
+        ax.plot(u[usrt,idx], irrs[usrt], '-', color=clr, label=f'Fit: G0={ans[0]:0.2f}, G1={ans[1]:0.2f}')
+    # GIOP
+    ax.plot(uval, rrs_GIOP, 'k--', label='Gordon')
+    #
+    ax.set_xlabel(r'$u_\lambda$')
+    ax.set_ylabel(r'$r_{\rm rs}$')
+    ax.legend(fontsize=12)
+    plotting.set_fontsize(ax, 13.)
+    #
+    #plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+
 
 # ############################################################
 def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
@@ -621,6 +689,10 @@ def main(flg):
 
     # Indiv
     if flg == 1:
+        fig_u()
+
+    # Indiv
+    if flg == 10:
         fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True) 
 
 # Command line execution
