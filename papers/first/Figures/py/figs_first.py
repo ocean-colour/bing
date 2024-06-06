@@ -533,20 +533,23 @@ def fig_chi2_model(model:str, idx:int=170, chain_file=None,
     print(f"Saved: {outfile}")
 
 # ############################################################
-def fig_plot_abb(idx:int, 
-                 outroot='fig_abb_spec_', show_bbnw:bool=False,
+def fig_spectra(idx:int, 
+                 outroot='fig_spectra_', show_bbnw:bool=False,
                  add_noise:bool=False, log_Rrs:bool=False,
                  show_trueRrs:bool=False,
+                 show_acomps:bool=False,
+                 bbscl:float=20,
                  set_abblim:bool=True, scl_noise:float=None): 
 
     # Outfile
     outfile = outroot + f'{idx}.png'
 
     # 
-    odict = gordon.prep_data(idx)
+    odict = anly_utils.prep_l23_data(idx)
     wave = odict['true_wave']
     a = odict['a']
     aw = odict['aw']
+    anw = odict['anw']
     aph = odict['aph']
     adg = odict['adg']
     bb = odict['bb']
@@ -560,24 +563,44 @@ def fig_plot_abb(idx:int,
     ax.plot(wave, a, 'k-', label=r'$a$', zorder=1)
 
     ax.plot(wave, aw, 'b-', label=r'$a_w$', zorder=1)
-    ax.plot(wave, aph, 'g-', label=r'$a_{ph}$', zorder=1)
-    ax.plot(wave, adg, '-', color='brown', label=r'$a_{dg}$', zorder=1)
+    ax.plot(wave, anw, 'r-', label=r'$a_{nw}$', zorder=1)
+    if show_acomps:
+        ax.plot(wave, aph, 'g-', label=r'$a_{ph}$', zorder=1)
+        ax.plot(wave, adg, '-', color='brown', label=r'$a_{dg}$', zorder=1)
 
     # bb
     ax.plot(wave, bb, ':', color='k', label=r'$b_{b}$', zorder=1)
 
-    bbscl = 20
     ax.plot(wave, bbscl*bbw, ':', color='blue', label=f'{bbscl}*'+r'$b_{b,w}$', zorder=1)
     ax.plot(wave, bbscl*bnw, ':', color='red', label=f'{bbscl}*'+r'$b_{b,nw}$', zorder=1)
 
     #
-    ax.legend(fontsize=13.)
+    # Legend filled white
+    ax.legend(fontsize=13., loc='upper right', 
+              frameon=True, facecolor='white')
 
     ax.set_xlabel('Wavelength (nm)')
     ax.set_ylabel(r'$a, b_b \; [{\rm m}^{-1}]$')
-    ax.set_ylim(0., 0.08)
+    ymax = 0.08
+    ax.set_xlim(350., 750.)
+    ax.set_ylim(0., ymax)
 
     plotting.set_fontsize(ax, 15)
+
+    # Fill between
+    alpha=0.3
+    ax.fill_between([500., 750.], 0, ymax, color='red', alpha=alpha)
+    ax.fill_between([350., 450.], 0, ymax, color='blue', alpha=alpha)
+
+    # Add text
+    yl1, yl2 = 0.075, 0.07
+    x1, x2 = 505., 445.
+    # Red
+    ax.text(x1, yl1, r'$a_w \gg a_{nw}$', fontsize=15, ha='left')
+    ax.text(x1, yl2, r'$b_{b,nw} \approx b_{b,w}$', fontsize=15, ha='left')
+
+    ax.text(x2, yl1, r'$b_{b,w} \gg b_{b,nw}$', fontsize=15, ha='right')
+    ax.text(x2, yl2, r'$a_{nw} > a_{w}$', fontsize=15, ha='right')
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
@@ -690,6 +713,10 @@ def main(flg):
     # Indiv
     if flg == 1:
         fig_u()
+
+    # Spectra
+    if flg == 2:
+        fig_spectra(170, bbscl=20)
 
     # Indiv
     if flg == 10:
