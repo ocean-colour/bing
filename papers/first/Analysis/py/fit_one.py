@@ -64,6 +64,7 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     
     # Set the items
     items = [(gordon_Rrs, varRrs, p0, idx)]
+    embed(header='fit 68')
 
     # Fit
     chains, idx = big_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
