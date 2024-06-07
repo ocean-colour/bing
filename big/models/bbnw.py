@@ -9,6 +9,7 @@ from oceancolor.hydrolight import loisel23
 from abc import ABCMeta
 
 from big import priors as big_priors
+from big.models import functions
 
 def init_model(model_name:str, wave:np.ndarray, prior_choice:str):
     """
@@ -104,10 +105,21 @@ class bbNWModel:
         Parameters:
             params (np.ndarray): The parameters for the model
 
+            Pow:
+                params[0] = log10(Bnw)
+                params[1] = log10(beta)
+            Cst:
+                params[0] = log10(Bnw)
+
         Returns:
             np.ndarray: The non-water backscattering coefficient
         """
-        return np.zeros_like(self.wave)
+        if self.name == 'Pow':
+            return functions.powerlaw(self.wave, params, pivot=self.pivot)
+        elif self.name == 'Cst':
+            return functions.constant(self.wave, params)
+        else:
+            raise ValueError(f"Unknown model: {self.name}")
 
 
     def eval_bb(self, params:np.ndarray):
@@ -145,21 +157,6 @@ class bbNWCst(bbNWModel):
     def __init__(self, wave:np.ndarray, prior_choice:str):
         bbNWModel.__init__(self, wave, prior_choice)
 
-    def eval_anw(self, params:np.ndarray):
-        """
-        Evaluate the model
-
-        Parameters:
-            params (np.ndarray): The parameters for the model
-                params[0] = log10(Anw)
-
-        Returns:
-            np.ndarray: The non-water absorption coefficient 
-        """
-        bb_nw = np.outer(10**params[...,0], np.ones_like(self.wave))
-
-        return bb_nw
-
     def init_guess(self, bb_nw:np.ndarray):
         """
         Initialize the model with a guess
@@ -185,26 +182,10 @@ class bbNWPow(bbNWModel):
     """
     name = 'Pow'
     nparam = 2
+    pivot = 600.
 
     def __init__(self, wave:np.ndarray, prior_choice:str):
         bbNWModel.__init__(self, wave, prior_choice)
-
-    def eval_bbnw(self, params:np.ndarray):
-        """
-        Evaluate the model
-
-        Parameters:
-            params (np.ndarray): The parameters for the model
-                params[0] = log10(Bnw)
-                params[1] = log10(beta)
-
-        Returns:
-            np.ndarray: The non-water absorption coefficient 
-        """
-        bb_nw = np.outer(10**params[...,0], np.ones_like(self.wave)) *\
-                       (600./self.wave)**(10**params[...,1]).reshape(-1,1)
-
-        return bb_nw
 
     def init_guess(self, bb_nw:np.ndarray):
         """

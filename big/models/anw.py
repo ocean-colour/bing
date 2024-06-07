@@ -6,6 +6,8 @@ from abc import ABCMeta
 from oceancolor.water import absorption as water_abs
 from big import priors as big_priors
 
+from big.models import functions
+
 def init_model(model_name:str, wave:np.ndarray, prior_choice:str):
     """
     Initialize a model for non-water absorption
@@ -49,6 +51,11 @@ class aNWModel:
     The absorption coefficient of water
     """
 
+    pivot:float = None
+    """
+    Pivot wavelength 
+    """
+
     prior_approach:str = None
     """
     Approach to priors
@@ -88,10 +95,22 @@ class aNWModel:
         Parameters:
             params (np.ndarray): The parameters for the model
 
+            Cst:
+                params[...,0] = log10(Anw)
+            Exp:
+                params[...,0] = log10(Anw)
+                params[...,1] = log10(Snw)
+
         Returns:
             np.ndarray: The non-water absorption coefficient
                 This is always a multi-dimensional array
         """
+        if self.name == 'Cst':
+            return functions.constant(self.wave, params)
+        elif self.name == 'Exp':
+            return functions.exponential(self.wave, params, pivot=self.pivot)
+        else:
+            raise ValueError(f"Unknown model: {self.name}")
 
     def eval_a(self, params:np.ndarray):
         """
@@ -127,21 +146,6 @@ class aNWCst(aNWModel):
     def __init__(self, wave:np.ndarray, prior_choice:str):
         aNWModel.__init__(self, wave, prior_choice)
 
-    def eval_anw(self, params:np.ndarray):
-        """
-        Evaluate the model
-
-        Parameters:
-            params (np.ndarray): The parameters for the model
-                params[0] = log10(Anw)
-
-        Returns:
-            np.ndarray: The non-water absorption coefficient 
-        """
-        a_nw = np.outer(10**params[...,0], np.ones_like(self.wave))
-
-        return a_nw
-
     def init_guess(self, a_nw:np.ndarray):
         """
         Initialize the model with a guess
@@ -167,26 +171,10 @@ class aNWExp(aNWModel):
     """
     name = 'Exp'
     nparam = 2
+    pivot = 400.
 
     def __init__(self, wave:np.ndarray, prior_choice:str):
         aNWModel.__init__(self, wave, prior_choice)
-
-    def eval_anw(self, params:np.ndarray):
-        """
-        Evaluate the model
-
-        Parameters:
-            params (np.ndarray): The parameters for the model
-                params[0] = log10(Anw)
-                params[1] = log10(Snw)
-
-        Returns:
-            np.ndarray: The non-water absorption coefficient 
-        """
-        a_nw = np.outer(10**params[...,0], np.ones_like(self.wave)) *\
-            np.exp(np.outer(-10**params[...,1],self.wave-400.))
-
-        return a_nw
 
     def init_guess(self, a_nw:np.ndarray):
         """

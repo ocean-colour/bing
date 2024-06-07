@@ -104,6 +104,8 @@ def main(flg):
 
     # chisq fits
     if flg == 4:
+        fit_one(['Cst', 'Cst'], idx=170, use_chisq=True)
+        fit_one(['Exp', 'Cst'], idx=170, use_chisq=True)
         fit_one(['Exp', 'Pow'], idx=170, use_chisq=True)
 
 # Command line execution

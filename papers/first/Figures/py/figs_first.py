@@ -735,11 +735,12 @@ def main(flg):
     if flg == 2:
         fig_spectra(170, bbscl=20)
 
-    # Indiv
+    # LM fits
     if flg == 10:
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True)
-        fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True,
-                     use_LM=True)
+        fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True, use_LM=True)
+        fig_mcmc_fit(['Exp', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
+        fig_mcmc_fit(['Cst', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
 
 # Command line execution
 if __name__ == '__main__':
