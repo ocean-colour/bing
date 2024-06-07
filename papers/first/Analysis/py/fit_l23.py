@@ -8,6 +8,7 @@ from big.models import anw as big_anw
 from big.models import bbnw as big_bbnw
 from big import inference as big_inf
 from big import rt as big_rt
+from big import chisq_fit
 
 import anly_utils 
 
@@ -17,6 +18,7 @@ def fit(model_names:list,
         Nspec:int=None, 
         prior_approach:str='log',
         nsteps=80000, nburn=8000,
+        use_chisq:bool=False,
         scl_noise:float=0.02, add_noise:bool=False,
         n_cores:int=20, wstep:int=1, debug:bool=False): 
     """
@@ -85,15 +87,30 @@ def fit(model_names:list,
     items = [(Rrs[i], varRrs[i], params[i], i) for i in idx]
 
     # Output file
-
-    all_samples, all_idx = big_inf.fit_batch(
-        models, pdict, items, n_cores=n_cores)
-
     outfile = anly_utils.chain_filename(
         model_names, scl_noise, add_noise)
-    # Save
-    anly_utils.save_fits(all_samples, all_idx, outfile,
-                         extras=dict(Rrs=Rrs))
+
+    if use_chisq:
+        all_ans = []
+        all_cov = []
+        all_idx = []
+        # Fit
+        for item in items:
+            ans, cov, idx = chisq_fit.fit(item, models)
+            all_ans.append(ans)
+            all_cov.append(cov)
+            all_idx.append(idx)
+        # Save
+        outfile = outfile.replace('BIG', 'BIG_LM')
+        np.savez(outfile, ans=all_ans, cov=all_cov,
+              wave=wave, obs_Rrs=Rrs, varRrs=varRrs)
+    else:
+        all_samples, all_idx = big_inf.fit_batch(
+            models, pdict, items, n_cores=n_cores)
+        # Save
+        anly_utils.save_fits(all_samples, all_idx, outfile,
+                         extras=dict(Rrs=Rrs, varRrs=varRrs))
+    print(f"Saved: {outfile}")                        
 
 def reconstruct(model_names:list, wstep:int=1,
         prior_approach:str='log',
@@ -158,6 +175,12 @@ def main(flg):
     if flg == 2:
         fit(['Exp', 'Pow'], nsteps=50000, nburn=5000)
         reconstruct(['Exp', 'Pow']) 
+
+    # Full L23 with LM
+    if flg == 3:
+        fit(['Cst', 'Cst'], use_chisq=True)
+        fit(['Exp', 'Cst'], use_chisq=True)
+        fit(['Exp', 'Pow'], use_chisq=True)
 
 # Command line execution
 if __name__ == '__main__':
