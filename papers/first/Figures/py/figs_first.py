@@ -39,7 +39,13 @@ def get_chain_file(model_names, scl_noise, add_noise, idx,
     scl_noise = 0.02 if scl_noise is None else scl_noise
     noises = f'{int(100*scl_noise):02d}'
     noise_lbl = 'N' if add_noise else 'n'
-    chain_file = f'../Analysis/Fits/BIG_{model_names[0]}{model_names[1]}_{idx}_{noise_lbl}{noises}.npz'
+
+    if use_LM:
+        cidx = 'L23'
+    else:
+        cidx = str(idx)
+
+    chain_file = f'../Analysis/Fits/BIG_{model_names[0]}{model_names[1]}_{cidx}_{noise_lbl}{noises}.npz'
     # LM
     if use_LM:
         chain_file = chain_file.replace('BIG', 'BIG_LM')
@@ -115,7 +121,8 @@ def fig_u(outfile='fig_u.png'):
 def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                  outroot='fig_BIG_fit', show_bbnw:bool=True,
                  add_noise:bool=False, log_Rrs:bool=False,
-                 show_trueRrs:bool=False,
+                 show_trueRrs:bool=False, 
+                 max_wave:float=None,
                  wstep:int=1, use_LM:bool=False,
                  set_abblim:bool=True, scl_noise:float=None): 
 
@@ -125,7 +132,7 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
 
 
     # Load the data
-    odict = anly_utils.prep_l23_data(idx, step=wstep)
+    odict = anly_utils.prep_l23_data(idx, step=wstep, max_wave=max_wave)
     wave = odict['wave']
     Rrs = odict['Rrs']
     varRrs = odict['varRrs']
@@ -153,7 +160,8 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     # Reconstruc
     if use_LM:
         model_Rrs, a_mean, bb_mean = chisq_fit.fit_func(
-            wave, *d_chains['ans'], models=models, return_full=True)
+            wave, *d_chains['ans'][idx], 
+            models=models, return_full=True)
     else:
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
             model_Rrs, sigRs = anly_utils.reconstruct(
@@ -631,7 +639,8 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
                 outfile:str='fig_all_bic.png'):
 
     Bdict = {}
-    
+
+    s2ns = [0.02, 0.03, 0.05, 0.07, 0.10, 0.5]
     # Loop on the models
     for k in [3,4]:#,5]:
         Bdict[k] = []
@@ -647,10 +656,7 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
         chain_file, noises, noise_lbl = get_chain_file(
             model_names, 0.02, False, 'L23', use_LM=use_LM)
         d_chains = np.load(chain_file)
-
-        # Load data for wave
-        odict = anly_utils.prep_l23_data(170, step=wstep)
-        wave = odict['wave']
+        wave = d_chains['wave']
 
         # Init the models
         anw_model = big_anw.init_model(model_names[0], wave, 'log')
@@ -660,30 +666,44 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
         # Loop on S/N
         if k == 3:
             sv_s2n = []
-        for s2n in [0.02, 0.03, 0.05, 0.07, 0.10]:
+            sv_idx = []
+        for s2n in s2ns:
             # Calculate BIC
             BICs = big_stats.calc_BICs(d_chains['obs_Rrs'], models, d_chains['ans'],
-                                s2n, use_LM=use_LM)
+                                s2n, use_LM=use_LM, debug=False)
             Bdict[k].append(BICs)
             # 
             if k == 3:
                 sv_s2n += [s2n]*BICs.size
-        Bdict[k] = np.array(Bdict[k]).T
+                sv_idx += d_chains['idx'].tolist()
+        #embed(header='678 of fig_all_bic')
         # Concatenate
-        Bdict[k] = np.concatenate(Bdict[k])
+        Bdict[k] = np.array(Bdict[k])
                             
     # Generate a pandas table
     D_BIC_34 = Bdict[3] - Bdict[4]
-    df = pandas.DataFrame()
-    df['D_BIC'] = D_BIC_34
-    df['s2n'] = sv_s2n
-    
+
+    #embed(header='690 of fig_all_bic')
 
     fig = plt.figure(figsize=(14,6))
     plt.clf()
     gs = gridspec.GridSpec(1,2)
+    ax34=plt.subplot(gs[0])
 
-    sns.kdeplot(data=df, x="D_BIC", hue="s2n", ax=plt.subplot(gs[0]))
+    for ss, s2n in enumerate(s2ns):
+        ax34.hist(D_BIC_34[ss], bins=50, 
+                  histtype='step', 
+                  fill=None, label=f's2n={s2n}',
+                  linewidth=3)
+    ax34.set_xlabel(r'$\Delta$ BIC_{34}$')
+
+    for ax in [ax34]:
+        ax.set_ylabel('Density')
+        ax.grid(True)
+        plotting.set_fontsize(ax, 15)
+        #
+        ax.set_xlim(-5., 50)
+        ax.legend(fontsize=14)
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
@@ -812,9 +832,11 @@ def main(flg):
     # LM fits
     if flg == 10:
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True)
-        fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True, use_LM=True)
-        fig_mcmc_fit(['Exp', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
-        fig_mcmc_fit(['Cst', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
+        #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True, use_LM=True)
+        #fig_mcmc_fit(['Exp', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
+        fig_mcmc_fit(['Exp', 'Cst'], idx=3315, log_Rrs=True, use_LM=True)
+        fig_mcmc_fit(['Exp', 'Pow'], idx=3315, log_Rrs=True, use_LM=True)
+        #fig_mcmc_fit(['Cst', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
 
 # Command line execution
 if __name__ == '__main__':
