@@ -85,6 +85,14 @@ def main(flg):
     if flg == 2:
         fit_one(['Exp', 'Pow'], idx=170, nsteps=10000, nburn=1000) 
 
+    # Fit 170
+    if flg == 3:
+        idx = 170
+        fit_one(['Cst', 'Cst'], idx=idx, nsteps=80000, nburn=8000) 
+        fit_one(['Exp', 'Cst'], idx=idx, nsteps=80000, nburn=8000) 
+        fit_one(['Exp', 'Pow'], idx=idx, nsteps=10000, nburn=1000) 
+
+
 # Command line execution
 if __name__ == '__main__':
     import sys

@@ -14,12 +14,11 @@ import anly_utils
 from IPython import embed
 
 def fit(model_names:list, 
-        Nspec:int=None, abs_sig:float=None,
+        Nspec:int=None, 
         prior_approach:str='log',
         nsteps=80000, nburn=8000,
         scl_noise:float=0.02, add_noise:bool=False,
-        n_cores:int=20, wstep:int=1, debug:bool=False, 
-        max_wv:float=None):
+        n_cores:int=20, wstep:int=1, debug:bool=False): 
     """
     Fits the data with or without considering any errors.
 
@@ -157,7 +156,7 @@ def main(flg):
 
     # Full L23
     if flg == 2:
-        #fit(['Exp', 'Pow'], nsteps=80000, nburn=8000)
+        fit(['Exp', 'Pow'], nsteps=50000, nburn=5000)
         reconstruct(['Exp', 'Pow']) 
 
 # Command line execution

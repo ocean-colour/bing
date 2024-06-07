@@ -24,6 +24,8 @@ def init_model(model_name:str, wave:np.ndarray, prior_choice:str):
     """
     if model_name == 'Pow':
         return bbNWPow(wave, prior_choice)
+    elif model_name == 'Cst':
+        return bbNWCst(wave, prior_choice)
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
@@ -129,6 +131,49 @@ class bbNWModel:
         """
 
         
+class bbNWCst(bbNWModel):
+    """
+    Constant model for non-water scattering
+        Bnw
+
+    Attributes:
+
+    """
+    name = 'Cst'
+    nparam = 1
+
+    def __init__(self, wave:np.ndarray, prior_choice:str):
+        bbNWModel.__init__(self, wave, prior_choice)
+
+    def eval_anw(self, params:np.ndarray):
+        """
+        Evaluate the model
+
+        Parameters:
+            params (np.ndarray): The parameters for the model
+                params[0] = log10(Anw)
+
+        Returns:
+            np.ndarray: The non-water absorption coefficient 
+        """
+        bb_nw = np.outer(10**params[...,0], np.ones_like(self.wave))
+
+        return bb_nw
+
+    def init_guess(self, bb_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            bb_nw (np.ndarray): The non-water scattering coefficient
+
+        Returns:
+            np.ndarray: The initial guess for the parameters
+        """
+        i600 = np.argmin(np.abs(self.wave-600))
+        p0_bb = np.array([bb_nw[i600]])
+        # Return
+        return p0_bb
         
 class bbNWPow(bbNWModel):
     """

@@ -20,6 +20,8 @@ def init_model(model_name:str, wave:np.ndarray, prior_choice:str):
     """
     if model_name == 'Exp':
         return aNWExp(wave, prior_choice)
+    elif model_name == 'Cst':
+        return aNWCst(wave, prior_choice)
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
@@ -111,6 +113,49 @@ class aNWModel:
             a_nw (np.ndarray): The non-water absorption coefficient
         """
 
+class aNWCst(aNWModel):
+    """
+    Constant model for non-water absorption
+        Anw
+
+    Attributes:
+
+    """
+    name = 'Cst'
+    nparam = 1
+
+    def __init__(self, wave:np.ndarray, prior_choice:str):
+        aNWModel.__init__(self, wave, prior_choice)
+
+    def eval_anw(self, params:np.ndarray):
+        """
+        Evaluate the model
+
+        Parameters:
+            params (np.ndarray): The parameters for the model
+                params[0] = log10(Anw)
+
+        Returns:
+            np.ndarray: The non-water absorption coefficient 
+        """
+        a_nw = np.outer(10**params[...,0], np.ones_like(self.wave))
+
+        return a_nw
+
+    def init_guess(self, a_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            a_nw (np.ndarray): The non-water absorption coefficient
+
+        Returns:
+            np.ndarray: The initial guess for the parameters
+        """
+        i400 = np.argmin(np.abs(self.wave-400))
+        p0_a = np.array([a_nw[i400]])
+        # Return
+        return p0_a
         
 class aNWExp(aNWModel):
     """
