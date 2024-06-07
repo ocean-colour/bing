@@ -176,7 +176,7 @@ def main(flg):
         fit(['Exp', 'Pow'], nsteps=50000, nburn=5000)
         reconstruct(['Exp', 'Pow']) 
 
-    # Full L23 with LM
+    # Full L23 with LM; constant relative error
     if flg == 3:
         fit(['Cst', 'Cst'], use_chisq=True)
         fit(['Exp', 'Cst'], use_chisq=True)

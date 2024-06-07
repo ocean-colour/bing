@@ -4,12 +4,15 @@ import os, sys
 import numpy as np
 
 from scipy.optimize import curve_fit
+import pandas
 
 
 from matplotlib import pyplot as plt
 import matplotlib as mpl
 import matplotlib.gridspec as gridspec
 mpl.rcParams['font.family'] = 'stixgeneral'
+
+import seaborn as sns
 
 import corner
 
@@ -22,6 +25,7 @@ from big import rt as big_rt
 from big.models import anw as big_anw
 from big.models import bbnw as big_bbnw
 from big import chisq_fit
+from big import stats as big_stats
 
 # Local
 sys.path.append(os.path.abspath("../Analysis/py"))
@@ -623,14 +627,80 @@ def fig_spectra(idx:int,
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
+def fig_all_bic(use_LM:bool=True, wstep:int=1,
+                outfile:str='fig_all_bic.png'):
+
+    Bdict = {}
+    
+    # Loop on the models
+    for k in [3,4]:#,5]:
+        Bdict[k] = []
+
+        # Model names
+        if k == 3:
+            model_names = ['Exp', 'Cst']
+        elif k == 4:
+            model_names = ['Exp', 'Pow']
+        else:
+            raise ValueError("Bad k")
+
+        chain_file, noises, noise_lbl = get_chain_file(
+            model_names, 0.02, False, 'L23', use_LM=use_LM)
+        d_chains = np.load(chain_file)
+
+        # Load data for wave
+        odict = anly_utils.prep_l23_data(170, step=wstep)
+        wave = odict['wave']
+
+        # Init the models
+        anw_model = big_anw.init_model(model_names[0], wave, 'log')
+        bbnw_model = big_bbnw.init_model(model_names[1], wave, 'log')
+        models = [anw_model, bbnw_model]
+
+        # Loop on S/N
+        if k == 3:
+            sv_s2n = []
+        for s2n in [0.02, 0.03, 0.05, 0.07, 0.10]:
+            # Calculate BIC
+            BICs = big_stats.calc_BICs(d_chains['obs_Rrs'], models, d_chains['ans'],
+                                s2n, use_LM=use_LM)
+            Bdict[k].append(BICs)
+            # 
+            if k == 3:
+                sv_s2n += [s2n]*BICs.size
+        Bdict[k] = np.array(Bdict[k]).T
+        # Concatenate
+        Bdict[k] = np.concatenate(Bdict[k])
+                            
+    # Generate a pandas table
+    D_BIC_34 = Bdict[3] - Bdict[4]
+    df = pandas.DataFrame()
+    df['D_BIC'] = D_BIC_34
+    df['s2n'] = sv_s2n
+    
+
+    fig = plt.figure(figsize=(14,6))
+    plt.clf()
+    gs = gridspec.GridSpec(1,2)
+
+    sns.kdeplot(data=df, x="D_BIC", hue="s2n", ax=plt.subplot(gs[0]))
+
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+
+
+
+
 
 # ############################################################
-def fig_bic(models:list=None, idx:int=170, 
+def fig_one_bic(models:list=None, idx:int=170, 
             scl_noises:list=None,
             low_wv=500., 
             outroot='fig_bic_', show_bbnw:bool=False,
             set_abblim:bool=True, 
             add_noise:bool=False): 
+
 
     # Outfile
     outfile = outroot + f'{idx}.png'
@@ -734,6 +804,10 @@ def main(flg):
     # Spectra
     if flg == 2:
         fig_spectra(170, bbscl=20)
+
+    # BIC
+    if flg == 4:
+        fig_all_bic()
 
     # LM fits
     if flg == 10:
