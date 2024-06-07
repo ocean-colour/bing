@@ -49,6 +49,9 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     if add_noise:
         gordon_Rrs = noise.add_noise(gordon_Rrs, perc=scl_noise*100)
 
+    # Bricaud?
+    if models[0].name == 'ExpBricaud':
+        models[0].set_aph(odict['Chl'])
 
     # Initial guess
     p0_a = anw_model.init_guess(odict['anw'][::wstep])
@@ -98,15 +101,17 @@ def main(flg):
     # Fit 170
     if flg == 3:
         idx = 170
-        fit_one(['Cst', 'Cst'], idx=idx, nsteps=80000, nburn=8000) 
-        fit_one(['Exp', 'Cst'], idx=idx, nsteps=80000, nburn=8000) 
-        fit_one(['Exp', 'Pow'], idx=idx, nsteps=10000, nburn=1000) 
+        #fit_one(['Cst', 'Cst'], idx=idx, nsteps=80000, nburn=8000) 
+        #fit_one(['Exp', 'Cst'], idx=idx, nsteps=80000, nburn=8000) 
+        #fit_one(['Exp', 'Pow'], idx=idx, nsteps=10000, nburn=1000) 
+        fit_one(['ExpBricaud', 'Pow'], idx=idx, nsteps=10000, nburn=1000) 
 
     # chisq fits
     if flg == 4:
-        fit_one(['Cst', 'Cst'], idx=170, use_chisq=True)
-        fit_one(['Exp', 'Cst'], idx=170, use_chisq=True)
-        fit_one(['Exp', 'Pow'], idx=170, use_chisq=True)
+        #fit_one(['Cst', 'Cst'], idx=170, use_chisq=True)
+        #fit_one(['Exp', 'Cst'], idx=170, use_chisq=True)
+        #fit_one(['Exp', 'Pow'], idx=170, use_chisq=True)
+        fit_one(['ExpBricaud', 'Pow'], idx=170, use_chisq=True)
 
 # Command line execution
 if __name__ == '__main__':

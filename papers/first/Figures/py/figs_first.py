@@ -35,12 +35,12 @@ from IPython import embed
 
 
 def get_chain_file(model_names, scl_noise, add_noise, idx,
-                   use_LM=False):
+                   use_LM=False, full_LM=True):
     scl_noise = 0.02 if scl_noise is None else scl_noise
     noises = f'{int(100*scl_noise):02d}'
     noise_lbl = 'N' if add_noise else 'n'
 
-    if use_LM:
+    if full_LM:
         cidx = 'L23'
     else:
         cidx = str(idx)
@@ -121,13 +121,15 @@ def fig_u(outfile='fig_u.png'):
 def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                  outroot='fig_BIG_fit', show_bbnw:bool=True,
                  add_noise:bool=False, log_Rrs:bool=False,
+                 full_LM:bool=True,
                  show_trueRrs:bool=False, 
                  max_wave:float=None,
                  wstep:int=1, use_LM:bool=False,
                  set_abblim:bool=True, scl_noise:float=None): 
 
     chain_file, noises, noise_lbl = get_chain_file(
-        model_names, scl_noise, add_noise, idx, use_LM=use_LM)
+        model_names, scl_noise, add_noise, idx, use_LM=use_LM,
+        full_LM=full_LM)
     d_chains = np.load(chain_file)
 
 
@@ -153,15 +155,22 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     bbnw_model = big_bbnw.init_model(model_names[1], wave, 'log')
     models = [anw_model, bbnw_model]
 
+    # Bricaud?
+    if models[0].name == 'ExpBricaud':
+        models[0].set_aph(odict['Chl'])
+
     # Interpolate
     aw_interp = np.interp(wave, wave_true, aw)
     bbw_interp = np.interp(wave, wave_true, bbw)
 
     # Reconstruc
     if use_LM:
+        if full_LM:
+            params = d_chains['ans'][idx]
+        else:
+            params = d_chains['ans']
         model_Rrs, a_mean, bb_mean = chisq_fit.fit_func(
-            wave, *d_chains['ans'][idx], 
-            models=models, return_full=True)
+            wave, *params, models=models, return_full=True)
     else:
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
             model_Rrs, sigRs = anly_utils.reconstruct(
@@ -640,7 +649,7 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
 
     Bdict = {}
 
-    s2ns = [0.02, 0.03, 0.05, 0.07, 0.10, 0.5]
+    s2ns = [0.02, 0.05, 0.10, 0.2, 0.5]
     # Loop on the models
     for k in [3,4]:#,5]:
         Bdict[k] = []
@@ -695,7 +704,7 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
                   histtype='step', 
                   fill=None, label=f's2n={s2n}',
                   linewidth=3)
-    ax34.set_xlabel(r'$\Delta$ BIC_{34}$')
+    ax34.set_xlabel(r'$\Delta \, \rm BIC_{34}$')
 
     for ax in [ax34]:
         ax.set_ylabel('Density')
@@ -834,9 +843,11 @@ def main(flg):
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True)
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True, use_LM=True)
         #fig_mcmc_fit(['Exp', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
-        fig_mcmc_fit(['Exp', 'Cst'], idx=3315, log_Rrs=True, use_LM=True)
-        fig_mcmc_fit(['Exp', 'Pow'], idx=3315, log_Rrs=True, use_LM=True)
+        #fig_mcmc_fit(['Exp', 'Cst'], idx=3315, log_Rrs=True, use_LM=True)
+        #fig_mcmc_fit(['Exp', 'Pow'], idx=3315, log_Rrs=True, use_LM=True)
         #fig_mcmc_fit(['Cst', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
+        fig_mcmc_fit(['ExpBricaud', 'Pow'], idx=170, 
+                     log_Rrs=True, use_LM=True, full_LM=False)
 
 # Command line execution
 if __name__ == '__main__':
