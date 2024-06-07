@@ -21,17 +21,24 @@ from oceancolor.hydrolight import loisel23
 from big import rt as big_rt
 from big.models import anw as big_anw
 from big.models import bbnw as big_bbnw
+from big import chisq_fit
 
 # Local
 sys.path.append(os.path.abspath("../Analysis/py"))
 import anly_utils
 
+from IPython import embed
 
-def get_chain_file(model_names, scl_noise, add_noise, idx):
+
+def get_chain_file(model_names, scl_noise, add_noise, idx,
+                   use_LM=False):
     scl_noise = 0.02 if scl_noise is None else scl_noise
     noises = f'{int(100*scl_noise):02d}'
     noise_lbl = 'N' if add_noise else 'n'
     chain_file = f'../Analysis/Fits/BIG_{model_names[0]}{model_names[1]}_{idx}_{noise_lbl}{noises}.npz'
+    # LM
+    if use_LM:
+        chain_file = chain_file.replace('BIG', 'BIG_LM')
     return chain_file, noises, noise_lbl
 
 from IPython import embed
@@ -105,10 +112,11 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                  outroot='fig_BIG_fit', show_bbnw:bool=True,
                  add_noise:bool=False, log_Rrs:bool=False,
                  show_trueRrs:bool=False,
-                 wstep:int=1,
+                 wstep:int=1, use_LM:bool=False,
                  set_abblim:bool=True, scl_noise:float=None): 
 
-    chain_file, noises, noise_lbl = get_chain_file(model_names, scl_noise, add_noise, idx)
+    chain_file, noises, noise_lbl = get_chain_file(
+        model_names, scl_noise, add_noise, idx, use_LM=use_LM)
     d_chains = np.load(chain_file)
 
 
@@ -139,15 +147,21 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     bbw_interp = np.interp(wave, wave_true, bbw)
 
     # Reconstruc
-    a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
-        model_Rrs, sigRs = anly_utils.reconstruct(
-        models, d_chains['chains']) 
+    if use_LM:
+        model_Rrs, a_mean, bb_mean = chisq_fit.fit_func(
+            wave, *d_chains['ans'], models=models, return_full=True)
+    else:
+        a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
+            model_Rrs, sigRs = anly_utils.reconstruct(
+            models, d_chains['chains']) 
 
     # Water
     a_w = absorption.a_water(wave, data='IOCCG')
 
     # Outfile
     outfile = outroot + f'_{model_names[0]}{model_names[1]}_{idx}_{noise_lbl}{noises}.png'
+    if use_LM:
+        outfile = outfile.replace('BIG', 'BIG_LM')
 
     # #########################################################
     # Plot the solution
@@ -190,7 +204,8 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     ax_anw = plt.subplot(gs[1])
     ax_anw.plot(wave_true, a_true-aw, 'ko', label='True', zorder=1)
     ax_anw.plot(wave, a_mean-aw_interp, 'r-', label='Retreival')
-    ax_anw.fill_between(wave, a_5-aw_interp, a_95-aw_interp, 
+    if not use_LM:
+        ax_anw.fill_between(wave, a_5-aw_interp, a_95-aw_interp, 
             color='r', alpha=0.5, label='Uncertainty') 
     
     ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
@@ -218,7 +233,8 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
         show_bb = bbnw
     ax_bb.plot(wave_true, show_bb, 'ko', label='True')
     ax_bb.plot(wave, bb_mean-use_bbw, 'g-', label='Retrieval')
-    ax_bb.fill_between(wave, bb_5-use_bbw, bb_95-use_bbw,
+    if not use_LM:
+        ax_bb.fill_between(wave, bb_5-use_bbw, bb_95-use_bbw,
             color='g', alpha=0.5, label='Uncertainty') 
 
     #ax_bb.set_xlabel('Wavelength (nm)')
@@ -239,7 +255,8 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
         ax_R.plot(wave_true, Rrs_true, 'kx', label='True L23')
     ax_R.plot(wave, gordon_Rrs, 'k+', label='L23 + Gordon')
     ax_R.plot(wave, model_Rrs, 'r-', label='Fit', zorder=10)
-    ax_R.fill_between(wave, model_Rrs-sigRs, model_Rrs+sigRs, 
+    if not use_LM:
+        ax_R.fill_between(wave, model_Rrs-sigRs, model_Rrs+sigRs, 
             color='r', alpha=0.5, zorder=10) 
 
     if add_noise:
@@ -533,20 +550,23 @@ def fig_chi2_model(model:str, idx:int=170, chain_file=None,
     print(f"Saved: {outfile}")
 
 # ############################################################
-def fig_plot_abb(idx:int, 
-                 outroot='fig_abb_spec_', show_bbnw:bool=False,
+def fig_spectra(idx:int, 
+                 outroot='fig_spectra_', show_bbnw:bool=False,
                  add_noise:bool=False, log_Rrs:bool=False,
                  show_trueRrs:bool=False,
+                 show_acomps:bool=False,
+                 bbscl:float=20,
                  set_abblim:bool=True, scl_noise:float=None): 
 
     # Outfile
     outfile = outroot + f'{idx}.png'
 
     # 
-    odict = gordon.prep_data(idx)
+    odict = anly_utils.prep_l23_data(idx)
     wave = odict['true_wave']
     a = odict['a']
     aw = odict['aw']
+    anw = odict['anw']
     aph = odict['aph']
     adg = odict['adg']
     bb = odict['bb']
@@ -560,24 +580,44 @@ def fig_plot_abb(idx:int,
     ax.plot(wave, a, 'k-', label=r'$a$', zorder=1)
 
     ax.plot(wave, aw, 'b-', label=r'$a_w$', zorder=1)
-    ax.plot(wave, aph, 'g-', label=r'$a_{ph}$', zorder=1)
-    ax.plot(wave, adg, '-', color='brown', label=r'$a_{dg}$', zorder=1)
+    ax.plot(wave, anw, 'r-', label=r'$a_{nw}$', zorder=1)
+    if show_acomps:
+        ax.plot(wave, aph, 'g-', label=r'$a_{ph}$', zorder=1)
+        ax.plot(wave, adg, '-', color='brown', label=r'$a_{dg}$', zorder=1)
 
     # bb
     ax.plot(wave, bb, ':', color='k', label=r'$b_{b}$', zorder=1)
 
-    bbscl = 20
     ax.plot(wave, bbscl*bbw, ':', color='blue', label=f'{bbscl}*'+r'$b_{b,w}$', zorder=1)
     ax.plot(wave, bbscl*bnw, ':', color='red', label=f'{bbscl}*'+r'$b_{b,nw}$', zorder=1)
 
     #
-    ax.legend(fontsize=13.)
+    # Legend filled white
+    ax.legend(fontsize=13., loc='upper right', 
+              frameon=True, facecolor='white')
 
     ax.set_xlabel('Wavelength (nm)')
     ax.set_ylabel(r'$a, b_b \; [{\rm m}^{-1}]$')
-    ax.set_ylim(0., 0.08)
+    ymax = 0.08
+    ax.set_xlim(350., 750.)
+    ax.set_ylim(0., ymax)
 
     plotting.set_fontsize(ax, 15)
+
+    # Fill between
+    alpha=0.3
+    ax.fill_between([500., 750.], 0, ymax, color='red', alpha=alpha)
+    ax.fill_between([350., 450.], 0, ymax, color='blue', alpha=alpha)
+
+    # Add text
+    yl1, yl2 = 0.075, 0.07
+    x1, x2 = 505., 445.
+    # Red
+    ax.text(x1, yl1, r'$a_w \gg a_{nw}$', fontsize=15, ha='left')
+    ax.text(x1, yl2, r'$b_{b,nw} \approx b_{b,w}$', fontsize=15, ha='left')
+
+    ax.text(x2, yl1, r'$b_{b,w} \gg b_{b,nw}$', fontsize=15, ha='right')
+    ax.text(x2, yl2, r'$a_{nw} > a_{w}$', fontsize=15, ha='right')
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
@@ -691,9 +731,15 @@ def main(flg):
     if flg == 1:
         fig_u()
 
+    # Spectra
+    if flg == 2:
+        fig_spectra(170, bbscl=20)
+
     # Indiv
     if flg == 10:
-        fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True) 
+        #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True)
+        fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True,
+                     use_LM=True)
 
 # Command line execution
 if __name__ == '__main__':

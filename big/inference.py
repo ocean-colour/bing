@@ -80,7 +80,11 @@ def fit_one(items:list, models:list=None, pdict:dict=None, chains_only:bool=Fals
 
     Args:
         models (list): The list of model objects, a_nw, bb_nw
-        items (list): A list containing the input data, errors, response data, and index.
+        items (list): A list containing the 
+            Rrs (numpy.ndarray): The reflectance data.
+            varRrs (numpy.ndarray): The variance of the reflectance data.
+            params (numpy.ndarray): The initial guess for the parameters.
+            idx (int): The index of the item.
         pdict (dict, optional): A dictionary containing the model and fitting parameters. Defaults to None.
         chains_only (bool, optional): If True, only the chains are returned. Defaults to False.
 
@@ -88,12 +92,12 @@ def fit_one(items:list, models:list=None, pdict:dict=None, chains_only:bool=Fals
         tuple: A tuple containing the MCMC sampler object and the index.
     """
     # Unpack
-    Rs, varRs, params, idx = items
+    Rrs, varRrs, params, idx = items
 
     # Run
     print(f"idx={idx}")
     sampler = run_emcee(
-        models, Rs, varRs,
+        models, Rrs, varRrs,
         nwalkers=pdict['nwalkers'],
         nsteps=pdict['nsteps'],
         nburn=pdict['nburn'],

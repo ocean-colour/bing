@@ -11,6 +11,7 @@ from big.models import anw as big_anw
 from big.models import bbnw as big_bbnw
 from big import inference as big_inf
 from big import rt as big_rt
+from big import chisq_fit
 
 from IPython import embed
 
@@ -19,7 +20,7 @@ import anly_utils
 def fit_one(model_names:list, idx:int, n_cores=20, 
             wstep:int=1,
             nsteps:int=10000, nburn:int=1000, 
-            scl_noise:float=0.02,
+            scl_noise:float=0.02, use_chisq:bool=False,
             scl:float=None,  # Scaling for the priors
             add_noise:bool=False):
 
@@ -65,13 +66,22 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     # Set the items
     items = [(gordon_Rrs, varRrs, p0, idx)]
 
-    # Fit
-    chains, idx = big_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
-
-    # Save
     outfile = anly_utils.chain_filename(model_names, scl_noise, add_noise, idx=idx)
-    anly_utils.save_fits(chains, idx, outfile,
+    if not use_chisq:
+        # Fit
+        chains, idx = big_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
+
+        # Save
+        anly_utils.save_fits(chains, idx, outfile,
               extras=dict(wave=wave, obs_Rrs=gordon_Rrs, varRrs=varRrs))
+    else:
+        # Fit
+        ans, cov, idx = chisq_fit.fit(items[0], models)
+        # Save
+        outfile = outfile.replace('BIG', 'BIG_LM')
+        np.savez(outfile, ans=ans, cov=cov,
+              wave=wave, obs_Rrs=gordon_Rrs, varRrs=varRrs)
+        print(f"Saved: {outfile}")
 
 
 def main(flg):
@@ -92,6 +102,9 @@ def main(flg):
         fit_one(['Exp', 'Cst'], idx=idx, nsteps=80000, nburn=8000) 
         fit_one(['Exp', 'Pow'], idx=idx, nsteps=10000, nburn=1000) 
 
+    # chisq fits
+    if flg == 4:
+        fit_one(['Exp', 'Pow'], idx=170, use_chisq=True)
 
 # Command line execution
 if __name__ == '__main__':
