@@ -19,6 +19,7 @@ def fit(model_names:list,
         prior_approach:str='log',
         nsteps=80000, nburn=8000,
         use_chisq:bool=False,
+        max_wave:float=None,
         scl_noise:float=0.02, add_noise:bool=False,
         n_cores:int=20, wstep:int=1, debug:bool=False): 
     """
@@ -38,7 +39,13 @@ def fit(model_names:list,
     """
     # Load L23
     ds = loisel23.load_ds(4,0)
-    wave = ds.Lambda.data[::wstep]
+    if max_wave is not None:
+        imax = np.argmin(np.abs(ds.Lambda.data - max_wave))
+        iwave = np.arange(imax)
+    else:
+        iwave = np.arange(ds.Lambda.size)
+
+    wave = ds.Lambda.data[iwave][::wstep]
 
     # Init the models
     anw_model = big_anw.init_model(model_names[0], wave, prior_approach)
@@ -64,7 +71,8 @@ def fit(model_names:list,
     params = []
     for ss in idx:
         odict = anly_utils.prep_l23_data(
-            ss, scl_noise=scl_noise, step=wstep, ds=ds)
+            ss, scl_noise=scl_noise, step=wstep, ds=ds,
+            max_wave=max_wave)
         # Rrs
         gordon_Rrs = big_rt.calc_Rrs(odict['a'][::wstep], 
                                  odict['bb'][::wstep])
@@ -90,6 +98,7 @@ def fit(model_names:list,
     outfile = anly_utils.chain_filename(
         model_names, scl_noise, add_noise)
 
+    # Fit
     if use_chisq:
         all_ans = []
         all_cov = []
@@ -103,7 +112,8 @@ def fit(model_names:list,
         # Save
         outfile = outfile.replace('BIG', 'BIG_LM')
         np.savez(outfile, ans=all_ans, cov=all_cov,
-              wave=wave, obs_Rrs=Rrs, varRrs=varRrs)
+              wave=wave, obs_Rrs=Rrs, varRrs=varRrs,
+              idx=all_idx)
     else:
         all_samples, all_idx = big_inf.fit_batch(
             models, pdict, items, n_cores=n_cores)
@@ -178,9 +188,9 @@ def main(flg):
 
     # Full L23 with LM; constant relative error
     if flg == 3:
-        fit(['Cst', 'Cst'], use_chisq=True)
-        fit(['Exp', 'Cst'], use_chisq=True)
-        fit(['Exp', 'Pow'], use_chisq=True)
+        fit(['Cst', 'Cst'], use_chisq=True, max_wave=700.)
+        fit(['Exp', 'Cst'], use_chisq=True, max_wave=700.)
+        fit(['Exp', 'Pow'], use_chisq=True, max_wave=700.)
 
 # Command line execution
 if __name__ == '__main__':
