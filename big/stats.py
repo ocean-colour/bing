@@ -19,11 +19,12 @@ def calc_chisq(model_Rrs:np.ndarray, gordon_Rrs:np.ndarray, scl_noise:float):
 
 def calc_BICs(gordon_Rrs:np.ndarray, models:list, params:np.ndarray, 
               scl_noise:float, use_LM:bool=False,
-              debug:bool=False):
+              debug:bool=False, Chl:np.ndarray=None):
     """ Calculate the Bayesian Information Criterion """
     
     if use_LM:
-        model_Rrs, _, _ = big_eval.reconstruct_chisq_fits(models, params)
+        model_Rrs, _, _ = big_eval.reconstruct_chisq_fits(
+            models, params, Chl=Chl)
     else:
         raise ValueError("Not ready for MCMC yet")
 

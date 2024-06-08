@@ -53,15 +53,18 @@ def reconstruct_from_chains(models:list, chains, burn=7000, thin=1):
     return a_mean, bb_mean, a_5, a_95, bb_5, bb_95, Rrs, sigRs 
 
 
-def reconstruct_chisq_fits(models:list, params:np.ndarray):
+def reconstruct_chisq_fits(models:list, params:np.ndarray,
+                           Chl:np.ndarray=None):
     """
     Reconstructs the parameters and calculates statistics from chisq fits.
 
     Parameters:
         - models (list): A list of model objects.
-        - items (ndarray): An array of the best-fit paramerers
+        - params (ndarray): An array of the best-fit paramerers
             if ndim==1, then it is one fit
             if ndim==2, then it is an (nfits, nparams) array of fits
+        - Chl (ndarray): The chlorophyll values to use for the fits. Default is None.
+
 
     Returns:
         - a_mean (ndarray): The mean of the parameter 'a' across the fits.
@@ -82,7 +85,9 @@ def reconstruct_chisq_fits(models:list, params:np.ndarray):
     if params.ndim == 1:
         params = params.reshape(1, -1)
 
-    for param in params:
+    for ss, param in enumerate(params):
+        if models[0].name == 'ExpBricaud':
+            models[0].set_aph(Chl[ss])
         model_Rrs, a_mean, bb_mean = chisq_fit.fit_func(
             models[0].wave, *param, models=models, return_full=True)
         # Save

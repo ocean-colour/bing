@@ -69,6 +69,7 @@ def fit(model_names:list,
     Rrs = []
     varRrs = []
     params = []
+    Chls = []
     for ss in idx:
         odict = anly_utils.prep_l23_data(
             ss, scl_noise=scl_noise, step=wstep, ds=ds,
@@ -81,11 +82,16 @@ def fit(model_names:list,
         ivarRrs = (scl_noise * gordon_Rrs)**2
         varRrs.append(ivarRrs)
         # Params
+        if models[0].name == 'ExpBricaud':
+            models[0].set_aph(odict['Chl'])
+
         p0_a = anw_model.init_guess(odict['anw'][::wstep])
         p0_b = bbnw_model.init_guess(odict['bbnw'][::wstep])
         p0 = np.concatenate((np.log10(np.atleast_1d(p0_a)), 
                          np.log10(np.atleast_1d(p0_b))))
         params.append(p0)
+        # Others
+        Chls.append(odict['Chl'])
     # Arrays
     Rrs = np.array(Rrs)
     params = np.array(params)
@@ -105,6 +111,8 @@ def fit(model_names:list,
         all_idx = []
         # Fit
         for item in items:
+            if models[0].name == 'ExpBricaud':
+                models[0].set_aph(Chls[item[3]])
             ans, cov, idx = chisq_fit.fit(item, models)
             all_ans.append(ans)
             all_cov.append(cov)
@@ -113,8 +121,9 @@ def fit(model_names:list,
         outfile = outfile.replace('BIG', 'BIG_LM')
         np.savez(outfile, ans=all_ans, cov=all_cov,
               wave=wave, obs_Rrs=Rrs, varRrs=varRrs,
-              idx=all_idx)
+              idx=all_idx, Chl=Chls)
     else:
+        embed(header='fit 116; need to deal with Chl')
         all_samples, all_idx = big_inf.fit_batch(
             models, pdict, items, n_cores=n_cores)
         # Save
@@ -191,6 +200,7 @@ def main(flg):
         fit(['Cst', 'Cst'], use_chisq=True, max_wave=700.)
         fit(['Exp', 'Cst'], use_chisq=True, max_wave=700.)
         fit(['Exp', 'Pow'], use_chisq=True, max_wave=700.)
+        fit(['ExpBricaud', 'Pow'], use_chisq=True, max_wave=700.)
 
 # Command line execution
 if __name__ == '__main__':

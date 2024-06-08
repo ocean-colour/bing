@@ -130,6 +130,7 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     chain_file, noises, noise_lbl = get_chain_file(
         model_names, scl_noise, add_noise, idx, use_LM=use_LM,
         full_LM=full_LM)
+    print(f'Loading: {chain_file}')
     d_chains = np.load(chain_file)
 
 
@@ -162,6 +163,8 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     # Interpolate
     aw_interp = np.interp(wave, wave_true, aw)
     bbw_interp = np.interp(wave, wave_true, bbw)
+
+    #embed(header='figs 167')
 
     # Reconstruc
     if use_LM:
@@ -649,9 +652,9 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
 
     Bdict = {}
 
-    s2ns = [0.02, 0.05, 0.10, 0.2, 0.5]
+    s2ns = [0.02, 0.05, 0.10, 0.2]
     # Loop on the models
-    for k in [3,4]:#,5]:
+    for k in [3,4,5]:
         Bdict[k] = []
 
         # Model names
@@ -659,12 +662,15 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
             model_names = ['Exp', 'Cst']
         elif k == 4:
             model_names = ['Exp', 'Pow']
+        elif k == 5:
+            model_names = ['ExpBricaud', 'Pow']
         else:
             raise ValueError("Bad k")
 
         chain_file, noises, noise_lbl = get_chain_file(
             model_names, 0.02, False, 'L23', use_LM=use_LM)
         d_chains = np.load(chain_file)
+        print(f'Loaded: {chain_file}')
         wave = d_chains['wave']
 
         # Init the models
@@ -678,8 +684,10 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
             sv_idx = []
         for s2n in s2ns:
             # Calculate BIC
-            BICs = big_stats.calc_BICs(d_chains['obs_Rrs'], models, d_chains['ans'],
-                                s2n, use_LM=use_LM, debug=False)
+            BICs = big_stats.calc_BICs(
+                d_chains['obs_Rrs'], models, d_chains['ans'],
+                            s2n, use_LM=use_LM, debug=False,
+                            Chl=d_chains['Chl'])
             Bdict[k].append(BICs)
             # 
             if k == 3:
@@ -691,22 +699,34 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
                             
     # Generate a pandas table
     D_BIC_34 = Bdict[3] - Bdict[4]
+    D_BIC_45 = Bdict[4] - Bdict[5]
 
     #embed(header='690 of fig_all_bic')
 
     fig = plt.figure(figsize=(14,6))
     plt.clf()
     gs = gridspec.GridSpec(1,2)
-    ax34=plt.subplot(gs[0])
 
+    nbins = 100
+    # 34
+    ax34=plt.subplot(gs[0])
     for ss, s2n in enumerate(s2ns):
-        ax34.hist(D_BIC_34[ss], bins=50, 
+        ax34.hist(D_BIC_34[ss], bins=nbins,
                   histtype='step', 
                   fill=None, label=f's2n={s2n}',
                   linewidth=3)
     ax34.set_xlabel(r'$\Delta \, \rm BIC_{34}$')
 
-    for ax in [ax34]:
+    # 45
+    ax45=plt.subplot(gs[1])
+    for ss, s2n in enumerate(s2ns):
+        ax45.hist(D_BIC_45[ss], bins=nbins,
+                  histtype='step', 
+                  fill=None, label=f's2n={s2n}',
+                  linewidth=3)
+    ax45.set_xlabel(r'$\Delta \, \rm BIC_{45}$')
+
+    for ax in [ax34, ax45]:
         ax.set_ylabel('Density')
         ax.grid(True)
         plotting.set_fontsize(ax, 15)
@@ -846,8 +866,10 @@ def main(flg):
         #fig_mcmc_fit(['Exp', 'Cst'], idx=3315, log_Rrs=True, use_LM=True)
         #fig_mcmc_fit(['Exp', 'Pow'], idx=3315, log_Rrs=True, use_LM=True)
         #fig_mcmc_fit(['Cst', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
+        fig_mcmc_fit(['Exp', 'Pow'], idx=170, 
+                     log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
         fig_mcmc_fit(['ExpBricaud', 'Pow'], idx=170, 
-                     log_Rrs=True, use_LM=True, full_LM=False)
+                     log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
 
 # Command line execution
 if __name__ == '__main__':
