@@ -11,7 +11,7 @@ from abc import ABCMeta
 from big import priors as big_priors
 from big.models import functions
 
-def init_model(model_name:str, wave:np.ndarray, prior_choice:str):
+def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
     """
     Initialize a model for non-water absorption
 
@@ -24,9 +24,9 @@ def init_model(model_name:str, wave:np.ndarray, prior_choice:str):
         bbNWModel: The model
     """
     if model_name == 'Pow':
-        return bbNWPow(wave, prior_choice)
+        return bbNWPow(wave, prior_dicts)
     elif model_name == 'Cst':
-        return bbNWCst(wave, prior_choice)
+        return bbNWCst(wave, prior_dicts)
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
@@ -66,7 +66,7 @@ class bbNWModel:
     """
 
 
-    def __init__(self, wave:np.ndarray, prior_choice:str):
+    def __init__(self, wave:np.ndarray, prior_dicts:list):
         self.wave = wave
         self.internals = {}
 
@@ -74,7 +74,8 @@ class bbNWModel:
         self.init_bbw()
 
         # Set priors
-        self.priors = big_priors.Priors(prior_choice, self.nparam)
+        if prior_dicts is not None:
+            self.priors = big_priors.Priors(prior_dicts)
 
     def init_bbw(self):
         """
@@ -154,8 +155,8 @@ class bbNWCst(bbNWModel):
     name = 'Cst'
     nparam = 1
 
-    def __init__(self, wave:np.ndarray, prior_choice:str):
-        bbNWModel.__init__(self, wave, prior_choice)
+    def __init__(self, wave:np.ndarray, prior_dicts:list):
+        bbNWModel.__init__(self, wave, prior_dicts)
 
     def init_guess(self, bb_nw:np.ndarray):
         """
@@ -184,8 +185,8 @@ class bbNWPow(bbNWModel):
     nparam = 2
     pivot = 600.
 
-    def __init__(self, wave:np.ndarray, prior_choice:str):
-        bbNWModel.__init__(self, wave, prior_choice)
+    def __init__(self, wave:np.ndarray, prior_dicts:list):
+        bbNWModel.__init__(self, wave, prior_dicts)
 
     def init_guess(self, bb_nw:np.ndarray):
         """

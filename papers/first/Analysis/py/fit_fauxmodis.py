@@ -30,9 +30,9 @@ def fit(model_names:list, Nspec:int=None,
 
     # Init the models
     anw_model = big_anw.init_model(
-        model_names[0], modis_wave, prior_approach)
+        model_names[0], modis_wave)
     bbnw_model = big_bbnw.init_model(
-        model_names[1], modis_wave, prior_approach)
+        model_names[1], modis_wave)
     models = [anw_model, bbnw_model]
     
     # Prep
@@ -98,9 +98,9 @@ def fit(model_names:list, Nspec:int=None,
         try:
             ans, cov, idx = chisq_fit.fit(item, models)
         except RuntimeError:
-            print("************"
+            print("*****************")
             print(f"Failed on {item[3]}")
-            print("************"
+            print("*****************")
             ans = np.zeros_like(prev_ans)
             cov = np.zeros_like(prev_cov)
         all_ans.append(ans)

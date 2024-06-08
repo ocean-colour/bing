@@ -90,6 +90,11 @@ class Priors:
     The priors for the model
     """
 
+    pdicts:list = None
+    """
+    The prior dictionaries
+    """
+
     def __init__(self, pdicts:list):
         self.nparam = len(pdicts)
         self.set_priors(pdicts)
@@ -106,5 +111,6 @@ class Priors:
                 raise ValueError(f"Unknown prior flavor: {pdict['flavor']}")
 
     def calc(self, params:np.ndarray):
+        prior_sum = 0.
         for kk,prior in enumerate(self.priors):
-            return prior.calc(params[kk])
+            prior_sum += prior.calc(params[kk])

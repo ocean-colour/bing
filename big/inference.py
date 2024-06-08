@@ -32,7 +32,7 @@ def log_prob(params, models:list, Rrs:np.ndarray, varRrs):
     a_prior = models[0].priors.calc(aparams)
     b_prior = models[1].priors.calc(bparams)
 
-    if a_prior or b_prior:
+    if np.any(np.isneginf([a_prior, b_prior])):
         return -np.inf
 
     # Proceed
@@ -49,7 +49,7 @@ def log_prob(params, models:list, Rrs:np.ndarray, varRrs):
     if np.isnan(prob):
         return -np.inf
     else:
-        return prob
+        return prob + a_prior + b_prior
 
 def init_mcmc(models:list, nsteps:int=10000, nburn:int=1000):
     """
