@@ -35,11 +35,20 @@ from IPython import embed
 
 
 def get_chain_file(model_names, scl_noise, add_noise, idx,
-                   use_LM=False):
+                   use_LM=False, full_LM=True, MODIS:bool=False):
     scl_noise = 0.02 if scl_noise is None else scl_noise
     noises = f'{int(100*scl_noise):02d}'
     noise_lbl = 'N' if add_noise else 'n'
-    chain_file = f'../Analysis/Fits/BIG_{model_names[0]}{model_names[1]}_{idx}_{noise_lbl}{noises}.npz'
+
+    if full_LM:
+        if MODIS:
+            cidx = 'M23'
+        else:
+            cidx = 'L23'
+    else:
+        cidx = str(idx)
+
+    chain_file = f'../Analysis/Fits/BIG_{model_names[0]}{model_names[1]}_{cidx}_{noise_lbl}{noises}.npz'
     # LM
     if use_LM:
         chain_file = chain_file.replace('BIG', 'BIG_LM')
@@ -115,17 +124,21 @@ def fig_u(outfile='fig_u.png'):
 def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                  outroot='fig_BIG_fit', show_bbnw:bool=True,
                  add_noise:bool=False, log_Rrs:bool=False,
-                 show_trueRrs:bool=False,
+                 full_LM:bool=True,
+                 show_trueRrs:bool=False, 
+                 max_wave:float=None,
                  wstep:int=1, use_LM:bool=False,
                  set_abblim:bool=True, scl_noise:float=None): 
 
     chain_file, noises, noise_lbl = get_chain_file(
-        model_names, scl_noise, add_noise, idx, use_LM=use_LM)
+        model_names, scl_noise, add_noise, idx, use_LM=use_LM,
+        full_LM=full_LM)
+    print(f'Loading: {chain_file}')
     d_chains = np.load(chain_file)
 
 
     # Load the data
-    odict = anly_utils.prep_l23_data(idx, step=wstep)
+    odict = anly_utils.prep_l23_data(idx, step=wstep, max_wave=max_wave)
     wave = odict['wave']
     Rrs = odict['Rrs']
     varRrs = odict['varRrs']
@@ -146,14 +159,24 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     bbnw_model = big_bbnw.init_model(model_names[1], wave, 'log')
     models = [anw_model, bbnw_model]
 
+    # Bricaud?
+    if models[0].name == 'ExpBricaud':
+        models[0].set_aph(odict['Chl'])
+
     # Interpolate
     aw_interp = np.interp(wave, wave_true, aw)
     bbw_interp = np.interp(wave, wave_true, bbw)
 
+    #embed(header='figs 167')
+
     # Reconstruc
     if use_LM:
+        if full_LM:
+            params = d_chains['ans'][idx]
+        else:
+            params = d_chains['ans']
         model_Rrs, a_mean, bb_mean = chisq_fit.fit_func(
-            wave, *d_chains['ans'], models=models, return_full=True)
+            wave, *params, models=models, return_full=True)
     else:
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
             model_Rrs, sigRs = anly_utils.reconstruct(
@@ -627,13 +650,14 @@ def fig_spectra(idx:int,
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
-def fig_all_bic(use_LM:bool=True, wstep:int=1,
-                outfile:str='fig_all_bic.png'):
+def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
+                outfile:str='fig_all_bic.png', MODIS:bool=False):
 
     Bdict = {}
-    
+
+    s2ns = [0.05, 0.10, 0.2]
     # Loop on the models
-    for k in [3,4]:#,5]:
+    for k in [3,4,5]:
         Bdict[k] = []
 
         # Model names
@@ -641,16 +665,17 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
             model_names = ['Exp', 'Cst']
         elif k == 4:
             model_names = ['Exp', 'Pow']
+        elif k == 5:
+            model_names = ['ExpBricaud', 'Pow']
         else:
             raise ValueError("Bad k")
 
         chain_file, noises, noise_lbl = get_chain_file(
-            model_names, 0.02, False, 'L23', use_LM=use_LM)
+            model_names, 0.02, False, 'L23', use_LM=use_LM,
+            MODIS=MODIS)
         d_chains = np.load(chain_file)
-
-        # Load data for wave
-        odict = anly_utils.prep_l23_data(170, step=wstep)
-        wave = odict['wave']
+        print(f'Loaded: {chain_file}')
+        wave = d_chains['wave']
 
         # Init the models
         anw_model = big_anw.init_model(model_names[0], wave, 'log')
@@ -660,30 +685,69 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
         # Loop on S/N
         if k == 3:
             sv_s2n = []
-        for s2n in [0.02, 0.03, 0.05, 0.07, 0.10, 0.5]:
+            sv_idx = []
+        for s2n in s2ns:
             # Calculate BIC
-            BICs = big_stats.calc_BICs(d_chains['obs_Rrs'], models, d_chains['ans'],
-                                s2n, use_LM=use_LM)
-            Bdict[k].append(BICs)
+            AICs, BICs = big_stats.calc_ICs(
+                d_chains['obs_Rrs'], models, d_chains['ans'],
+                            s2n, use_LM=use_LM, debug=False,
+                            Chl=d_chains['Chl'])
+            if show_AIC:
+                Bdict[k].append(AICs)
+            else:
+                Bdict[k].append(BICs)
             # 
             if k == 3:
                 sv_s2n += [s2n]*BICs.size
-        Bdict[k] = np.array(Bdict[k]).T
+                sv_idx += d_chains['idx'].tolist()
+        #embed(header='678 of fig_all_bic')
         # Concatenate
-        Bdict[k] = np.concatenate(Bdict[k])
+        Bdict[k] = np.array(Bdict[k])
                             
     # Generate a pandas table
     D_BIC_34 = Bdict[3] - Bdict[4]
-    df = pandas.DataFrame()
-    df['D_BIC'] = D_BIC_34
-    df['s2n'] = sv_s2n
-    
+    D_BIC_45 = Bdict[4] - Bdict[5]
+
+    # Trim junk in MODIS
+    if MODIS: 
+        D_BIC_45 = np.maximum(D_BIC_45, -5.)
+    #embed(header='690 of fig_all_bic')
 
     fig = plt.figure(figsize=(14,6))
     plt.clf()
     gs = gridspec.GridSpec(1,2)
 
-    sns.kdeplot(data=df, x="D_BIC", hue="s2n", ax=plt.subplot(gs[0]))
+    nbins = 100
+    # 34
+    ax34=plt.subplot(gs[0])
+    for ss, s2n in enumerate(s2ns):
+        ax34.hist(D_BIC_34[ss], bins=nbins,
+                  histtype='step', 
+                  fill=None, label=f's2n={s2n}',
+                  linewidth=3)
+    xlbl = 'AIC' if show_AIC else 'BIC'
+    ax34.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{34}$')
+
+    # 45
+    ax45=plt.subplot(gs[1])
+    for ss, s2n in enumerate(s2ns):
+        ax45.hist(D_BIC_45[ss], bins=nbins,
+                  histtype='step', 
+                  fill=None, label=f's2n={s2n}',
+                  linewidth=3)
+    ax45.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{45}$')
+
+    for ax in [ax34, ax45]:
+        ax.set_ylabel('Density')
+        ax.grid(True)
+        plotting.set_fontsize(ax, 15)
+        #
+        xmax = 30. if MODIS else 50.
+        ax.set_xlim(-5., xmax)
+        ax.legend(fontsize=14)
+        # Vertical line at 0
+        vline = 5. if show_AIC else 0.
+        ax.axvline(vline, color='k', linestyle='--', lw=2)
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
@@ -805,16 +869,29 @@ def main(flg):
     if flg == 2:
         fig_spectra(170, bbscl=20)
 
-    # BIC
+    # BIC/AIC for 70 + fixed relative error
     if flg == 4:
-        fig_all_bic()
+        fig_all_ic()
+        fig_all_ic(show_AIC=True, outfile='fig_all_aic.png')
+
+    # BIC/AIC for MODIS+L23
+    if flg == 5:
+        fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png')
+        #fig_all_ic(MODIS=True, show_AIC=True, 
+        #           outfile='fig_all_aic_MODIS.png')
 
     # LM fits
     if flg == 10:
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True)
-        fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True, use_LM=True)
-        fig_mcmc_fit(['Exp', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
-        fig_mcmc_fit(['Cst', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
+        #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True, use_LM=True)
+        #fig_mcmc_fit(['Exp', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
+        #fig_mcmc_fit(['Exp', 'Cst'], idx=3315, log_Rrs=True, use_LM=True)
+        #fig_mcmc_fit(['Exp', 'Pow'], idx=3315, log_Rrs=True, use_LM=True)
+        #fig_mcmc_fit(['Cst', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
+        fig_mcmc_fit(['Exp', 'Pow'], idx=170, 
+                     log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
+        fig_mcmc_fit(['ExpBricaud', 'Pow'], idx=170, 
+                     log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
 
 # Command line execution
 if __name__ == '__main__':

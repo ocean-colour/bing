@@ -56,7 +56,7 @@ def fit_func(wave:np.ndarray, *params, models:list=None,
     a = models[0].eval_a(aparams)
     bb = models[1].eval_bb(bparams)
 
-    pred = big_rt.calc_Rrs(a, bb) 
+    pred = big_rt.calc_Rrs(a, bb)
     #embed(header='fit_func 33')
 
     if return_full:
