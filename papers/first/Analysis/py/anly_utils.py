@@ -10,7 +10,7 @@ from big import rt as big_rt
 from IPython import embed
 
 def chain_filename(model_names:list, scl_noise, add_noise,
-                       idx:int=None, MODIS:bool=False): 
+                       idx:int=None, MODIS:bool=False, PACE:bool=False): 
     outfile = f'../Analysis/Fits/BIG_{model_names[0]}{model_names[1]}'
 
     if idx is not None:
@@ -18,6 +18,8 @@ def chain_filename(model_names:list, scl_noise, add_noise,
     else:
         if MODIS:
             outfile += '_M23'
+        elif PACE:
+            outfile += '_P23'
         else:
             outfile += '_L23'
     if add_noise:

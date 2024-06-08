@@ -6,7 +6,8 @@ from big.satellites import modis as big_modis
 
 from IPython import embed
 
-def calc_chisq(model_Rrs:np.ndarray, gordon_Rrs:np.ndarray, scl_noise:float):
+def calc_chisq(model_Rrs:np.ndarray, gordon_Rrs:np.ndarray, scl_noise:float,
+               noise_term:np.ndarray=None):
     """
     Calculate the chi-square statistic for comparing model Rrs to Gordon Rrs.
 
@@ -19,10 +20,11 @@ def calc_chisq(model_Rrs:np.ndarray, gordon_Rrs:np.ndarray, scl_noise:float):
         np.ndarray: Array of chi-square values. one per sample
 
     """
-    if scl_noise in ['MODIS_Aqua']:
-        noise_term = big_modis.modis_aqua_error
-    else:
-        noise_term = scl_noise*gordon_Rrs
+    if noise_term is None:
+        if scl_noise in ['MODIS_Aqua']:
+            noise_term = big_modis.modis_aqua_error
+        else:
+            noise_term = scl_noise*gordon_Rrs
     # Generate the model Rrs
     ichi2 = ((model_Rrs - gordon_Rrs) / noise_term)**2
 
@@ -35,7 +37,8 @@ def calc_chisq(model_Rrs:np.ndarray, gordon_Rrs:np.ndarray, scl_noise:float):
 
 def calc_ICs(gordon_Rrs:np.ndarray, models:list, params:np.ndarray, 
               scl_noise:float, use_LM:bool=False,
-              debug:bool=False, Chl:np.ndarray=None):
+              debug:bool=False, Chl:np.ndarray=None,
+              noise_vector:np.ndarray=None):
     """ Calculate the Akaike and Bayesian Information Criterion
     
     Args:
@@ -58,8 +61,7 @@ def calc_ICs(gordon_Rrs:np.ndarray, models:list, params:np.ndarray,
         raise ValueError("Not ready for MCMC yet")
 
     # Calculate the chisq
-    chi2 = calc_chisq(model_Rrs, gordon_Rrs, scl_noise)
-
+    chi2 = calc_chisq(model_Rrs, gordon_Rrs, scl_noise, noise_term=noise_vector)
             
     nparm = np.sum([model.nparam for model in models])
 

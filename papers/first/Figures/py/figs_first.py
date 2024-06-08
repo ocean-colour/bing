@@ -26,6 +26,7 @@ from big.models import anw as big_anw
 from big.models import bbnw as big_bbnw
 from big import chisq_fit
 from big import stats as big_stats
+from big.satellites import pace as big_pace
 
 # Local
 sys.path.append(os.path.abspath("../Analysis/py"))
@@ -35,7 +36,8 @@ from IPython import embed
 
 
 def get_chain_file(model_names, scl_noise, add_noise, idx,
-                   use_LM=False, full_LM=True, MODIS:bool=False):
+                   use_LM=False, full_LM=True, MODIS:bool=False,
+                   PACE:bool=False):
     scl_noise = 0.02 if scl_noise is None else scl_noise
     noises = f'{int(100*scl_noise):02d}'
     noise_lbl = 'N' if add_noise else 'n'
@@ -43,6 +45,8 @@ def get_chain_file(model_names, scl_noise, add_noise, idx,
     if full_LM:
         if MODIS:
             cidx = 'M23'
+        elif PACE:
+            cidx = 'P23'
         else:
             cidx = 'L23'
     else:
@@ -651,13 +655,16 @@ def fig_spectra(idx:int,
     print(f"Saved: {outfile}")
 
 def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
-                outfile:str='fig_all_bic.png', MODIS:bool=False):
+                outfile:str='fig_all_bic.png', MODIS:bool=False,
+                PACE:bool=False):
 
     Bdict = {}
 
     s2ns = [0.05, 0.10, 0.2]
     if MODIS:
         s2ns += ['MODIS_Aqua']
+    elif PACE:
+        s2ns += ['PACE']
     # Loop on the models
     for k in [3,4,5]:
         Bdict[k] = []
@@ -674,7 +681,7 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
 
         chain_file, noises, noise_lbl = get_chain_file(
             model_names, 0.02, False, 'L23', use_LM=use_LM,
-            MODIS=MODIS)
+            MODIS=MODIS, PACE=PACE)
         d_chains = np.load(chain_file)
         print(f'Loaded: {chain_file}')
         wave = d_chains['wave']
@@ -684,16 +691,22 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
         bbnw_model = big_bbnw.init_model(model_names[1], wave)
         models = [anw_model, bbnw_model]
 
+
         # Loop on S/N
         if k == 3:
             sv_s2n = []
             sv_idx = []
         for s2n in s2ns:
+            if PACE and (s2n == 'PACE'):
+                noise_vector = big_pace.gen_noise_vector(anw_model.wave)
+            else:
+                noise_vector = None
             # Calculate BIC
             AICs, BICs = big_stats.calc_ICs(
                 d_chains['obs_Rrs'], models, d_chains['ans'],
                             s2n, use_LM=use_LM, debug=False,
-                            Chl=d_chains['Chl'])
+                            Chl=d_chains['Chl'],
+                            noise_vector=noise_vector)
             if show_AIC:
                 Bdict[k].append(AICs)
             else:
@@ -710,8 +723,8 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
     D_BIC_34 = Bdict[3] - Bdict[4]
     D_BIC_45 = Bdict[4] - Bdict[5]
 
-    # Trim junk in MODIS
-    if MODIS: 
+    # Trim junk in MODIS or PACE
+    if MODIS or PACE: 
         D_BIC_45 = np.maximum(D_BIC_45, -5.)
     #embed(header='690 of fig_all_bic')
 
@@ -881,6 +894,10 @@ def main(flg):
         fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png')
         #fig_all_ic(MODIS=True, show_AIC=True, 
         #           outfile='fig_all_aic_MODIS.png')
+
+    # BIC/AIC for PACE
+    if flg == 6:
+        fig_all_ic(PACE=True, outfile='fig_all_bic_PACE.png')
 
     # LM fits
     if flg == 10:
