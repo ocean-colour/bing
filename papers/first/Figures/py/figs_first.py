@@ -35,13 +35,16 @@ from IPython import embed
 
 
 def get_chain_file(model_names, scl_noise, add_noise, idx,
-                   use_LM=False, full_LM=True):
+                   use_LM=False, full_LM=True, MODIS:bool=False):
     scl_noise = 0.02 if scl_noise is None else scl_noise
     noises = f'{int(100*scl_noise):02d}'
     noise_lbl = 'N' if add_noise else 'n'
 
     if full_LM:
-        cidx = 'L23'
+        if MODIS:
+            cidx = 'M23'
+        else:
+            cidx = 'L23'
     else:
         cidx = str(idx)
 
@@ -648,7 +651,7 @@ def fig_spectra(idx:int,
     print(f"Saved: {outfile}")
 
 def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
-                outfile:str='fig_all_bic.png'):
+                outfile:str='fig_all_bic.png', MODIS:bool=False):
 
     Bdict = {}
 
@@ -668,7 +671,8 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
             raise ValueError("Bad k")
 
         chain_file, noises, noise_lbl = get_chain_file(
-            model_names, 0.02, False, 'L23', use_LM=use_LM)
+            model_names, 0.02, False, 'L23', use_LM=use_LM,
+            MODIS=MODIS)
         d_chains = np.load(chain_file)
         print(f'Loaded: {chain_file}')
         wave = d_chains['wave']
@@ -704,6 +708,9 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
     D_BIC_34 = Bdict[3] - Bdict[4]
     D_BIC_45 = Bdict[4] - Bdict[5]
 
+    # Trim junk in MODIS
+    if MODIS: 
+        D_BIC_45 = np.maximum(D_BIC_45, -5.)
     #embed(header='690 of fig_all_bic')
 
     fig = plt.figure(figsize=(14,6))
@@ -735,7 +742,8 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
         ax.grid(True)
         plotting.set_fontsize(ax, 15)
         #
-        ax.set_xlim(-5., 50)
+        xmax = 30. if MODIS else 50.
+        ax.set_xlim(-5., xmax)
         ax.legend(fontsize=14)
         # Vertical line at 0
         vline = 5. if show_AIC else 0.
@@ -861,10 +869,16 @@ def main(flg):
     if flg == 2:
         fig_spectra(170, bbscl=20)
 
-    # BIC
+    # BIC/AIC for 70 + fixed relative error
     if flg == 4:
         fig_all_ic()
         fig_all_ic(show_AIC=True, outfile='fig_all_aic.png')
+
+    # BIC/AIC for MODIS+L23
+    if flg == 5:
+        fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png')
+        #fig_all_ic(MODIS=True, show_AIC=True, 
+        #           outfile='fig_all_aic_MODIS.png')
 
     # LM fits
     if flg == 10:

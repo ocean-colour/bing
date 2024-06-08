@@ -10,13 +10,16 @@ from big import rt as big_rt
 from IPython import embed
 
 def chain_filename(model_names:list, scl_noise, add_noise,
-                       idx:int=None): 
+                       idx:int=None, MODIS:bool=False): 
     outfile = f'../Analysis/Fits/BIG_{model_names[0]}{model_names[1]}'
 
     if idx is not None:
         outfile += f'_{idx}'
     else:
-        outfile += '_L23'
+        if MODIS:
+            outfile += '_M23'
+        else:
+            outfile += '_L23'
     if add_noise:
         outfile += f'_N{int(100*scl_noise):02d}'
     else:

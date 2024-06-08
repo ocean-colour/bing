@@ -44,7 +44,7 @@ class aNWModel:
     """
     __metaclass__ = ABCMeta
 
-    name = None
+    name:str = None
     """
     The name of the model
     """

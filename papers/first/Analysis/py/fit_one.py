@@ -85,6 +85,8 @@ def fit_one(model_names:list, idx:int, n_cores=20,
         np.savez(outfile, ans=ans, cov=cov,
               wave=wave, obs_Rrs=gordon_Rrs, varRrs=varRrs)
         print(f"Saved: {outfile}")
+        #
+        return ans, cov
 
 
 def main(flg):
