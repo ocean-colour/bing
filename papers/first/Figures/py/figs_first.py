@@ -660,7 +660,7 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
         # Loop on S/N
         if k == 3:
             sv_s2n = []
-        for s2n in [0.02, 0.03, 0.05, 0.07, 0.10]:
+        for s2n in [0.02, 0.03, 0.05, 0.07, 0.10, 0.5]:
             # Calculate BIC
             BICs = big_stats.calc_BICs(d_chains['obs_Rrs'], models, d_chains['ans'],
                                 s2n, use_LM=use_LM)

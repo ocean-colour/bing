@@ -18,7 +18,7 @@ def calc_chisq(model_Rrs:np.ndarray, gordon_Rrs:np.ndarray, scl_noise:float):
 
 
 def calc_BICs(gordon_Rrs:np.ndarray, models:list, params:np.ndarray, 
-              scl_noise:float, use_LM:bool=False):
+              scl_noise:float, use_LM:bool=False, debug:bool=False):
     """ Calculate the Bayesian Information Criterion """
     
     if use_LM:
@@ -30,6 +30,9 @@ def calc_BICs(gordon_Rrs:np.ndarray, models:list, params:np.ndarray,
     chi2 = calc_chisq(model_Rrs, gordon_Rrs, scl_noise)
             
     nparm = np.sum([model.nparam for model in models])
+    if debug and np.isclose(scl_noise, 0.1):
+        embed(header="calc_BICs 34")
+
     BICs = nparm * np.log(model_Rrs.shape[1]) + chi2 
 
     # Return
