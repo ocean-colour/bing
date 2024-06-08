@@ -647,12 +647,12 @@ def fig_spectra(idx:int,
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
-def fig_all_bic(use_LM:bool=True, wstep:int=1,
+def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
                 outfile:str='fig_all_bic.png'):
 
     Bdict = {}
 
-    s2ns = [0.02, 0.05, 0.10, 0.2]
+    s2ns = [0.05, 0.10, 0.2]
     # Loop on the models
     for k in [3,4,5]:
         Bdict[k] = []
@@ -684,11 +684,14 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
             sv_idx = []
         for s2n in s2ns:
             # Calculate BIC
-            BICs = big_stats.calc_BICs(
+            AICs, BICs = big_stats.calc_ICs(
                 d_chains['obs_Rrs'], models, d_chains['ans'],
                             s2n, use_LM=use_LM, debug=False,
                             Chl=d_chains['Chl'])
-            Bdict[k].append(BICs)
+            if show_AIC:
+                Bdict[k].append(AICs)
+            else:
+                Bdict[k].append(BICs)
             # 
             if k == 3:
                 sv_s2n += [s2n]*BICs.size
@@ -715,7 +718,8 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
                   histtype='step', 
                   fill=None, label=f's2n={s2n}',
                   linewidth=3)
-    ax34.set_xlabel(r'$\Delta \, \rm BIC_{34}$')
+    xlbl = 'AIC' if show_AIC else 'BIC'
+    ax34.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{34}$')
 
     # 45
     ax45=plt.subplot(gs[1])
@@ -724,7 +728,7 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
                   histtype='step', 
                   fill=None, label=f's2n={s2n}',
                   linewidth=3)
-    ax45.set_xlabel(r'$\Delta \, \rm BIC_{45}$')
+    ax45.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{45}$')
 
     for ax in [ax34, ax45]:
         ax.set_ylabel('Density')
@@ -733,6 +737,9 @@ def fig_all_bic(use_LM:bool=True, wstep:int=1,
         #
         ax.set_xlim(-5., 50)
         ax.legend(fontsize=14)
+        # Vertical line at 0
+        vline = 5. if show_AIC else 0.
+        ax.axvline(vline, color='k', linestyle='--', lw=2)
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
@@ -856,7 +863,8 @@ def main(flg):
 
     # BIC
     if flg == 4:
-        fig_all_bic()
+        fig_all_ic()
+        fig_all_ic(show_AIC=True, outfile='fig_all_aic.png')
 
     # LM fits
     if flg == 10:
