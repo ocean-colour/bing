@@ -656,6 +656,8 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
     Bdict = {}
 
     s2ns = [0.05, 0.10, 0.2]
+    if MODIS:
+        s2ns += ['MODIS_Aqua']
     # Loop on the models
     for k in [3,4,5]:
         Bdict[k] = []
@@ -678,8 +680,8 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
         wave = d_chains['wave']
 
         # Init the models
-        anw_model = big_anw.init_model(model_names[0], wave, 'log')
-        bbnw_model = big_bbnw.init_model(model_names[1], wave, 'log')
+        anw_model = big_anw.init_model(model_names[0], wave)
+        bbnw_model = big_bbnw.init_model(model_names[1], wave)
         models = [anw_model, bbnw_model]
 
         # Loop on S/N

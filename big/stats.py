@@ -2,6 +2,7 @@
 import numpy as np
 
 from big import evaluate as big_eval
+from big.satellites import modis as big_modis
 
 from IPython import embed
 
@@ -18,8 +19,12 @@ def calc_chisq(model_Rrs:np.ndarray, gordon_Rrs:np.ndarray, scl_noise:float):
         np.ndarray: Array of chi-square values. one per sample
 
     """
+    if scl_noise in ['MODIS_Aqua']:
+        noise_term = big_modis.modis_aqua_error
+    else:
+        noise_term = scl_noise*gordon_Rrs
     # Generate the model Rrs
-    ichi2 = ((model_Rrs - gordon_Rrs) / (scl_noise * gordon_Rrs))**2
+    ichi2 = ((model_Rrs - gordon_Rrs) / noise_term)**2
 
     # Return
     if model_Rrs.ndim == 1:

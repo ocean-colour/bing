@@ -1,4 +1,10 @@
-""" Fit the full L23 dataset as MODIS """
+""" Fit the full L23 dataset as MODIS 
+
+MODIS error
+   https://oceancolor.gsfc.nasa.gov/resources/atbd/rrs/#sec_4
+
+"""
+
 import os
 import numpy as np
 
@@ -9,6 +15,7 @@ from big.models import bbnw as big_bbnw
 from big import inference as big_inf
 from big import rt as big_rt
 from big import chisq_fit
+from big.satellites import modis as big_modis
 
 import anly_utils 
 
@@ -25,7 +32,7 @@ def fit(model_names:list, Nspec:int=None,
     l23_wave = ds.Lambda.data
 
     # MODIS wavelengths
-    modis_wave = [412, 443, 469, 488, 531, 547, 555, 645, 667, 678, 748]# , 859, 869] # nm
+    modis_wave = big_modis.modis_wave #[412, 443, 469, 488, 531, 547, 555, 645, 667, 678, 748]# , 859, 869] # nm
     modis_wave = np.array(modis_wave)
 
     # Init the models
