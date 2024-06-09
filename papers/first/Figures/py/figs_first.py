@@ -33,6 +33,10 @@ import anly_utils
 
 from IPython import embed
 
+def gen_cb(img, lbl, csz = 17.):
+    cbaxes = plt.colorbar(img, pad=0., fraction=0.030)
+    cbaxes.set_label(lbl, fontsize=csz)
+    cbaxes.ax.tick_params(labelsize=csz)
 
 def get_chain_file(model_names, scl_noise, add_noise, idx,
                    use_LM=False, full_LM=True, MODIS:bool=False):
@@ -102,7 +106,7 @@ def fig_u(outfile='fig_u.png'):
         save_ans.append(ans)
 
     #
-    fig = plt.figure(figsize=(9,5))
+    fig = plt.figure(figsize=(8,5))
 
     plt.clf()
     ax = plt.gca()
@@ -110,17 +114,20 @@ def fig_u(outfile='fig_u.png'):
                                 ['purple', 'b','g', 'r'],
                                 [i370, i440, i500, i600],
                                 save_ans):
-        ax.scatter(u[:,idx], rrs[:,idx], color=clr, s=1., label=lbl)
+        ax.scatter(u[:,idx], rrs[:,idx], color=clr, s=1., label=r'$\lambda = $'+lbl)
         irrs = rrs_func(u[:,idx], ans[0], ans[1])
         usrt = np.argsort(u[:,idx])
-        ax.plot(u[usrt,idx], irrs[usrt], '-', color=clr, label=f'Fit: G0={ans[0]:0.2f}, G1={ans[1]:0.2f}')
+        ax.plot(u[usrt,idx], irrs[usrt], '-', color=clr, 
+                label=r'Fit: $G_1='+f'{ans[0]:0.2f},'+r'G_2='+f'{ans[1]:0.2f}'+r'$')
+
     # GIOP
     ax.plot(uval, rrs_GIOP, 'k--', label='Gordon')
     #
-    ax.set_xlabel(r'$u_\lambda$')
-    ax.set_ylabel(r'$r_{\rm rs}$')
-    ax.legend(fontsize=12)
-    plotting.set_fontsize(ax, 13.)
+    ax.set_xlabel(r'$u(\lambda)$')
+    ax.set_ylabel(r'$r_{\rm rs} (\lambda)$')
+    ax.legend(fontsize=11)
+    plotting.set_fontsize(ax, 15.)
+    
     #
     #plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
@@ -152,8 +159,9 @@ def fig_Kd(outfile='fig_Kd.png'):
     aph = ds.aph.data
 
     Kd = ds_profile.KEd_z[1,:,:]
-    xscat = a[:,idx] + 4.18 * (1-0.52*np.exp(-10.8*a[:,idx]))*bb[:,idx]
-    embed(header='figs 167')
+    #xscat = a[:,idx] + 4.18 * (1-0.52*np.exp(-10.8*a[:,idx]))*bb[:,idx]
+    xscat = a + 4.18 * (1-0.52*np.exp(-10.8*a))*bb
+    sclr = np.outer(np.ones(Rrs.shape[0]), wave)
 
 
     # Select wavelengths
@@ -167,23 +175,27 @@ def fig_Kd(outfile='fig_Kd.png'):
     # Calculate Kd
 
     #
-    fig = plt.figure(figsize=(9,5))
+    fig = plt.figure(figsize=(7,5))
 
     plt.clf()
     ax = plt.gca()
-    ax.scatter(u[:,idx], rrs[:,idx], color=clr, s=1., label=lbl)
-        irrs = rrs_func(u[:,idx], ans[0], ans[1])
-        usrt = np.argsort(u[:,idx])
-        ax.plot(u[usrt,idx], irrs[usrt], '-', color=clr, label=f'Fit: G0={ans[0]:0.2f}, G1={ans[1]:0.2f}')
-    # GIOP
-    ax.plot(uval, rrs_GIOP, 'k--', label='Gordon')
+
+    sc = ax.scatter(xscat, Kd, c=sclr, s=1., cmap='jet')
+    gen_cb(sc, 'Wavelength (nm)')
+
     #
-    ax.set_xlabel(r'$u_\lambda$')
-    ax.set_ylabel(r'$r_{\rm rs}$')
-    ax.legend(fontsize=12)
-    plotting.set_fontsize(ax, 13.)
+    ax.set_xlabel(r'Lee+2002 $K_d(a,b_b)$ ordinate')
+    ax.set_ylabel(r'$K_d$')
+    #ax.legend(fontsize=12)
+
+    # Add a 1-1 line using the axis limits
+    axlim = ax.get_xlim()
+    ax.plot(axlim, axlim, 'k--')
+
+
+    plotting.set_fontsize(ax, 15.)
     #
-    #plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
@@ -724,60 +736,22 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
     Bdict = {}
 
     s2ns = [0.05, 0.10, 0.2]
-    # Loop on the models
-    for k in [3,4,5]:
-        Bdict[k] = []
+    ks = [3,4,5]
 
-        # Model names
-        if k == 3:
-            model_names = ['Exp', 'Cst']
-        elif k == 4:
-            model_names = ['Exp', 'Pow']
-        elif k == 5:
-            model_names = ['ExpBricaud', 'Pow']
-        else:
-            raise ValueError("Bad k")
+    if MODIS:
+        s2ns += ['MODIS_Aqua']
+    elif PACE:
+        s2ns += ['PACE']
 
-        chain_file, noises, noise_lbl = get_chain_file(
-            model_names, 0.02, False, 'L23', use_LM=use_LM,
-            MODIS=MODIS)
-        d_chains = np.load(chain_file)
-        print(f'Loaded: {chain_file}')
-        wave = d_chains['wave']
-
-        # Init the models
-        anw_model = big_anw.init_model(model_names[0], wave, 'log')
-        bbnw_model = big_bbnw.init_model(model_names[1], wave, 'log')
-        models = [anw_model, bbnw_model]
-
-        # Loop on S/N
-        if k == 3:
-            sv_s2n = []
-            sv_idx = []
-        for s2n in s2ns:
-            # Calculate BIC
-            AICs, BICs = big_stats.calc_ICs(
-                d_chains['obs_Rrs'], models, d_chains['ans'],
-                            s2n, use_LM=use_LM, debug=False,
-                            Chl=d_chains['Chl'])
-            if show_AIC:
-                Bdict[k].append(AICs)
-            else:
-                Bdict[k].append(BICs)
-            # 
-            if k == 3:
-                sv_s2n += [s2n]*BICs.size
-                sv_idx += d_chains['idx'].tolist()
-        #embed(header='678 of fig_all_bic')
-        # Concatenate
-        Bdict[k] = np.array(Bdict[k])
-                            
+    Adict, Bdict = anly_utils.calc_ICs(
+        ks, s2ns, use_LM=use_LM, MODIS=MODIS, PACE=PACE)
+        
     # Generate a pandas table
     D_BIC_34 = Bdict[3] - Bdict[4]
     D_BIC_45 = Bdict[4] - Bdict[5]
 
     # Trim junk in MODIS
-    if MODIS: 
+    if MODIS or PACE: 
         D_BIC_45 = np.maximum(D_BIC_45, -5.)
     #embed(header='690 of fig_all_bic')
 
@@ -948,8 +922,19 @@ def main(flg):
         #fig_all_ic(MODIS=True, show_AIC=True, 
         #           outfile='fig_all_aic_MODIS.png')
 
-    # LM fits
+    # BIC/AIC for PACE
+    if flg == 6:
+        fig_all_ic(PACE=True, outfile='fig_all_bic_PACE.png')
+
+    # Supp
     if flg == 10:
+        fig_u()
+
+    if flg == 11:
+        fig_Kd()
+
+    # LM fits
+    if flg == 30:
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True)
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True, use_LM=True)
         #fig_mcmc_fit(['Exp', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
@@ -960,6 +945,8 @@ def main(flg):
                      log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
         fig_mcmc_fit(['ExpBricaud', 'Pow'], idx=170, 
                      log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
+
+
 
 # Command line execution
 if __name__ == '__main__':

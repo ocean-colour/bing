@@ -1,5 +1,6 @@
 """ Models for non-water absorption """
 import numpy as np
+import warnings
 
 from abc import ABCMeta
 
@@ -8,30 +9,33 @@ from scipy.interpolate import interp1d
 from oceancolor.water import absorption as water_abs
 from oceancolor.ph import absorption as ph_absorption
 
-from big import priors as big_priors
+from ihop.iops import io as iops_io
 
+from big import priors as big_priors
 from big.models import functions
 
 from IPython import embed
 
-def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
+def init_model(model_name:str, wave:np.ndarray, prior_choice:str):
     """
     Initialize a model for non-water absorption
 
     Args:
         model_name (str): The name of the model
         wave (np.ndarray): The wavelengths
-        prior_dicts (list): The choice of priors
+        prior_choice (str): The choice of priors
 
     Returns:
         aNWModel: The model
     """
     if model_name == 'Exp':
-        return aNWExp(wave, prior_dicts)
+        return aNWExp(wave, prior_choice)
     elif model_name == 'Cst':
-        return aNWCst(wave, prior_dicts)
+        return aNWCst(wave, prior_choice)
     elif model_name == 'ExpBricaud':
-        return aNWExpBricaud(wave, prior_dicts)
+        return aNWExpBricaud(wave, prior_choice)
+    elif model_name == 'ExpNMF':
+        return aNWExpNMF(wave, prior_choice)
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
@@ -68,13 +72,17 @@ class aNWModel:
     Pivot wavelength 
     """
 
+    prior_approach:str = None
+    """
+    Approach to priors
+    """
 
     priors:big_priors.Priors = None
     """
     The priors for the model
     """
 
-    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
+    def __init__(self, wave:np.ndarray, prior_choice:str):
         self.wave = wave
         self.internals = {}
 
@@ -82,8 +90,7 @@ class aNWModel:
         self.init_aw()
 
         # Set priors
-        if prior_dicts is not None:
-            self.priors = big_priors.Priors(prior_dicts)
+        self.priors = big_priors.Priors(prior_choice, self.nparam)
 
     def init_aw(self, data:str='IOCCG'):
         """
@@ -120,7 +127,12 @@ class aNWModel:
             return functions.exponential(self.wave, params, pivot=self.pivot)
         elif self.name == 'ExpBricaud':
             a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
-            a_ph = functions.gen_basis(params[...,-1:], self.a_ph)
+            a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
+            return a_dg + a_ph
+        elif self.name == 'ExpNMF':
+            a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
+            a_ph = functions.gen_basis(params[...,-2:], 
+                                       [self.W1, self.W2])
             return a_dg + a_ph
         else:
             raise ValueError(f"Unknown model: {self.name}")
@@ -156,8 +168,8 @@ class aNWCst(aNWModel):
     name = 'Cst'
     nparam = 1
 
-    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
-        aNWModel.__init__(self, wave, prior_dicts)
+    def __init__(self, wave:np.ndarray, prior_choice:str):
+        aNWModel.__init__(self, wave, prior_choice)
 
     def init_guess(self, a_nw:np.ndarray):
         """
@@ -186,8 +198,8 @@ class aNWExp(aNWModel):
     nparam = 2
     pivot = 400.
 
-    def __init__(self, wave:np.ndarray, pdicts:list=None):
-        aNWModel.__init__(self, wave, pdicts)
+    def __init__(self, wave:np.ndarray, prior_choice:str):
+        aNWModel.__init__(self, wave, prior_choice)
 
     def init_guess(self, a_nw:np.ndarray):
         """
@@ -206,7 +218,7 @@ class aNWExp(aNWModel):
 
 class aNWExpBricaud(aNWModel):
     """
-    Exponential model + aph for non-water absorption
+    Exponential model + Bricaud aph for non-water absorption
         adg = Adg * exp(-Sdg*(wave-400))
         aph = A_B * chlA**B_B
 
@@ -217,7 +229,7 @@ class aNWExpBricaud(aNWModel):
     nparam = 3
     pivot = 400.
 
-    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
+    def __init__(self, wave:np.ndarray, prior_choice:str):
         aNWModel.__init__(self, wave, prior_dicts)
 
     def set_aph(self, Chla):
@@ -251,5 +263,53 @@ class aNWExpBricaud(aNWModel):
         """
         i400 = np.argmin(np.abs(self.wave-400))
         p0_a = np.array([a_nw[i400]/2., 0.017, a_nw[i400]/2.])
+        # Return
+        return p0_achoice
+
+class aNWExpNMF(aNWModel):
+    """
+    Exponential model + NMF aph for non-water absorption
+        adg = Adg * exp(-Sdg*(wave-400))
+        aph = H1*W1 + H2*W2
+
+    """
+    name = 'ExpNMF'
+    nparam = 4
+    pivot = 400.
+
+    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
+        aNWModel.__init__(self, wave, prior_dicts)
+
+        # Set the basis functions
+        self.set_w1w2()
+
+    def set_w1w2(self):
+        warnings.warn("Need to remove the dependency on IHOP")
+
+        # ##################################
+        # NMF for aph
+        # Load the decomposition of aph
+        aph_file = iops_io.loisel23_filename('nmf', 'aph', 2, 4, 0)
+        d_aph = np.load(aph_file)
+        NMF_W1=d_aph['M'][0][::2]
+        NMF_W2=d_aph['M'][1][::2]
+
+        # Interpolate onto our wavelengths
+        self.W1 = np.interp(self.wave, d_aph['wave'], NMF_W1)
+        self.W2 = np.interp(self.wave, d_aph['wave'], NMF_W2)
+
+    def init_guess(self, a_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            a_nw (np.ndarray): The non-water absorption coefficient
+
+        Returns:
+            np.ndarray: The initial guess for the parameters
+        """
+        i400 = np.argmin(np.abs(self.wave-400))
+        p0_a = np.array([a_nw[i400]/2., 0.017, a_nw[i400]/4., 
+                         a_nw[i400]/4.])
         # Return
         return p0_a

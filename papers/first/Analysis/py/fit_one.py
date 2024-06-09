@@ -113,7 +113,8 @@ def main(flg):
         #fit_one(['Cst', 'Cst'], idx=170, use_chisq=True)
         #fit_one(['Exp', 'Cst'], idx=170, use_chisq=True)
         #fit_one(['Exp', 'Pow'], idx=170, use_chisq=True)
-        fit_one(['ExpBricaud', 'Pow'], idx=170, use_chisq=True)
+        #fit_one(['ExpBricaud', 'Pow'], idx=170, use_chisq=True)
+        fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True)
 
 # Command line execution
 if __name__ == '__main__':
