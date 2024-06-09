@@ -65,6 +65,8 @@ def fit(model_names:list, Nspec:int=None, scl_noise:float=0.02,
         # Params
         if models[0].name == 'ExpBricaud':
             models[0].set_aph(odict['Chl'])
+        if models[1].name == 'Lee':
+            models[1].set_Y(odict['Y'])
         # Interpolate
         PACE_Rrs = np.interp(PACE_wave, l23_wave, gordon_Rrs)
         PACE_a = np.interp(PACE_wave, l23_wave, odict['a'])
@@ -137,6 +139,10 @@ def main(flg):
         fit(['Exp', 'Cst'])
         fit(['Exp', 'Pow'])
         fit(['ExpBricaud', 'Pow'])
+
+    # GIOP
+    if flg == 3:
+        fit(['ExpBricaud', 'Lee'])
 
 # Command line execution
 if __name__ == '__main__':

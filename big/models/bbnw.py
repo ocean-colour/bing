@@ -8,8 +8,8 @@ from oceancolor.hydrolight import loisel23
 
 from abc import ABCMeta
 
-from big import priors as big_priors
 from big.models import functions
+from big import priors as big_priors
 
 def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
     """
@@ -27,8 +27,11 @@ def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
         return bbNWPow(wave, prior_dicts)
     elif model_name == 'Cst':
         return bbNWCst(wave, prior_dicts)
+    elif model_name == 'Lee':
+        return bbNWLee(wave, prior_dicts)
     else:
         raise ValueError(f"Unknown model: {model_name}")
+
 
 
 class bbNWModel:
@@ -55,16 +58,15 @@ class bbNWModel:
     The backscattering of water
     """
 
-    prior_approach:str = None
-    """
-    Approach to priors
-    """
-
     priors:big_priors.Priors = None
     """
     The priors for the model
     """
 
+    basis_func:np.ndarray = None
+    """
+    The basis function for the model
+    """
 
     def __init__(self, wave:np.ndarray, prior_dicts:list):
         self.wave = wave
@@ -98,7 +100,6 @@ class bbNWModel:
         f = interp1d(wave, bbw, kind='linear', fill_value='extrapolate')
         self.bb_w = f(self.wave)
         
-
     def eval_bbnw(self, params:np.ndarray):
         """
         Evaluate the non-water backscattering coefficients
@@ -119,6 +120,8 @@ class bbNWModel:
             return functions.powerlaw(self.wave, params, pivot=self.pivot)
         elif self.name == 'Cst':
             return functions.constant(self.wave, params)
+        elif self.name == 'Lee':
+            return functions.gen_basis(params[...,-1:], [self.basis_func])
         else:
             raise ValueError(f"Unknown model: {self.name}")
 
@@ -143,7 +146,7 @@ class bbNWModel:
             bb_nw (np.ndarray): The non-water absorption coefficient
         """
 
-        
+
 class bbNWCst(bbNWModel):
     """
     Constant model for non-water scattering
@@ -198,8 +201,51 @@ class bbNWPow(bbNWModel):
         Returns:
             np.ndarray: The initial guess for the parameters
         """
-        i600 = np.argmin(np.abs(self.wave-600))
+        i600 = np.argmin(np.abs(self.wave-self.pivot))
         p0_b = np.array([bb_nw[i600], 1.])
 
         # Return
-        return p0_b
+        return p0_b 
+
+class bbNWLee(bbNWModel):
+    """
+    Power-law model for non-water backscattering
+
+        bb_nw = Bnw * (600/wave)^Y
+
+     with Y calculated from Lee+2002
+
+        Y = 2.2 * (1 - 1.2 * np.exp(-0.9 * rrs[440]/rrs[555]))
+
+    Attributes:
+
+    """
+    name = 'Lee'
+    nparam = 1
+    pivot = 600.
+
+    def __init__(self, wave:np.ndarray, prior_dicts:list):
+        bbNWModel.__init__(self, wave, prior_dicts)
+
+        # Lee+2002
+        self.Y = None
+
+    def set_Y(self, Y:float):
+        self.Y = Y
+        self.basis_func = (self.pivot/self.wave)**self.Y
+
+    def init_guess(self, bb_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            a_nw (np.ndarray): The non-water absorption coefficient
+
+        Returns:
+            np.ndarray: The initial guess for the parameters
+        """
+        i600 = np.argmin(np.abs(self.wave-self.pivot))
+        p0_b = np.array([bb_nw[i600], 1.])
+
+        # Return
+        return p0_b 
