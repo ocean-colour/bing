@@ -63,7 +63,7 @@ def fit(model_names:list, Nspec:int=None, scl_noise:float=0.02,
         # Rrs
         gordon_Rrs = big_rt.calc_Rrs(odict['a'], odict['bb'])
         # Params
-        if models[0].name == 'ExpBricaud':
+        if models[0].name in ['ExpBricaud', 'GIOP']:
             models[0].set_aph(odict['Chl'])
         if models[1].name == 'Lee':
             models[1].set_Y(odict['Y'])
@@ -140,9 +140,12 @@ def main(flg):
         fit(['Exp', 'Pow'])
         fit(['ExpBricaud', 'Pow'])
 
-    # GIOP
+    # GIOP variatns
     if flg == 3:
-        fit(['ExpBricaud', 'Lee'])
+        # GIOPm : Sdg allowed to vary
+        #fit(['ExpBricaud', 'Lee'])
+        # GIOP : Sdg fixed
+        fit(['GIOP', 'Lee'])
 
 # Command line execution
 if __name__ == '__main__':

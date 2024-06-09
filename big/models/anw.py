@@ -34,6 +34,8 @@ def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
         return aNWCst(wave, prior_dicts)
     elif model_name == 'ExpBricaud':
         return aNWExpBricaud(wave, prior_dicts)
+    elif model_name == 'GIOP':
+        return aNWGIOP(wave, prior_dicts)
     elif model_name == 'ExpNMF':
         return aNWExpNMF(wave, prior_dicts)
     else:
@@ -127,6 +129,10 @@ class aNWModel:
             return functions.exponential(self.wave, params, pivot=self.pivot)
         elif self.name == 'ExpBricaud':
             a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
+            a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
+            return a_dg + a_ph
+        elif self.name == 'GIOP':
+            a_dg = functions.exponential(self.wave, params, pivot=self.pivot, S=self.Sdg)
             a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
             return a_dg + a_ph
         elif self.name == 'ExpNMF':
@@ -230,6 +236,62 @@ class aNWExpBricaud(aNWModel):
 
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         aNWModel.__init__(self, wave, prior_dicts)
+
+    def set_aph(self, Chla):
+        # ##################################
+        # Bricaud
+        b1998 = ph_absorption.load_bricaud1998()
+
+        # Interpolate
+        f_b1998_A = interp1d(b1998['lambda'], b1998.Aphi, bounds_error=False, fill_value=0.)
+        f_b1998_E = interp1d(b1998['lambda'], b1998.Ephi, bounds_error=False, fill_value=0.)
+
+        # Apply
+        L23_A = f_b1998_A(self.wave)
+        L23_E = f_b1998_E(self.wave)
+
+        self.a_ph = L23_A * Chla**L23_E
+
+        # Normalize at 440
+        iwave = np.argmin(np.abs(self.wave-440))
+        self.a_ph /= self.a_ph[iwave]
+
+    def init_guess(self, a_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            a_nw (np.ndarray): The non-water absorption coefficient
+
+        Returns:
+            np.ndarray: The initial guess for the parameters
+        """
+        i400 = np.argmin(np.abs(self.wave-400))
+        p0_a = np.array([a_nw[i400]/2., 0.017, a_nw[i400]/2.])
+        # Return
+        return p0_a
+
+
+class aNWGIOP(aNWModel):
+    """
+    GIOP (Werdell+2013)
+    Exponential model with Sdg fixed + Bricaud aph for non-water absorption
+        adg = Adg * exp(-Sdg*(wave-400))
+            Sdg = 0.018
+        aph = A_B * chlA**B_B
+
+    Attributes:
+
+    """
+    name = 'GIOP'
+    nparam = 2
+    pivot = 400.
+
+    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
+        aNWModel.__init__(self, wave, prior_dicts)
+
+        # Sdg
+        self.Sdg = 0.018
 
     def set_aph(self, Chla):
         # ##################################
