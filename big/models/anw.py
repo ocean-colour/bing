@@ -16,26 +16,26 @@ from big.models import functions
 
 from IPython import embed
 
-def init_model(model_name:str, wave:np.ndarray, prior_choice:str):
+def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
     """
     Initialize a model for non-water absorption
 
     Args:
         model_name (str): The name of the model
         wave (np.ndarray): The wavelengths
-        prior_choice (str): The choice of priors
+        prior_dicts (list): The choice of priors
 
     Returns:
         aNWModel: The model
     """
     if model_name == 'Exp':
-        return aNWExp(wave, prior_choice)
+        return aNWExp(wave, prior_dicts)
     elif model_name == 'Cst':
-        return aNWCst(wave, prior_choice)
+        return aNWCst(wave, prior_dicts)
     elif model_name == 'ExpBricaud':
-        return aNWExpBricaud(wave, prior_choice)
+        return aNWExpBricaud(wave, prior_dicts)
     elif model_name == 'ExpNMF':
-        return aNWExpNMF(wave, prior_choice)
+        return aNWExpNMF(wave, prior_dicts)
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
@@ -81,8 +81,7 @@ class aNWModel:
     """
     The priors for the model
     """
-
-    def __init__(self, wave:np.ndarray, prior_choice:str):
+    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         self.wave = wave
         self.internals = {}
 
@@ -90,7 +89,8 @@ class aNWModel:
         self.init_aw()
 
         # Set priors
-        self.priors = big_priors.Priors(prior_choice, self.nparam)
+        if prior_dicts is not None:
+            self.priors = big_priors.Priors(prior_dicts)
 
     def init_aw(self, data:str='IOCCG'):
         """
@@ -167,9 +167,8 @@ class aNWCst(aNWModel):
     """
     name = 'Cst'
     nparam = 1
-
-    def __init__(self, wave:np.ndarray, prior_choice:str):
-        aNWModel.__init__(self, wave, prior_choice)
+    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
+        aNWModel.__init__(self, wave, prior_dicts)
 
     def init_guess(self, a_nw:np.ndarray):
         """
@@ -198,8 +197,8 @@ class aNWExp(aNWModel):
     nparam = 2
     pivot = 400.
 
-    def __init__(self, wave:np.ndarray, prior_choice:str):
-        aNWModel.__init__(self, wave, prior_choice)
+    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
+        aNWModel.__init__(self, wave, prior_dicts)
 
     def init_guess(self, a_nw:np.ndarray):
         """
@@ -229,7 +228,7 @@ class aNWExpBricaud(aNWModel):
     nparam = 3
     pivot = 400.
 
-    def __init__(self, wave:np.ndarray, prior_choice:str):
+    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         aNWModel.__init__(self, wave, prior_dicts)
 
     def set_aph(self, Chla):
@@ -264,7 +263,7 @@ class aNWExpBricaud(aNWModel):
         i400 = np.argmin(np.abs(self.wave-400))
         p0_a = np.array([a_nw[i400]/2., 0.017, a_nw[i400]/2.])
         # Return
-        return p0_achoice
+        return p0_a
 
 class aNWExpNMF(aNWModel):
     """
@@ -291,8 +290,8 @@ class aNWExpNMF(aNWModel):
         # Load the decomposition of aph
         aph_file = iops_io.loisel23_filename('nmf', 'aph', 2, 4, 0)
         d_aph = np.load(aph_file)
-        NMF_W1=d_aph['M'][0][::2]
-        NMF_W2=d_aph['M'][1][::2]
+        NMF_W1=d_aph['M'][0]
+        NMF_W2=d_aph['M'][1]
 
         # Interpolate onto our wavelengths
         self.W1 = np.interp(self.wave, d_aph['wave'], NMF_W1)

@@ -36,8 +36,8 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     aw = odict['aw']
 
     # Init the models
-    anw_model = big_anw.init_model(model_names[0], wave, 'log')
-    bbnw_model = big_bbnw.init_model(model_names[1], wave, 'log')
+    anw_model = big_anw.init_model(model_names[0], wave)
+    bbnw_model = big_bbnw.init_model(model_names[1], wave)
     models = [anw_model, bbnw_model]
     
     # Initialize the MCMC

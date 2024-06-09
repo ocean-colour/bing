@@ -38,29 +38,6 @@ def gen_cb(img, lbl, csz = 17.):
     cbaxes.set_label(lbl, fontsize=csz)
     cbaxes.ax.tick_params(labelsize=csz)
 
-def get_chain_file(model_names, scl_noise, add_noise, idx,
-                   use_LM=False, full_LM=True, MODIS:bool=False):
-    scl_noise = 0.02 if scl_noise is None else scl_noise
-    noises = f'{int(100*scl_noise):02d}'
-    noise_lbl = 'N' if add_noise else 'n'
-
-    if full_LM:
-        if MODIS:
-            cidx = 'M23'
-        else:
-            cidx = 'L23'
-    else:
-        cidx = str(idx)
-
-    chain_file = f'../Analysis/Fits/BIG_{model_names[0]}{model_names[1]}_{cidx}_{noise_lbl}{noises}.npz'
-    # LM
-    if use_LM:
-        chain_file = chain_file.replace('BIG', 'BIG_LM')
-    return chain_file, noises, noise_lbl
-
-from IPython import embed
-
-
 def fig_u(outfile='fig_u.png'):
     """
     Generate a figure showing the relationship between u (backscattering ratio) and rrs (remote sensing reflectance).
@@ -210,7 +187,7 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                  wstep:int=1, use_LM:bool=False,
                  set_abblim:bool=True, scl_noise:float=None): 
 
-    chain_file, noises, noise_lbl = get_chain_file(
+    chain_file, noises, noise_lbl = anly_utils.get_chain_file(
         model_names, scl_noise, add_noise, idx, use_LM=use_LM,
         full_LM=full_LM)
     print(f'Loading: {chain_file}')
@@ -235,8 +212,8 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     gordon_Rrs = big_rt.calc_Rrs(odict['a'][::wstep], odict['bb'][::wstep])
 
     # Init the models
-    anw_model = big_anw.init_model(model_names[0], wave, 'log')
-    bbnw_model = big_bbnw.init_model(model_names[1], wave, 'log')
+    anw_model = big_anw.init_model(model_names[0], wave)
+    bbnw_model = big_bbnw.init_model(model_names[1], wave)
     models = [anw_model, bbnw_model]
 
     # Bricaud?
@@ -941,9 +918,11 @@ def main(flg):
         #fig_mcmc_fit(['Exp', 'Cst'], idx=3315, log_Rrs=True, use_LM=True)
         #fig_mcmc_fit(['Exp', 'Pow'], idx=3315, log_Rrs=True, use_LM=True)
         #fig_mcmc_fit(['Cst', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
-        fig_mcmc_fit(['Exp', 'Pow'], idx=170, 
-                     log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
-        fig_mcmc_fit(['ExpBricaud', 'Pow'], idx=170, 
+        #fig_mcmc_fit(['Exp', 'Pow'], idx=170, 
+        #             log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
+        #fig_mcmc_fit(['ExpBricaud', 'Pow'], idx=170, 
+        #             log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
+        fig_mcmc_fit(['ExpNMF', 'Pow'], idx=170, full_LM=False,
                      log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
 
 

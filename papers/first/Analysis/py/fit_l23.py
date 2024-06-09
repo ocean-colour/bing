@@ -48,8 +48,10 @@ def fit(model_names:list,
     wave = ds.Lambda.data[iwave][::wstep]
 
     # Init the models
-    anw_model = big_anw.init_model(model_names[0], wave, prior_approach)
-    bbnw_model = big_bbnw.init_model(model_names[1], wave, prior_approach)
+    if not use_chisq:
+        raise ValueError("Add the priors!!")
+    anw_model = big_anw.init_model(model_names[0], wave)
+    bbnw_model = big_bbnw.init_model(model_names[1], wave)
     models = [anw_model, bbnw_model]
     
     # Initialize the MCMC
@@ -113,10 +115,20 @@ def fit(model_names:list,
         for item in items:
             if models[0].name == 'ExpBricaud':
                 models[0].set_aph(Chls[item[3]])
-            ans, cov, idx = chisq_fit.fit(item, models)
+            try:
+                ans, cov, idx = chisq_fit.fit(item, models)
+            except RuntimeError:
+                print("*****************")
+                print(f"Failed on {item[3]}")
+                print("*****************")
+                ans = np.zeros_like(prev_ans)
+                cov = np.zeros_like(prev_cov)
             all_ans.append(ans)
             all_cov.append(cov)
             all_idx.append(idx)
+            #
+            prev_ans = ans
+            prev_cov = cov
         # Save
         outfile = outfile.replace('BIG', 'BIG_LM')
         np.savez(outfile, ans=all_ans, cov=all_cov,
@@ -197,10 +209,11 @@ def main(flg):
 
     # Full L23 with LM; constant relative error
     if flg == 3:
-        fit(['Cst', 'Cst'], use_chisq=True, max_wave=700.)
-        fit(['Exp', 'Cst'], use_chisq=True, max_wave=700.)
-        fit(['Exp', 'Pow'], use_chisq=True, max_wave=700.)
-        fit(['ExpBricaud', 'Pow'], use_chisq=True, max_wave=700.)
+        #fit(['Cst', 'Cst'], use_chisq=True, max_wave=700.)
+        #fit(['Exp', 'Cst'], use_chisq=True, max_wave=700.)
+        #fit(['Exp', 'Pow'], use_chisq=True, max_wave=700.)
+        #fit(['ExpBricaud', 'Pow'], use_chisq=True, max_wave=700.)
+        fit(['ExpNMF', 'Pow'], use_chisq=True, max_wave=700.)
 
 # Command line execution
 if __name__ == '__main__':
