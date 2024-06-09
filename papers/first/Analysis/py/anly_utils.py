@@ -72,6 +72,8 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
             model_names = ['Exp', 'Pow']
         elif k == 5:
             model_names = ['ExpBricaud', 'Pow']
+        elif k == 6:
+            model_names = ['ExpNMF', 'Pow']
         else:
             raise ValueError("Bad k")
 

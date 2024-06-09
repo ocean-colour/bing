@@ -708,12 +708,13 @@ def fig_spectra(idx:int,
     print(f"Saved: {outfile}")
 
 def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
-                outfile:str='fig_all_bic.png', MODIS:bool=False):
+                outfile:str='fig_all_bic.png', MODIS:bool=False,
+                show_46:bool=False, PACE:bool=False):
 
     Bdict = {}
 
     s2ns = [0.05, 0.10, 0.2]
-    ks = [3,4,5]
+    ks = [3,4,5,6]
 
     if MODIS:
         s2ns += ['MODIS_Aqua']
@@ -725,7 +726,10 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
         
     # Generate a pandas table
     D_BIC_34 = Bdict[3] - Bdict[4]
-    D_BIC_45 = Bdict[4] - Bdict[5]
+    if show_46:
+        D_BIC_45 = Bdict[4] - Bdict[5]
+    else:
+        D_BIC_45 = Bdict[4] - Bdict[6]
 
     # Trim junk in MODIS
     if MODIS or PACE: 
@@ -754,7 +758,10 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
                   histtype='step', 
                   fill=None, label=f's2n={s2n}',
                   linewidth=3)
-    ax45.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{45}$')
+    if show_46:
+        ax45.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{46}$')
+    else:
+        ax45.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{45}$')
 
     for ax in [ax34, ax45]:
         ax.set_ylabel('Density')
@@ -890,8 +897,8 @@ def main(flg):
 
     # BIC/AIC for 70 + fixed relative error
     if flg == 4:
-        fig_all_ic()
-        fig_all_ic(show_AIC=True, outfile='fig_all_aic.png')
+        fig_all_ic(show_46=True, outfile='fig_all_bic_46.png')
+        #fig_all_ic(show_AIC=True, outfile='fig_all_aic.png')
 
     # BIC/AIC for MODIS+L23
     if flg == 5:
