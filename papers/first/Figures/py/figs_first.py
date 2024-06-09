@@ -76,7 +76,7 @@ def fig_u(outfile='fig_u.png'):
         save_ans.append(ans)
 
     #
-    fig = plt.figure(figsize=(9,5))
+    fig = plt.figure(figsize=(8,5))
 
     plt.clf()
     ax = plt.gca()
@@ -84,17 +84,18 @@ def fig_u(outfile='fig_u.png'):
                                 ['purple', 'b','g', 'r'],
                                 [i370, i440, i500, i600],
                                 save_ans):
-        ax.scatter(u[:,idx], rrs[:,idx], color=clr, s=1., label=lbl)
+        ax.scatter(u[:,idx], rrs[:,idx], color=clr, s=1., label=r'$\lambda = $'+lbl)
         irrs = rrs_func(u[:,idx], ans[0], ans[1])
         usrt = np.argsort(u[:,idx])
-        ax.plot(u[usrt,idx], irrs[usrt], '-', color=clr, label=f'Fit: G0={ans[0]:0.2f}, G1={ans[1]:0.2f}')
+        ax.plot(u[usrt,idx], irrs[usrt], '-', color=clr, 
+                label=r'Fit: $G_1='+f'{ans[0]:0.2f},'+r'G_2='+f'{ans[1]:0.2f}'+r'$')
     # GIOP
     ax.plot(uval, rrs_GIOP, 'k--', label='Gordon')
     #
-    ax.set_xlabel(r'$u_\lambda$')
-    ax.set_ylabel(r'$r_{\rm rs}$')
-    ax.legend(fontsize=12)
-    plotting.set_fontsize(ax, 13.)
+    ax.set_xlabel(r'$u(\lambda)$')
+    ax.set_ylabel(r'$r_{\rm rs} (\lambda)$')
+    ax.legend(fontsize=11)
+    plotting.set_fontsize(ax, 15.)
     #
     #plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
@@ -803,10 +804,6 @@ def main(flg):
     else:
         flg= int(flg)
 
-    # Indiv
-    if flg == 1:
-        fig_u()
-
     # Spectra
     if flg == 2:
         fig_spectra(170, bbscl=20)
@@ -826,8 +823,13 @@ def main(flg):
     if flg == 6:
         fig_all_ic(PACE=True, outfile='fig_all_bic_PACE.png')
 
-    # LM fits
+    # Supp
     if flg == 10:
+        fig_u()
+
+
+    # LM fits
+    if flg == 30:
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True)
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True, use_LM=True)
         #fig_mcmc_fit(['Exp', 'Cst'], idx=170, log_Rrs=True, use_LM=True)
