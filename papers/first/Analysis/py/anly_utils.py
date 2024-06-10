@@ -9,6 +9,7 @@ from big import rt as big_rt
 from big.models import anw as big_anw
 from big.models import bbnw as big_bbnw
 from big import stats as big_stats
+from big import chisq_fit
 from big.satellites import pace as big_pace
 
 from IPython import embed
@@ -199,3 +200,75 @@ def save_fits(all_samples, all_idx, outfile,
             outdict[key] = extras[key]
     np.savez(outfile, **outdict)
     print(f"Saved: {outfile}")
+
+# #############################################################################
+def recon_one(model_names:list, idx:int, wstep:int=1, max_wave:float=None,
+              scl_noise:float=None, add_noise:bool=False, use_LM:bool=False,
+              full_LM:bool=False):
+
+    # Load up the chains or parameters
+    chain_file, noises, noise_lbl = get_chain_file(
+        model_names, scl_noise, add_noise, idx, use_LM=use_LM,
+        full_LM=full_LM)
+    print(f'Loading: {chain_file}')
+    d_chains = np.load(chain_file)
+
+
+    # Load the data
+    odict = prep_l23_data(idx, step=wstep, max_wave=max_wave)
+    wave = odict['wave']
+    Rrs = odict['Rrs']
+    varRrs = odict['varRrs']
+    a_true = odict['a']
+    bb_true = odict['bb']
+    aw = odict['aw']
+    adg = odict['adg']
+    aph = odict['aph']
+    bbw = odict['bbw']
+    bbnw = bb_true - bbw
+    wave_true = odict['true_wave']
+    Rrs_true = odict['true_Rrs']
+
+    gordon_Rrs = big_rt.calc_Rrs(odict['a'][::wstep], odict['bb'][::wstep])
+
+    # Init the models
+    anw_model = big_anw.init_model(model_names[0], wave)
+    bbnw_model = big_bbnw.init_model(model_names[1], wave)
+    models = [anw_model, bbnw_model]
+
+    # Bricaud?
+    if models[0].name == 'ExpBricaud':
+        models[0].set_aph(odict['Chl'])
+
+    # Interpolate
+    aw_interp = np.interp(wave, wave_true, aw)
+
+    #embed(header='figs 167')
+
+    # Reconstruc
+    if use_LM:
+        if full_LM:
+            params = d_chains['ans'][idx]
+        else:
+            params = d_chains['ans']
+        model_Rrs, a_mean, bb_mean = chisq_fit.fit_func(
+            wave, *params, models=models, return_full=True)
+    else:
+        raise ValueError("Need to implement")
+        #a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
+        #    model_Rrs, sigRs = anly_utils.reconstruct(
+        #    models, d_chains['chains']) 
+
+    # Return as a dict
+    rdict = dict(wave=wave, Rrs=Rrs, varRrs=varRrs, noise_lbl=noise_lbl,
+                 noises=noises, idx=idx,
+                 a_true=a_true, bb_true=bb_true,
+                 aw=aw, adg=adg, aph=aph,
+                 anw_model=anw_model, bbnw_model=bbnw_model,
+                 aw_interp=aw_interp, 
+                 bbw=bbw, bbnw=bbnw,
+                 wave_true=wave_true, Rrs_true=Rrs_true,
+                 gordon_Rrs=gordon_Rrs,
+                 model_Rrs=model_Rrs, a_mean=a_mean, bb_mean=bb_mean)
+    # Return
+    return rdict

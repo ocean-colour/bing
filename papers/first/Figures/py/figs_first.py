@@ -187,6 +187,7 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                  wstep:int=1, use_LM:bool=False,
                  set_abblim:bool=True, scl_noise:float=None): 
 
+    '''
     chain_file, noises, noise_lbl = anly_utils.get_chain_file(
         model_names, scl_noise, add_noise, idx, use_LM=use_LM,
         full_LM=full_LM)
@@ -222,7 +223,6 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
 
     # Interpolate
     aw_interp = np.interp(wave, wave_true, aw)
-    bbw_interp = np.interp(wave, wave_true, bbw)
 
     #embed(header='figs 167')
 
@@ -238,9 +238,34 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
             model_Rrs, sigRs = anly_utils.reconstruct(
             models, d_chains['chains']) 
-
-    # Water
-    a_w = absorption.a_water(wave, data='IOCCG')
+    '''
+    rdict = anly_utils.recon_one(
+        model_names, idx, wstep=wstep, max_wave=max_wave,
+        scl_noise=scl_noise, add_noise=add_noise, use_LM=use_LM,
+        full_LM=full_LM)
+    # Unpack what we need
+    noise_lbl = rdict['noise_lbl']
+    noises = rdict['noises']
+    wave_true = rdict['wave_true']
+    Rrs_true = rdict['Rrs_true']
+    a_true = rdict['a_true']
+    a_mean = rdict['a_mean']
+    bb_true = rdict['bb_true']
+    aw = rdict['aw']
+    adg = rdict['adg']
+    aph = rdict['aph']
+    aw_interp = rdict['aw_interp']
+    wave = rdict['wave']
+    bbw = rdict['bbw']
+    bbnw = rdict['bbnw']
+    bb_mean = rdict['bb_mean']
+    gordon_Rrs = rdict['gordon_Rrs']
+    model_Rrs = rdict['model_Rrs']
+    #sigRs = rdict['sigRs']
+    #a_5 = rdict['a_5']
+    #a_95 = rdict['a_95']
+    
+    
 
     # Outfile
     outfile = outroot + f'_{model_names[0]}{model_names[1]}_{idx}_{noise_lbl}{noises}.png'
@@ -255,33 +280,6 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     plt.clf()
     gs = gridspec.GridSpec(1,3)
     
-
-    '''
-    # #########################################################
-    # a with water
-
-    ax_aw = plt.subplot(gs[0])
-    ax_aw.plot(wave_true, a_true, 'ko', label='True', zorder=1)
-    ax_aw.plot(wave, a_mean, 'r-', label='Retreival')
-    ax_aw.fill_between(wave, a_5, a_95,
-            color='r', alpha=0.5, label='Uncertainty') 
-    #ax_a.set_xlabel('Wavelength (nm)')
-    ax_aw.set_ylabel(r'$a(\lambda) \; [{\rm m}^{-1}]$')
-    #else:
-    #    ax_a.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
-
-    ax_aw.legend(fontsize=lgsz)
-    ax_aw.set_ylim(bottom=0., top=2*a_true.max())
-    #ax_a.tick_params(labelbottom=False)  # Hide x-axis labels
-
-    # Add model, index as text
-    ax_aw.text(0.1, 0.9, f'Index: {idx}', fontsize=15, transform=ax_aw.transAxes,
-            ha='left')
-    ax_aw.text(0.1, 0.8, f'Model: {model_names[0]}{model_names[1]}', fontsize=15, transform=ax_aw.transAxes,
-            ha='left')
-    '''
-
-
     # #########################################################
     # a without water
 
@@ -343,8 +341,8 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
         ax_R.fill_between(wave, model_Rrs-sigRs, model_Rrs+sigRs, 
             color='r', alpha=0.5, zorder=10) 
 
-    if add_noise:
-        ax_R.plot(d_chains['wave'], d_chains['obs_Rrs'], 'bs', label='Observed')
+    #if add_noise:
+    #    ax_R.plot(d_chains['wave'], d_chains['obs_Rrs'], 'bs', label='Observed')
 
     ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
 
@@ -368,14 +366,11 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
 
 
 # ############################################################
-def fig_multi_fits(models:list=None, indices:list=None, 
-                 outroot='fig_multi_fits', show_bbnw:bool=False,
-                 add_noise:bool=False, log_Rrs:bool=False,
-                 show_trueRrs:bool=False,
-                 set_abblim:bool=True, scl_noise:float=None): 
+def fig_multi_fits(models:list=None, indices:list=None, max_wave:float=None,
+                 outroot='fig_multi_fits'): 
 
     if models is None:
-        models = ['cstcst', 'expcst', 'exppow', 'giop+']
+        models = [('Cst','Cst'), ('Exp','Cst'), ('Exp','Pow'), ('ExpBricaud','Pow')]
     if indices is None:
         indices = [170, 1032]
     outfile = outroot + f'_{indices[0]}_{indices[1]}.png'
@@ -387,27 +382,62 @@ def fig_multi_fits(models:list=None, indices:list=None,
     compare_models(models, indices[0], 
                    [plt.subplot(gs[0]), plt.subplot(gs[1]), 
                     plt.subplot(gs[2])],
-                   lbl_wavelengths=False)
+                   lbl_wavelengths=False,
+                   max_wave=max_wave)
     compare_models(models, indices[1], 
                    [plt.subplot(gs[3]), plt.subplot(gs[4]), 
-                    plt.subplot(gs[5])])
+                    plt.subplot(gs[5])],
+                   max_wave=max_wave)
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
-def compare_models(models:list, idx:int, axes:list,
+def compare_models(models:list, idx:int, axes:list, max_wave:float=None,
                    add_noise:bool=False, scl_noise:float=None,
-                   log_Rrs:bool=True, lbl_wavelengths:bool=True):
+                   log_Rrs:bool=True, lbl_wavelengths:bool=True,
+                   wstep:int=1, 
+                   use_LM:bool=True, full_LM:bool=True):
 
     # Loop on models
-    for ss, clr, model in zip(range(len(models)), ['r', 'g', 'b', 'orange'], models):
-        nparm = fgordon.grab_priors(model).shape[0]
-        chain_file, noises, noise_lbl = get_chain_file(model, scl_noise, add_noise, idx)
-        d_chains = inf_io.load_chains(chain_file)
+    for ss, clr, model_names in zip(
+        range(len(models)), ['r', 'g', 'b', 'orange'], models):
+
+
+        rdict = anly_utils.recon_one(
+            model_names, idx, wstep=wstep, 
+            scl_noise=scl_noise, add_noise=add_noise, use_LM=use_LM,
+            full_LM=full_LM, max_wave=max_wave)
+        # Unpack what we need
+        noise_lbl = rdict['noise_lbl']
+        noises = rdict['noises']
+        wave_true = rdict['wave_true']
+        Rrs_true = rdict['Rrs_true']
+        a_true = rdict['a_true']
+        a_mean = rdict['a_mean']
+        bb_true = rdict['bb_true']
+        aw = rdict['aw']
+        adg = rdict['adg']
+        aph = rdict['aph']
+        aw_interp = rdict['aw_interp']
+        wave = rdict['wave']
+        bbw = rdict['bbw']
+        bbnw = rdict['bbnw']
+        bb_mean = rdict['bb_mean']
+        gordon_Rrs = rdict['gordon_Rrs']
+        model_Rrs = rdict['model_Rrs']
+        models = [rdict['anw_model'], rdict['bbnw_model']]
+
+        nparm = models[0].nparam + models[1].nparam
+        '''
+        # Load up
+        chain_file, noises, noise_lbl = anly_utils.get_chain_file(
+            model_names, scl_noise, add_noise, idx, use_LM=use_LM, full_LM=full_LM)
+        print(f'Loading: {chain_file}')
+        d_chains = np.load(chain_file)
 
         # Load the data
-        odict = gordon.prep_data(idx)
+        odict = anly_utils.prep_l23_data(idx, step=wstep, max_wave=max_wave)
         wave = odict['wave']
         Rrs = odict['Rrs']
         varRrs = odict['varRrs']
@@ -421,7 +451,7 @@ def compare_models(models:list, idx:int, axes:list,
         wave_true = odict['true_wave']
         Rrs_true = odict['true_Rrs']
 
-        gordon_Rrs = fgordon.calc_Rrs(odict['a'][::2], odict['bb'][::2])
+        gordon_Rrs = big_rt.calc_Rrs(odict['a'][::wstep], odict['bb'][::wstep])
 
         # Reconstruc
         pdict = fgordon.init_mcmc(model, d_chains['chains'].shape[-1], 
@@ -429,7 +459,7 @@ def compare_models(models:list, idx:int, axes:list,
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
             model_Rrs, sigRs = gordon.reconstruct(
             model, d_chains['chains'], pdict) 
-
+        '''
 
         # #########################################################
         # a without water
@@ -439,54 +469,30 @@ def compare_models(models:list, idx:int, axes:list,
             ax_anw.plot(wave_true, a_true-aw, 'ko', label='True', zorder=1)
             ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
 
-        ax_anw.plot(wave, a_mean-aw[::2], clr, label='Retreival')
-        #ax_anw.fill_between(wave, a_5-aw_interp, a_95-aw_interp, 
-        #        color='r', alpha=0.5, label='Uncertainty') 
-        
-
-        #ax_anw.plot(wave_true, adg, '-', color='brown', label=r'$a_{\rm dg}$')
-        #ax_anw.plot(wave_true, aph, 'b-', label=r'$a_{\rm ph}$')
-
-        #else:
-        #    ax_a.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
-
-        #ax_anw.legend(fontsize=10.)
-        #if set_abblim:
-        #    ax_anw.set_ylim(bottom=0., top=2*(a_true-aw).max())
-        #ax_a.tick_params(labelbottom=False)  # Hide x-axis labels
+        ax_anw.plot(wave, a_mean-aw[::wstep], clr, label='Retreival')
 
 
         # #########################################################
         # b
-        use_bbw = bbw[::2]
+        use_bbw = bbw[::wstep]
         ax_bb = axes[2]
         if ss == 0:
             ax_bb.plot(wave_true, bbnw, 'ko', label='True')
             ax_bb.set_ylabel(r'$b_{b,nw} (\lambda) \; [{\rm m}^{-1}]$')
         ax_bb.plot(wave, bb_mean-use_bbw, '-', color=clr, label='Retrieval')
-        #ax_bb.fill_between(wave, bb_5-use_bbw, bb_95-use_bbw,
-        #        color='g', alpha=0.5, label='Uncertainty') 
-
-
-        #ax_bb.legend(fontsize=lgsz)
-        #if set_abblim:
-        #    ax_bb.set_ylim(bottom=0., top=2*bb_true.max())
-
 
         # #########################################################
         # Rs
         ax_R = axes[0]
         if ss == 0:
             ax_R.plot(wave, gordon_Rrs, 'k+', label='Observed')
-            ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
+            ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [{\rm sr}^{-1}$]')
             lgsz = 12.
             if log_Rrs:
                 ax_R.set_yscale('log')
             else:
                 ax_R.set_ylim(bottom=0., top=1.1*Rrs_true.max())
-        ax_R.plot(wave, model_Rrs, '-', color=clr, label=f'n={nparm}', zorder=10)
-        #ax_R.fill_between(wave, model_Rrs-sigRs, model_Rrs+sigRs, 
-        #        color='r', alpha=0.5, zorder=10) 
+        ax_R.plot(wave, model_Rrs, '-', color=clr, label=f'k={nparm}', zorder=10)
         ax_R.legend(fontsize=lgsz, loc='lower left')
 
         
@@ -709,12 +715,14 @@ def fig_spectra(idx:int,
 
 def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
                 outfile:str='fig_all_bic.png', MODIS:bool=False,
-                show_46:bool=False, PACE:bool=False):
+                show_46:bool=False, PACE:bool=False, log_x:bool=True):
 
     Bdict = {}
 
     s2ns = [0.05, 0.10, 0.2]
-    ks = [3,4,5,6]
+    ks = [3,4,5]
+    if show_46:
+        ks += [6]
 
     if MODIS:
         s2ns += ['MODIS_Aqua']
@@ -727,14 +735,15 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
     # Generate a pandas table
     D_BIC_34 = Bdict[3] - Bdict[4]
     if show_46:
-        D_BIC_45 = Bdict[4] - Bdict[5]
-    else:
         D_BIC_45 = Bdict[4] - Bdict[6]
+    else:
+        D_BIC_45 = Bdict[4] - Bdict[5]
 
     # Trim junk in MODIS
-    if MODIS or PACE: 
-        D_BIC_45 = np.maximum(D_BIC_45, -5.)
+    D_BIC_34 = np.maximum(D_BIC_34, -5.)
+    D_BIC_45 = np.maximum(D_BIC_45, -5.)
     #embed(header='690 of fig_all_bic')
+
 
     fig = plt.figure(figsize=(14,6))
     plt.clf()
@@ -742,38 +751,59 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
 
     nbins = 100
     # 34
-    ax34=plt.subplot(gs[0])
-    for ss, s2n in enumerate(s2ns):
-        ax34.hist(D_BIC_34[ss], bins=nbins,
-                  histtype='step', 
-                  fill=None, label=f's2n={s2n}',
-                  linewidth=3)
     xlbl = 'AIC' if show_AIC else 'BIC'
-    ax34.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{34}$')
+    save_axes = []
+    for ss in range(2):
+        ax = plt.subplot(gs[ss])
+        D_BIC = D_BIC_34 if ss == 0 else D_BIC_45
+        subset = '34' if ss == 0 else '45'
+        if show_46 and ss == 1:
+            subset = '46' 
+        for ss, s2n in enumerate(s2ns):
+            if log_x:
+                xvals = np.log10(D_BIC[ss] + 6.)
+            else:
+                xvals = D_BIC[ss]
+            # CDF
+            srt = np.sort(xvals)
+            yvals = np.arange(srt.size) / srt.size
+            ax.plot(srt, yvals, label=f's2n={s2n}', linewidth=3)
+            # PDF
+            #ax34.hist(xvals, bins=nbins,
+            #        histtype='step', 
+            #        fill=None, label=f's2n={s2n}',
+            #        linewidth=3)
+            # Stats
+            print(f'{s2n}: {np.sum(D_BIC_34[ss] < 0)/D_BIC_34[ss].size}')
+        ax.set_xlabel(r'$\log_{10}(\Delta \, \rm '+xlbl+'_{'+f'{subset}'+r'} + 6)$')
 
-    # 45
-    ax45=plt.subplot(gs[1])
-    for ss, s2n in enumerate(s2ns):
-        ax45.hist(D_BIC_45[ss], bins=nbins,
-                  histtype='step', 
-                  fill=None, label=f's2n={s2n}',
-                  linewidth=3)
-    if show_46:
-        ax45.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{46}$')
-    else:
-        ax45.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{45}$')
+        # Make it pretty
+        # Title
+        title = r'Include $\beta_{\rm nw}$?' if ss == 0 else 'Include phytoplankton?' 
+        #ax.text(0.5, 1.05, title, ha='center', va='top', 
+        #        fontsize=15, transform=ax.transAxes)
 
-    for ax in [ax34, ax45]:
-        ax.set_ylabel('Density')
+        ax.set_ylabel('CDF')
         ax.grid(True)
         plotting.set_fontsize(ax, 15)
         #
         xmax = 30. if MODIS else 50.
-        ax.set_xlim(-5., xmax)
+        if not log_x:
+            ax.set_xlim(-5., xmax)
+        else:
+            ax.set_xlim(0.25, None)
         ax.legend(fontsize=14)
+
         # Vertical line at 0
         vline = 5. if show_AIC else 0.
+        if log_x:
+            vline = np.log10(vline + 6.)
         ax.axvline(vline, color='k', linestyle='--', lw=2)
+        # Grab ylimits
+        xl = ax.get_xlim()
+        yl = ax.get_ylim()
+        ax.text(vline+(xl[1]-xl[0])*0.05, 0.5, 'Complex model favored', 
+                fontsize=18, ha='left')
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
@@ -887,13 +917,13 @@ def main(flg):
     else:
         flg= int(flg)
 
-    # Indiv
-    if flg == 1:
-        fig_u()
-
     # Spectra
-    if flg == 2:
+    if flg == 1:
         fig_spectra(170, bbscl=20)
+
+    if flg == 2:
+        fig_multi_fits(max_wave=700.)#[('Cst','Cst'), ('Exp','Cst'), ('Exp','Pow'), ('ExpBricaud','Pow')], 
+                       #[170, 1032])
 
     # BIC/AIC for 70 + fixed relative error
     if flg == 4:

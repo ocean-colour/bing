@@ -209,10 +209,10 @@ def main(flg):
 
     # Full L23 with LM; constant relative error
     if flg == 3:
-        #fit(['Cst', 'Cst'], use_chisq=True, max_wave=700.)
-        #fit(['Exp', 'Cst'], use_chisq=True, max_wave=700.)
-        #fit(['Exp', 'Pow'], use_chisq=True, max_wave=700.)
-        #fit(['ExpBricaud', 'Pow'], use_chisq=True, max_wave=700.)
+        fit(['Cst', 'Cst'], use_chisq=True, max_wave=700.)
+        fit(['Exp', 'Cst'], use_chisq=True, max_wave=700.)
+        fit(['Exp', 'Pow'], use_chisq=True, max_wave=700.)
+        fit(['ExpBricaud', 'Pow'], use_chisq=True, max_wave=700.)
         fit(['ExpNMF', 'Pow'], use_chisq=True, max_wave=700.)
 
 # Command line execution
