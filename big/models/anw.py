@@ -28,19 +28,12 @@ def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
     Returns:
         aNWModel: The model
     """
-    if model_name == 'Exp':
-        return aNWExp(wave, prior_dicts)
-    elif model_name == 'Cst':
-        return aNWCst(wave, prior_dicts)
-    elif model_name == 'ExpBricaud':
-        return aNWExpBricaud(wave, prior_dicts)
-    elif model_name == 'GIOP':
-        return aNWGIOP(wave, prior_dicts)
-    elif model_name == 'ExpNMF':
-        return aNWExpNMF(wave, prior_dicts)
-    else:
+    model_dict = {'Exp': aNWExp, 'Cst': aNWCst, 'ExpBricaud': aNWExpBricaud,
+                  'GIOP': aNWGIOP, 'ExpNMF': aNWExpNMF, 'ExpFix': aNWExpFix}
+    if model_name not in model_dict.keys():
         raise ValueError(f"Unknown model: {model_name}")
-
+    else:
+        return model_dict[model_name](wave, prior_dicts)
 class aNWModel:
     """
     Abstract base class for non-water absoprtion
@@ -127,6 +120,8 @@ class aNWModel:
             return functions.constant(self.wave, params)
         elif self.name == 'Exp':
             return functions.exponential(self.wave, params, pivot=self.pivot)
+        elif self.name == 'ExpFix':
+            return functions.exponential(self.wave, params, pivot=self.pivot, S=self.Sdg)
         elif self.name == 'ExpBricaud':
             a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
             a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
@@ -175,6 +170,37 @@ class aNWCst(aNWModel):
     nparam = 1
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         aNWModel.__init__(self, wave, prior_dicts)
+
+    def init_guess(self, a_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            a_nw (np.ndarray): The non-water absorption coefficient
+
+        Returns:
+            np.ndarray: The initial guess for the parameters
+        """
+        i400 = np.argmin(np.abs(self.wave-400))
+        p0_a = np.array([a_nw[i400]])
+        # Return
+        return p0_a
+
+class aNWExpFix(aNWModel):
+    """
+    Exponential model for non-water absorption with fixed S
+        Aexp * exp(-Sexp*(wave-400))
+
+    Attributes:
+
+    """
+    name = 'ExpFix'
+    nparam = 1
+    pivot = 400.
+
+    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
+        aNWModel.__init__(self, wave, prior_dicts)
+        self.Sdg = 0.018
 
     def init_guess(self, a_nw:np.ndarray):
         """

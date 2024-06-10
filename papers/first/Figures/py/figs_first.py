@@ -715,14 +715,13 @@ def fig_spectra(idx:int,
 
 def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
                 outfile:str='fig_all_bic.png', MODIS:bool=False,
-                show_46:bool=False, PACE:bool=False, log_x:bool=True):
+                comp_ks:tuple=((3,4),(4,5)),
+                PACE:bool=False, log_x:bool=True):
 
     Bdict = {}
 
     s2ns = [0.05, 0.10, 0.2]
-    ks = [3,4,5]
-    if show_46:
-        ks += [6]
+    ks = [comp_ks[0][0], comp_ks[0][1], comp_ks[1][0], comp_ks[1][1]]
 
     if MODIS:
         s2ns += ['MODIS_Aqua']
@@ -733,15 +732,12 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
         ks, s2ns, use_LM=use_LM, MODIS=MODIS, PACE=PACE)
         
     # Generate a pandas table
-    D_BIC_34 = Bdict[3] - Bdict[4]
-    if show_46:
-        D_BIC_45 = Bdict[4] - Bdict[6]
-    else:
-        D_BIC_45 = Bdict[4] - Bdict[5]
+    D_BIC_A = Bdict[comp_ks[0][0]] - Bdict[comp_ks[0][1]]
+    D_BIC_B = Bdict[comp_ks[1][0]] - Bdict[comp_ks[1][1]]
 
     # Trim junk in MODIS
-    D_BIC_34 = np.maximum(D_BIC_34, -5.)
-    D_BIC_45 = np.maximum(D_BIC_45, -5.)
+    D_BIC_A = np.maximum(D_BIC_A, -5.)
+    D_BIC_B = np.maximum(D_BIC_B, -5.)
     #embed(header='690 of fig_all_bic')
 
 
@@ -755,10 +751,8 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
     save_axes = []
     for ss in range(2):
         ax = plt.subplot(gs[ss])
-        D_BIC = D_BIC_34 if ss == 0 else D_BIC_45
-        subset = '34' if ss == 0 else '45'
-        if show_46 and ss == 1:
-            subset = '46' 
+        D_BIC = D_BIC_A if ss == 0 else D_BIC_B
+        subset = f'{comp_ks[ss][0]}{comp_ks[0][1]}'
         for ss, s2n in enumerate(s2ns):
             if log_x:
                 xvals = np.log10(D_BIC[ss] + 6.)
@@ -774,7 +768,7 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
             #        fill=None, label=f's2n={s2n}',
             #        linewidth=3)
             # Stats
-            print(f'{s2n}: {np.sum(D_BIC_34[ss] < 0)/D_BIC_34[ss].size}')
+            #print(f'{s2n}: {np.sum(D_BIC_34[ss] < 0)/D_BIC_34[ss].size}')
         ax.set_xlabel(r'$\log_{10}(\Delta \, \rm '+xlbl+'_{'+f'{subset}'+r'} + 6)$')
 
         # Make it pretty
@@ -927,14 +921,17 @@ def main(flg):
 
     # BIC/AIC for 70 + fixed relative error
     if flg == 4:
-        fig_all_ic(show_46=True, outfile='fig_all_bic_46.png')
+        fig_all_ic(outfile='fig_all_bic_46.png',
+                   comp_ks=((3,4), (4,6)))
         #fig_all_ic(show_AIC=True, outfile='fig_all_aic.png')
 
     # BIC/AIC for MODIS+L23
     if flg == 5:
-        fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png')
+        #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png')
         #fig_all_ic(MODIS=True, show_AIC=True, 
         #           outfile='fig_all_aic_MODIS.png')
+        fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
+                   comp_ks=((2,3), (2,9)))
 
     # BIC/AIC for PACE
     if flg == 6:

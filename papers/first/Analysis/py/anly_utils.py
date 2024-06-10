@@ -67,7 +67,9 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
         Bdict[k] = []
 
         # Model names
-        if k == 3:
+        if k == 2:
+            model_names = ['Cst', 'Cst']
+        elif k == 3:
             model_names = ['Exp', 'Cst']
         elif k == 4:
             model_names = ['Exp', 'Pow']
@@ -75,6 +77,8 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
             model_names = ['ExpBricaud', 'Pow']
         elif k == 6:
             model_names = ['ExpNMF', 'Pow']
+        elif k == 9: # GIOP
+            model_names = ['GIOP', 'Lee']
         else:
             raise ValueError("Bad k")
 

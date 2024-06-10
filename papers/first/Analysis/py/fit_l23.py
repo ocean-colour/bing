@@ -84,7 +84,7 @@ def fit(model_names:list,
         ivarRrs = (scl_noise * gordon_Rrs)**2
         varRrs.append(ivarRrs)
         # Params
-        if models[0].name == 'ExpBricaud':
+        if models[0].name in ['ExpBricaud', 'GIOP']:
             models[0].set_aph(odict['Chl'])
 
         p0_a = anw_model.init_guess(odict['anw'][::wstep])
@@ -113,8 +113,10 @@ def fit(model_names:list,
         all_idx = []
         # Fit
         for item in items:
-            if models[0].name == 'ExpBricaud':
-                models[0].set_aph(Chls[item[3]])
+            if models[0].name in ['ExpBricaud', 'GIOP']:
+                models[0].set_aph(odict['Chl'])
+            if models[1].name == 'Lee':
+                models[1].set_Y(odict['Y'])
             try:
                 ans, cov, idx = chisq_fit.fit(item, models)
             except RuntimeError:

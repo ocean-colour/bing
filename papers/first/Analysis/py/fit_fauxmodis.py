@@ -36,10 +36,8 @@ def fit(model_names:list, Nspec:int=None,
     modis_wave = np.array(modis_wave)
 
     # Init the models
-    anw_model = big_anw.init_model(
-        model_names[0], modis_wave)
-    bbnw_model = big_bbnw.init_model(
-        model_names[1], modis_wave)
+    anw_model = big_anw.init_model(model_names[0], modis_wave)
+    bbnw_model = big_bbnw.init_model(model_names[1], modis_wave)
     models = [anw_model, bbnw_model]
     
     # Prep
@@ -63,7 +61,7 @@ def fit(model_names:list, Nspec:int=None,
         # Rrs
         gordon_Rrs = big_rt.calc_Rrs(odict['a'], odict['bb'])
         # Params
-        if models[0].name == 'ExpBricaud':
+        if models[0].name in ['ExpBricaud', 'GIOP']:
             models[0].set_aph(odict['Chl'])
         # Interpolate
         modis_Rrs = np.interp(modis_wave, l23_wave, gordon_Rrs)
@@ -100,8 +98,10 @@ def fit(model_names:list, Nspec:int=None,
     all_idx = []
     # Fit
     for item in items:
-        if models[0].name == 'ExpBricaud':
-            models[0].set_aph(Chls[item[3]])
+        if models[0].name in ['ExpBricaud', 'GIOP']:
+            models[0].set_aph(odict['Chl'])
+        if models[1].name == 'Lee':
+            models[1].set_Y(odict['Y'])
         try:
             ans, cov, idx = chisq_fit.fit(item, models)
         except RuntimeError:
@@ -133,10 +133,12 @@ def main(flg):
 
     # Full L23 with LM; constant relative error
     if flg == 2:
-        fit(['Cst', 'Cst'])
-        fit(['Exp', 'Cst'])
-        fit(['Exp', 'Pow'])
-        fit(['ExpBricaud', 'Pow'])
+        #fit(['Cst', 'Cst'])
+        #fit(['Exp', 'Cst'])
+        #fit(['Exp', 'Pow'])
+        #fit(['ExpBricaud', 'Pow'])
+        #fit(['GIOP', 'Lee'])
+        fit(['ExpFix', 'Lee'])
 
 # Command line execution
 if __name__ == '__main__':
