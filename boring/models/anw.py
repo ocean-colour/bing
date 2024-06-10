@@ -11,8 +11,8 @@ from oceancolor.ph import absorption as ph_absorption
 
 from ihop.iops import io as iops_io
 
-from big import priors as big_priors
-from big.models import functions
+from boring import priors as boring_priors
+from boring.models import functions
 
 from IPython import embed
 
@@ -72,7 +72,7 @@ class aNWModel:
     Approach to priors
     """
 
-    priors:big_priors.Priors = None
+    priors:boring_priors.Priors = None
     """
     The priors for the model
     """
@@ -85,7 +85,7 @@ class aNWModel:
 
         # Set priors
         if prior_dicts is not None:
-            self.priors = big_priors.Priors(prior_dicts)
+            self.priors = boring_priors.Priors(prior_dicts)
 
     def init_aw(self, data:str='IOCCG'):
         """

@@ -1,11 +1,11 @@
-""" Inference methods for BIG """
+""" Inference methods for BORING """
 import numpy as np
 
 from functools import partial
 from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
 
-from big import rt as big_rt
+from boring import rt as boring_rt
 
 import emcee
 
@@ -40,7 +40,7 @@ def log_prob(params, models:list, Rrs:np.ndarray, varRrs):
     bb = models[1].eval_bb(bparams)
 
     # TODO -- allow for non-standard Gordon coefficients
-    pred = big_rt.calc_Rrs(a, bb) 
+    pred = boring_rt.calc_Rrs(a, bb) 
 
     # Evaluate
     eeval = (pred-Rrs)**2 / varRrs

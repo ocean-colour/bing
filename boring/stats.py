@@ -1,8 +1,8 @@
 """ Run stats on the MCMC chains or LM fits """
 import numpy as np
 
-from big import evaluate as big_eval
-from big.satellites import modis as big_modis
+from boring import evaluate as boring_eval
+from boring.satellites import modis as boring_modis
 
 from IPython import embed
 
@@ -22,7 +22,7 @@ def calc_chisq(model_Rrs:np.ndarray, gordon_Rrs:np.ndarray, scl_noise:float,
     """
     if noise_term is None:
         if scl_noise in ['MODIS_Aqua']:
-            noise_term = big_modis.modis_aqua_error
+            noise_term = boring_modis.modis_aqua_error
         else:
             noise_term = scl_noise*gordon_Rrs
     # Generate the model Rrs
@@ -55,7 +55,7 @@ def calc_ICs(gordon_Rrs:np.ndarray, models:list, params:np.ndarray,
     """
     
     if use_LM:
-        model_Rrs, _, _ = big_eval.reconstruct_chisq_fits(
+        model_Rrs, _, _ = boring_eval.reconstruct_chisq_fits(
             models, params, Chl=Chl)
     else:
         raise ValueError("Not ready for MCMC yet")

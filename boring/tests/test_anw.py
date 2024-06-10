@@ -5,7 +5,7 @@ import numpy as np
 
 import pytest
 
-from big.models import anw as big_anw
+from boring.models import anw as boring_anw
 
 from IPython import embed
 
@@ -13,7 +13,7 @@ wave = np.arange(350, 755, 5.)
 
 def test_init():
     # Wavelengths from 350 to 755 in steps of 5
-    anwExp = big_anw.aNWExp(wave, 'log')
+    anwExp = boring_anw.aNWExp(wave)
 
     # Check that a_w is set
     assert anwExp.a_w is not None
@@ -22,7 +22,7 @@ def test_init():
     #pytest.set_trace()
 
 def test_eval():
-    anwExp = big_anw.aNWExp(wave, 'log')
+    anwExp = boring_anw.aNWExp(wave)
 
     # Evaluatee a_nw on a flat array
     #   The code always returns a multi-dimensional array
@@ -36,12 +36,13 @@ def test_eval():
     assert np.isclose(a_nw[1][0], 0.2117, atol=1e-5)
 
 def test_priors():
-    anwExp = big_anw.aNWExp(wave, 'log')
+    pdicts = [{'flavor':'uniform', 'pmin':-6., 'pmax':5.}, 
+              {'flavor':'uniform', 'pmin':-6., 'pmax':5.}]
+    anwExp = boring_anw.aNWExp(wave, pdicts)
 
     # Check priors
     assert anwExp.priors is not None
-    assert anwExp.priors.approach == 'log'
+    assert anwExp.priors.priors.flavor == 'uniform'
     assert anwExp.priors.nparam == 2
-    assert anwExp.priors.priors.shape == (2,2)
-    assert np.all(anwExp.priors.priors[:,0] == -6)
-    assert np.all(anwExp.priors.priors[:,1] == 5)
+    assert np.isclose(anwExp.priors.priors.pmin, -6)
+    assert np.isclose(anwExp.priors.priors.pmax, 5)

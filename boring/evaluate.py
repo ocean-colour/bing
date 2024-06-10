@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from big import rt as big_rt
-from big import chisq_fit
+from boring import rt as boring_rt
+from boring import chisq_fit
 
 
 def reconstruct_from_chains(models:list, chains, burn=7000, thin=1):
@@ -43,7 +43,7 @@ def reconstruct_from_chains(models:list, chains, burn=7000, thin=1):
     #bb_std = np.std(bb, axis=0)
 
     # Calculate the model Rrs
-    Rrs = big_rt.calc_Rrs(a, bb)
+    Rrs = boring_rt.calc_Rrs(a, bb)
 
     # Stats
     sigRs = np.std(Rrs, axis=0)
