@@ -21,11 +21,11 @@ from oceancolor.water import absorption
 from oceancolor.hydrolight import loisel23
 
 
-from big import rt as big_rt
-from big.models import anw as big_anw
-from big.models import bbnw as big_bbnw
-from big import chisq_fit
-from big import stats as big_stats
+#from boring import rt as boring_rt
+#from boring.models import anw as boring_anw
+#from boring.models import bbnw as boring_bbnw
+#from boring import chisq_fit
+#from boring import stats as boring_stats
 
 # Local
 sys.path.append(os.path.abspath("../Analysis/py"))
@@ -179,7 +179,7 @@ def fig_Kd(outfile='fig_Kd.png'):
 
 # ############################################################
 def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
-                 outroot='fig_BIG_fit', show_bbnw:bool=True,
+                 outroot='fig_BORING_fit', show_bbnw:bool=True,
                  add_noise:bool=False, log_Rrs:bool=False,
                  full_LM:bool=True,
                  show_trueRrs:bool=False, 
@@ -187,58 +187,6 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                  wstep:int=1, use_LM:bool=False,
                  set_abblim:bool=True, scl_noise:float=None): 
 
-    '''
-    chain_file, noises, noise_lbl = anly_utils.get_chain_file(
-        model_names, scl_noise, add_noise, idx, use_LM=use_LM,
-        full_LM=full_LM)
-    print(f'Loading: {chain_file}')
-    d_chains = np.load(chain_file)
-
-
-    # Load the data
-    odict = anly_utils.prep_l23_data(idx, step=wstep, max_wave=max_wave)
-    wave = odict['wave']
-    Rrs = odict['Rrs']
-    varRrs = odict['varRrs']
-    a_true = odict['a']
-    bb_true = odict['bb']
-    aw = odict['aw']
-    adg = odict['adg']
-    aph = odict['aph']
-    bbw = odict['bbw']
-    bbnw = bb_true - bbw
-    wave_true = odict['true_wave']
-    Rrs_true = odict['true_Rrs']
-
-    gordon_Rrs = big_rt.calc_Rrs(odict['a'][::wstep], odict['bb'][::wstep])
-
-    # Init the models
-    anw_model = big_anw.init_model(model_names[0], wave)
-    bbnw_model = big_bbnw.init_model(model_names[1], wave)
-    models = [anw_model, bbnw_model]
-
-    # Bricaud?
-    if models[0].name == 'ExpBricaud':
-        models[0].set_aph(odict['Chl'])
-
-    # Interpolate
-    aw_interp = np.interp(wave, wave_true, aw)
-
-    #embed(header='figs 167')
-
-    # Reconstruc
-    if use_LM:
-        if full_LM:
-            params = d_chains['ans'][idx]
-        else:
-            params = d_chains['ans']
-        model_Rrs, a_mean, bb_mean = chisq_fit.fit_func(
-            wave, *params, models=models, return_full=True)
-    else:
-        a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
-            model_Rrs, sigRs = anly_utils.reconstruct(
-            models, d_chains['chains']) 
-    '''
     rdict = anly_utils.recon_one(
         model_names, idx, wstep=wstep, max_wave=max_wave,
         scl_noise=scl_noise, add_noise=add_noise, use_LM=use_LM,
@@ -270,7 +218,7 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     # Outfile
     outfile = outroot + f'_{model_names[0]}{model_names[1]}_{idx}_{noise_lbl}{noises}.png'
     if use_LM:
-        outfile = outfile.replace('BIG', 'BIG_LM')
+        outfile = outfile.replace('BORING', 'BORING_LM')
 
     # #########################################################
     # Plot the solution
@@ -429,37 +377,6 @@ def compare_models(models:list, idx:int, axes:list, max_wave:float=None,
         models = [rdict['anw_model'], rdict['bbnw_model']]
 
         nparm = models[0].nparam + models[1].nparam
-        '''
-        # Load up
-        chain_file, noises, noise_lbl = anly_utils.get_chain_file(
-            model_names, scl_noise, add_noise, idx, use_LM=use_LM, full_LM=full_LM)
-        print(f'Loading: {chain_file}')
-        d_chains = np.load(chain_file)
-
-        # Load the data
-        odict = anly_utils.prep_l23_data(idx, step=wstep, max_wave=max_wave)
-        wave = odict['wave']
-        Rrs = odict['Rrs']
-        varRrs = odict['varRrs']
-        a_true = odict['a']
-        bb_true = odict['bb']
-        aw = odict['aw']
-        adg = odict['adg']
-        aph = odict['aph']
-        bbw = odict['bbw']
-        bbnw = bb_true - bbw
-        wave_true = odict['true_wave']
-        Rrs_true = odict['true_Rrs']
-
-        gordon_Rrs = big_rt.calc_Rrs(odict['a'][::wstep], odict['bb'][::wstep])
-
-        # Reconstruc
-        pdict = fgordon.init_mcmc(model, d_chains['chains'].shape[-1], 
-                                wave, Y=odict['Y'], Chl=odict['Chl'])
-        a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
-            model_Rrs, sigRs = gordon.reconstruct(
-            model, d_chains['chains'], pdict) 
-        '''
 
         # #########################################################
         # a without water

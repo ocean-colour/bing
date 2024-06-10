@@ -6,12 +6,12 @@ from setuptools import setup, find_packages
 
 # Begin setup
 setup_keywords = dict()
-setup_keywords['name'] = 'big'
-setup_keywords['description'] = 'Bayesian Intensities with Gordon coefficients'
+setup_keywords['name'] = 'boring'
+setup_keywords['description'] = 'The Bayesian Ocean Retrieval INferences with Gordon coefficents (BORING) package' 
 setup_keywords['author'] = 'J. Xavier Prochaska, R. Frouin'
 setup_keywords['author_email'] = 'jxp@ucsc.edu'
 setup_keywords['license'] = 'BSD'
-setup_keywords['url'] = 'https://github.com/AI-for-Ocean-Science/big'
+setup_keywords['url'] = 'https://github.com/AI-for-Ocean-Science/boring'
 setup_keywords['version'] = '0.0.dev0'
 # Use README.rst as long_description.
 setup_keywords['long_description'] = ''

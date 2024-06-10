@@ -10,12 +10,12 @@ import numpy as np
 
 from oceancolor.hydrolight import loisel23
 
-from big.models import anw as big_anw
-from big.models import bbnw as big_bbnw
-from big import inference as big_inf
-from big import rt as big_rt
-from big import chisq_fit
-from big.satellites import modis as big_modis
+from boring.models import anw as boring_anw
+from boring.models import bbnw as boring_bbnw
+from boring import inference as boring_inf
+from boring import rt as boring_rt
+from boring import chisq_fit
+from boring.satellites import modis as boring_modis
 
 import anly_utils 
 
@@ -32,12 +32,12 @@ def fit(model_names:list, Nspec:int=None,
     l23_wave = ds.Lambda.data
 
     # MODIS wavelengths
-    modis_wave = big_modis.modis_wave #[412, 443, 469, 488, 531, 547, 555, 645, 667, 678, 748]# , 859, 869] # nm
+    modis_wave = boring_modis.modis_wave #[412, 443, 469, 488, 531, 547, 555, 645, 667, 678, 748]# , 859, 869] # nm
     modis_wave = np.array(modis_wave)
 
     # Init the models
-    anw_model = big_anw.init_model(model_names[0], modis_wave)
-    bbnw_model = big_bbnw.init_model(model_names[1], modis_wave)
+    anw_model = boring_anw.init_model(model_names[0], modis_wave)
+    bbnw_model = boring_bbnw.init_model(model_names[1], modis_wave)
     models = [anw_model, bbnw_model]
     
     # Prep
@@ -59,7 +59,7 @@ def fit(model_names:list, Nspec:int=None,
         odict = anly_utils.prep_l23_data(
             ss, scl_noise=scl_noise, ds=ds)
         # Rrs
-        gordon_Rrs = big_rt.calc_Rrs(odict['a'], odict['bb'])
+        gordon_Rrs = boring_rt.calc_Rrs(odict['a'], odict['bb'])
         # Params
         if models[0].name in ['ExpBricaud', 'GIOP']:
             models[0].set_aph(odict['Chl'])
@@ -117,7 +117,7 @@ def fit(model_names:list, Nspec:int=None,
         prev_ans = ans.copy()
         prev_cov = cov.copy()
     # Save
-    outfile = outfile.replace('BIG', 'BIG_LM')
+    outfile = outfile.replace('BORING', 'BORING_LM')
     np.savez(outfile, ans=all_ans, cov=all_cov,
             wave=modis_wave, obs_Rrs=Rrs, varRrs=varRrs,
             idx=all_idx, Chl=Chls)
@@ -133,11 +133,11 @@ def main(flg):
 
     # Full L23 with LM; constant relative error
     if flg == 2:
-        #fit(['Cst', 'Cst'])
-        #fit(['Exp', 'Cst'])
-        #fit(['Exp', 'Pow'])
-        #fit(['ExpBricaud', 'Pow'])
-        #fit(['GIOP', 'Lee'])
+        fit(['Cst', 'Cst'])
+        fit(['Exp', 'Cst'])
+        fit(['Exp', 'Pow'])
+        fit(['ExpBricaud', 'Pow'])
+        fit(['GIOP', 'Lee'])
         fit(['ExpFix', 'Lee'])
 
 # Command line execution
