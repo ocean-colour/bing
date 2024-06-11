@@ -703,7 +703,10 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
             #        linewidth=3)
             # Stats
             #print(f'{s2n}: {np.sum(D_BIC_34[ss] < 0)/D_BIC_34[ss].size}')
-        ax.set_xlabel(r'$\log_{10}(\Delta \, \rm '+xlbl+'_{'+f'{subset}'+r'} + 6)$')
+        if log_x:
+            ax.set_xlabel(r'$\log_{10}(\Delta \, \rm '+xlbl+'_{'+f'{subset}'+r'} + 6)$')
+        else:
+            ax.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{'+f'{subset}'+r'}$')
 
         # Make it pretty
         # Title
@@ -713,14 +716,14 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
 
         ax.set_ylabel('CDF')
         ax.grid(True)
-        plotting.set_fontsize(ax, 15)
+        plotting.set_fontsize(ax, 17)
         #
         xmax = 30. if MODIS else 50.
         if not log_x:
             ax.set_xlim(-5., xmax)
         else:
             ax.set_xlim(0.25, None)
-        ax.legend(fontsize=14)
+        ax.legend(fontsize=17)
 
         # Vertical line at 0
         vline = 5. if show_AIC else 0.
@@ -730,8 +733,7 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
         # Grab ylimits
         xl = ax.get_xlim()
         yl = ax.get_ylim()
-        ax.text(vline+(xl[1]-xl[0])*0.05, 0.5, 'Complex model favored', 
-                fontsize=18, ha='left')
+        #ax.text(5, 0.6, 'Complex model favored', fontsize=18, ha='left')
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
@@ -861,7 +863,8 @@ def main(flg):
 
     # BIC/AIC for MODIS+L23
     if flg == 5:
-        fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png')
+        fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png',
+                   log_x=False) 
         #fig_all_ic(MODIS=True, show_AIC=True, 
         #           outfile='fig_all_aic_MODIS.png')
         #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
