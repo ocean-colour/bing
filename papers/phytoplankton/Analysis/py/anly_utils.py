@@ -92,7 +92,7 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
         wave = d_chains['wave']
 
         # Init the models
-        models = model_utils.load_models(model_names, wave)
+        models = model_utils.init(model_names, wave)
 
         # Loop on S/N
         if k == 3:

@@ -673,7 +673,7 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
     D_BIC_B = np.maximum(D_BIC_B, -5.)
     #embed(header='690 of fig_all_bic')
 
-    embed(header='fig_all_bic 660')
+    #embed(header='fig_all_bic 660')
 
     fig = plt.figure(figsize=(14,6))
     plt.clf()
@@ -686,7 +686,7 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
     for ss in range(2):
         ax = plt.subplot(gs[ss])
         D_BIC = D_BIC_A if ss == 0 else D_BIC_B
-        subset = f'{comp_ks[ss][0]}{comp_ks[0][1]}'
+        subset = f'{comp_ks[ss][0]}{comp_ks[ss][1]}'
         for ss, s2n in enumerate(s2ns):
             if log_x:
                 xvals = np.log10(D_BIC[ss] + 6.)
@@ -861,11 +861,11 @@ def main(flg):
 
     # BIC/AIC for MODIS+L23
     if flg == 5:
-        #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png')
+        fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png')
         #fig_all_ic(MODIS=True, show_AIC=True, 
         #           outfile='fig_all_aic_MODIS.png')
-        fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
-                   comp_ks=((2,3), (3,9)))
+        #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
+        #           comp_ks=((2,3), (3,9)))
 
     # BIC/AIC for PACE
     if flg == 6:
