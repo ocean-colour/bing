@@ -182,6 +182,7 @@ class bbNWCst(bbNWModel):
         i600 = np.argmin(np.abs(self.wave-600))
         p0_bb = np.array([bb_nw[i600]])
         # Return
+        assert p0_b.size == self.nparam
         return p0_bb
         
 class bbNWPow(bbNWModel):
@@ -211,6 +212,7 @@ class bbNWPow(bbNWModel):
         """
         i600 = np.argmin(np.abs(self.wave-self.pivot))
         p0_b = np.array([bb_nw[i600], 1.])
+        assert p0_b.size == self.nparam
 
         # Return
         return p0_b 
@@ -254,7 +256,8 @@ class bbNWLee(bbNWModel):
             np.ndarray: The initial guess for the parameters
         """
         i600 = np.argmin(np.abs(self.wave-self.pivot))
-        p0_b = np.array([bb_nw[i600], 1.])
+        p0_b = np.array([bb_nw[i600]])
+        assert p0_b.size == self.nparam
 
         # Return
         return p0_b 

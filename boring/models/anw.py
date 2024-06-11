@@ -34,6 +34,7 @@ def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
         raise ValueError(f"Unknown model: {model_name}")
     else:
         return model_dict[model_name](wave, prior_dicts)
+
 class aNWModel:
     """
     Abstract base class for non-water absoprtion
@@ -300,6 +301,7 @@ class aNWExpBricaud(aNWModel):
         """
         i400 = np.argmin(np.abs(self.wave-400))
         p0_a = np.array([a_nw[i400]/2., 0.017, a_nw[i400]/2.])
+        assert p0_a.size == self.nparam
         # Return
         return p0_a
 
@@ -310,7 +312,7 @@ class aNWGIOP(aNWModel):
     Exponential model with Sdg fixed + Bricaud aph for non-water absorption
         adg = Adg * exp(-Sdg*(wave-400))
             Sdg = 0.018
-        aph = A_B * chlA**B_B
+        aph = Aph * [A_B * chlA**E_B]
 
     Attributes:
 
@@ -356,7 +358,8 @@ class aNWGIOP(aNWModel):
             np.ndarray: The initial guess for the parameters
         """
         i400 = np.argmin(np.abs(self.wave-400))
-        p0_a = np.array([a_nw[i400]/2., 0.017, a_nw[i400]/2.])
+        p0_a = np.array([a_nw[i400]/2., a_nw[i400]/2.])
+        assert p0_a.size == self.nparam
         # Return
         return p0_a
 
@@ -405,5 +408,6 @@ class aNWExpNMF(aNWModel):
         i400 = np.argmin(np.abs(self.wave-400))
         p0_a = np.array([a_nw[i400]/2., 0.017, a_nw[i400]/4., 
                          a_nw[i400]/4.])
+        assert p0_a.size == self.nparam
         # Return
         return p0_a

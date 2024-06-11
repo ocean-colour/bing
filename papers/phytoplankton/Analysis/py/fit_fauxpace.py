@@ -14,12 +14,13 @@ import pandas
 
 from oceancolor.hydrolight import loisel23
 
-from big.models import anw as big_anw
-from big.models import bbnw as big_bbnw
-from big import inference as big_inf
-from big import rt as big_rt
-from big import chisq_fit
-from big.satellites import pace as big_pace 
+from boring.models import anw as boring_anw
+from boring.models import bbnw as boring_bbnw
+from boring.models import utils as model_utils
+from boring import inference as boring_inf
+from boring import rt as boring_rt
+from boring import chisq_fit
+from boring.satellites import pace as boring_pace 
 
 import anly_utils 
 
@@ -35,12 +36,10 @@ def fit(model_names:list, Nspec:int=None, scl_noise:float=0.02,
     l23_wave = ds.Lambda.data
 
     PACE_wave = np.arange(400, 701, 5)
-    PACE_error = big_pace.gen_noise_vector(PACE_wave)
+    PACE_error = boring_pace.gen_noise_vector(PACE_wave)
 
     # Init the models
-    anw_model = big_anw.init_model(model_names[0], PACE_wave)
-    bbnw_model = big_bbnw.init_model(model_names[1], PACE_wave)
-    models = [anw_model, bbnw_model]
+    models = model_utils.init(model_names, PACE_wave)
     
     # Prep
     if Nspec is None:
@@ -62,7 +61,7 @@ def fit(model_names:list, Nspec:int=None, scl_noise:float=0.02,
         odict = anly_utils.prep_l23_data(
             ss, scl_noise=scl_noise, ds=ds)
         # Rrs
-        gordon_Rrs = big_rt.calc_Rrs(odict['a'], odict['bb'])
+        gordon_Rrs = boring_rt.calc_Rrs(odict['a'], odict['bb'])
         # Params
         if models[0].uses_Chl:
             models[0].set_aph(odict['Chl'])
@@ -78,8 +77,8 @@ def fit(model_names:list, Nspec:int=None, scl_noise:float=0.02,
         ivarRrs = PACE_error**2
         varRrs.append(ivarRrs)
 
-        p0_a = anw_model.init_guess(PACE_a)
-        p0_b = bbnw_model.init_guess(PACE_bb)
+        p0_a = models[0].init_guess(PACE_a)
+        p0_b = models[1].init_guess(PACE_bb)
         p0 = np.concatenate((np.log10(np.atleast_1d(p0_a)), 
                          np.log10(np.atleast_1d(p0_b))))
         params.append(p0)
@@ -121,7 +120,7 @@ def fit(model_names:list, Nspec:int=None, scl_noise:float=0.02,
         prev_ans = ans.copy()
         prev_cov = cov.copy()
     # Save
-    outfile = outfile.replace('BIG', 'BIG_LM')
+    outfile = outfile.replace('BORING', 'BORING_LM')
     np.savez(outfile, ans=all_ans, cov=all_cov,
             wave=PACE_wave, obs_Rrs=Rrs, varRrs=varRrs,
             idx=all_idx, Chl=Chls, Y=Ys)
@@ -142,7 +141,7 @@ def main(flg):
         fit(['Exp', 'Pow'])
         fit(['ExpBricaud', 'Pow'])
 
-    # GIOP variatns
+    # GIOP variants
     if flg == 3:
         # GIOPm : Sdg allowed to vary
         #fit(['ExpBricaud', 'Lee'])

@@ -8,6 +8,9 @@ import pandas
 
 from IPython import embed
 
+# Defatuls
+PACE_wave = np.arange(400, 701, 5)
+
 def gen_noise_vector(wave:np.ndarray):
     # Load PACE error
     pace_file = os.path.join(files('big'), 'data', 'PACE', 'PACE_error.csv')

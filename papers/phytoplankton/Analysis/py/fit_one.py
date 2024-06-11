@@ -4,27 +4,36 @@ import os
 
 import numpy as np
 
+from matplotlib import pyplot as plt
+
 from ihop.inference import noise
 
-from big import rt as big_rt
-from big.models import anw as big_anw
-from big.models import bbnw as big_bbnw
-from big import inference as big_inf
-from big import rt as big_rt
-from big import chisq_fit
+from boring.models import anw as boring_anw
+from boring.models import bbnw as boring_bbnw
+from boring.models import utils as model_utils
+from boring import inference as boring_inf
+from boring import rt as boring_rt
+from boring import chisq_fit
+from boring import plotting as boring_plot
+
+from boring.satellites import modis as boring_modis
+from boring.satellites import pace as boring_pace
+from boring.satellites import utils as sat_utils
 
 from IPython import embed
 
 import anly_utils 
 
 def fit_one(model_names:list, idx:int, n_cores=20, 
-            wstep:int=1,
             nsteps:int=10000, nburn:int=1000, 
             scl_noise:float=0.02, use_chisq:bool=False,
             scl:float=None,  # Scaling for the priors
-            add_noise:bool=False):
+            add_noise:bool=False,
+            show:bool=False,
+            MODIS:bool=False,
+            PACE:bool=False):
 
-    odict = anly_utils.prep_l23_data(idx, scl_noise=scl_noise, step=wstep)
+    odict = anly_utils.prep_l23_data(idx, scl_noise=scl_noise)
 
     # Unpack
     wave = odict['wave']
@@ -34,45 +43,64 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     bb = odict['bb']
     bbw = odict['bbw']
     aw = odict['aw']
+    l23_wave = odict['true_wave']
 
-    # Init the models
-    anw_model = big_anw.init_model(model_names[0], wave)
-    bbnw_model = big_bbnw.init_model(model_names[1], wave)
-    models = [anw_model, bbnw_model]
+    # Wavelenegths
+    if MODIS:
+        model_wave = boring_modis.modis_wave
+    elif PACE:
+        model_wave = boring_pace.pace_wave
+        PACE_error = boring_pace.gen_noise_vector(PACE_wave)
+    else:
+        model_wave = wave
+        
+    # Models
+    model_wave = boring_modis.modis_wave
+    models = model_utils.init(model_names, model_wave)
     
     # Initialize the MCMC
-    pdict = big_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
+    pdict = boring_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
     
     # Gordon Rrs
-    gordon_Rrs = big_rt.calc_Rrs(odict['a'][::wstep], 
-                                 odict['bb'][::wstep])
+    gordon_Rrs = boring_rt.calc_Rrs(odict['a'], odict['bb'])
     if add_noise:
         gordon_Rrs = noise.add_noise(gordon_Rrs, perc=scl_noise*100)
 
-    # Bricaud?
-    if models[0].name == 'ExpBricaud':
+    # Internals
+    if models[0].uses_Chl:
         models[0].set_aph(odict['Chl'])
+    if models[1].uses_basis_params:  # Lee
+        models[1].set_basis_func(odict['Y'])
+
+    # Bricaud?
+    # Interpolate
+    model_Rrs = sat_utils.convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
+    model_anw = sat_utils.convert_to_satwave(l23_wave, odict['anw'], model_wave)
+    model_bbnw = sat_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
+    model_varRrs = (scl_noise * model_Rrs)**2
 
     # Initial guess
-    p0_a = anw_model.init_guess(odict['anw'][::wstep])
-    p0_b = bbnw_model.init_guess(odict['bbnw'][::wstep])
+    p0_a = models[0].init_guess(model_anw)
+    p0_b = models[1].init_guess(model_bbnw)
     p0 = np.concatenate((np.log10(np.atleast_1d(p0_a)), 
                          np.log10(np.atleast_1d(p0_b))))
 
     # Chk initial guess
     ca = models[0].eval_a(p0[0:models[0].nparam])
     cbb = models[1].eval_bb(p0[models[0].nparam:])
-    pRrs = big_rt.calc_Rrs(ca, cbb)
-    print(f'Initial Rrs guess: {np.mean((gordon_Rrs-pRrs)/gordon_Rrs)}')
+    pRrs = boring_rt.calc_Rrs(ca, cbb)
+    print(f'Initial Rrs guess: {np.mean((model_Rrs-pRrs)/model_Rrs)}')
     #embed(header='65 of fit one')
     
+
     # Set the items
-    items = [(gordon_Rrs, varRrs, p0, idx)]
+    items = [(model_Rrs, model_varRrs, p0, idx)]
 
     outfile = anly_utils.chain_filename(model_names, scl_noise, add_noise, idx=idx)
     if not use_chisq:
+        raise ValueError("Need to implement")
         # Fit
-        chains, idx = big_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
+        chains, idx = boring_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
 
         # Save
         anly_utils.save_fits(chains, idx, outfile,
@@ -80,8 +108,17 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     else:
         # Fit
         ans, cov, idx = chisq_fit.fit(items[0], models)
+        # Show?
+        if show:
+            boring_plot.show_fit(models, ans, odict['Chl'], odict['Y'],
+                                 Rrs_true=dict(wave=model_wave, spec=model_Rrs),
+                                 anw_true=dict(wave=l23_wave, spec=odict['anw']),
+                                 bbnw_true=dict(wave=l23_wave, spec=odict['bbnw'])
+                                 )
+            plt.show()
+            
         # Save
-        outfile = outfile.replace('BIG', 'BIG_LM')
+        outfile = outfile.replace('BORING', 'BORING_LM')
         np.savez(outfile, ans=ans, cov=cov,
               wave=wave, obs_Rrs=gordon_Rrs, varRrs=varRrs)
         print(f"Saved: {outfile}")
@@ -115,6 +152,10 @@ def main(flg):
         #fit_one(['Exp', 'Pow'], idx=170, use_chisq=True)
         #fit_one(['ExpBricaud', 'Pow'], idx=170, use_chisq=True)
         fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True)
+
+    # GIOP
+    if flg == 5:
+        fit_one(['GIOP', 'Lee'], idx=0, use_chisq=True, show=True)
 
 # Command line execution
 if __name__ == '__main__':

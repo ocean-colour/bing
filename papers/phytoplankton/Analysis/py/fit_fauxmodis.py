@@ -17,6 +17,7 @@ from boring import inference as boring_inf
 from boring import rt as boring_rt
 from boring import chisq_fit
 from boring.satellites import modis as boring_modis
+from boring.satellites import utils as sat_utils
 
 import anly_utils 
 
@@ -62,9 +63,9 @@ def fit(model_names:list, Nspec:int=None,
             models[0].set_aph(odict['Chl'])
 
         # Interpolate
-        modis_Rrs = boring_modis.convert_to_modis(l23_wave, gordon_Rrs)
-        modis_a = boring_modis.convert_to_modis(l23_wave, odict['a'])
-        modis_bb = boring_modis.convert_to_modis(l23_wave, odict['bb'])
+        modis_Rrs = sat_utils.convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
+        modis_a = sat_utils.convert_to_satwave(l23_wave, odict['anw'], model_wave)
+        modis_bb = sat_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
 
         Rrs.append(modis_Rrs)
         # varRrs

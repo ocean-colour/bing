@@ -1,7 +1,6 @@
 """ Items related to MODIS """
 import numpy as np
 
-from scipy.interpolate import interp1d
 
 
 # MODIS Aqua -- derived from https://seabass.gsfc.nasa.gov/search/?search_type=Perform%20Validation%20Search&val_sata=1&val_products=11&val_source=0
@@ -23,21 +22,3 @@ modis_aqua_error = [0.00141, 0.00113,
                     0.00056, 0.00060,
                     0.00060,  # Assumed for 748
                     ]
-
-def convert_to_modis(wave:np.ndarray, spec:np.ndarray):
-    """
-    Convert the spectrum to MODIS wavelengths
-
-    Parameters:
-        wave (np.ndarray): Wavelengths of the input Rrs
-        spec (np.ndarray): Spectrum. a, b, Rrs, etc. 
-
-    Returns:
-        np.ndarray: Rrs at MODIS wavelengths
-    """
-    # Interpolate
-    f = interp1d(wave, spec, kind='linear', fill_value='extrapolate')
-    modis_spec = f(modis_wave)
-
-    # Return
-    return modis_wave, modis_spec
