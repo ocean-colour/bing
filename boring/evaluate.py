@@ -54,7 +54,8 @@ def reconstruct_from_chains(models:list, chains, burn=7000, thin=1):
 
 
 def reconstruct_chisq_fits(models:list, params:np.ndarray,
-                           Chl:np.ndarray=None):
+                           Chl:np.ndarray=None,
+                           bb_basis_params:np.ndarray=None):
     """
     Reconstructs the parameters and calculates statistics from chisq fits.
 
@@ -64,6 +65,8 @@ def reconstruct_chisq_fits(models:list, params:np.ndarray,
             if ndim==1, then it is one fit
             if ndim==2, then it is an (nfits, nparams) array of fits
         - Chl (ndarray): The chlorophyll values to use for the fits. Default is None.
+        - bb_basis_params (ndarray): The basis parameters to use for the fits. Default is None.
+            (nspec, nparams)
 
 
     Returns:
@@ -86,8 +89,12 @@ def reconstruct_chisq_fits(models:list, params:np.ndarray,
         params = params.reshape(1, -1)
 
     for ss, param in enumerate(params):
-        if models[0].name == 'ExpBricaud':
-            models[0].set_aph(Chl[ss])
+        # Chl?
+        if models[0].uses_Chl:
+            models[0].set_aph(np.atleast_1d(Chl)[ss])
+        # Lee?
+        if models[1].uses_basis_params:
+            models[1].set_basis_func(np.atleast_1d(bb_basis_params)[ss])
         model_Rrs, a_mean, bb_mean = chisq_fit.fit_func(
             models[0].wave, *param, models=models, return_full=True)
         # Save

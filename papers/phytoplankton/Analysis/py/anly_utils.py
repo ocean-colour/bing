@@ -8,9 +8,11 @@ from oceancolor.hydrolight import loisel23
 from boring import rt as boring_rt
 from boring.models import anw as boring_anw
 from boring.models import bbnw as boring_bbnw
+from boring.models import utils as model_utils
 from boring import stats as boring_stats
 from boring import chisq_fit
 from boring.satellites import pace as boring_pace
+from boring.satellites import modis as boring_modis
 
 from IPython import embed
 
@@ -90,10 +92,7 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
         wave = d_chains['wave']
 
         # Init the models
-        anw_model = boring_anw.init_model(model_names[0], wave)
-        bbnw_model = boring_bbnw.init_model(model_names[1], wave)
-        models = [anw_model, bbnw_model]
-
+        models = model_utils.load_models(model_names, wave)
 
         # Loop on S/N
         if k == 3:
@@ -109,6 +108,7 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
                 d_chains['obs_Rrs'], models, d_chains['ans'],
                             s2n, use_LM=use_LM, debug=False,
                             Chl=d_chains['Chl'],
+                            bb_basis_params=d_chains['Y'], # Lee
                             noise_vector=noise_vector)
             Adict[k].append(AICs)
             Bdict[k].append(BICs)
@@ -206,21 +206,20 @@ def save_fits(all_samples, all_idx, outfile,
     print(f"Saved: {outfile}")
 
 # #############################################################################
-def recon_one(model_names:list, idx:int, wstep:int=1, max_wave:float=None,
+def recon_one(model_names:list, idx:int, max_wave:float=None,
               scl_noise:float=None, add_noise:bool=False, use_LM:bool=False,
-              full_LM:bool=False):
+              full_LM:bool=False, MODIS=False, PACE=False):
 
     # Load up the chains or parameters
     chain_file, noises, noise_lbl = get_chain_file(
         model_names, scl_noise, add_noise, idx, use_LM=use_LM,
-        full_LM=full_LM)
+        full_LM=full_LM, MODIS=MODIS)
     print(f'Loading: {chain_file}')
     d_chains = np.load(chain_file)
 
-
     # Load the data
-    odict = prep_l23_data(idx, step=wstep, max_wave=max_wave)
-    wave = odict['wave']
+    odict = prep_l23_data(idx, max_wave=max_wave)
+    model_wave = odict['wave']
     Rrs = odict['Rrs']
     varRrs = odict['varRrs']
     a_true = odict['a']
@@ -233,30 +232,34 @@ def recon_one(model_names:list, idx:int, wstep:int=1, max_wave:float=None,
     wave_true = odict['true_wave']
     Rrs_true = odict['true_Rrs']
 
-    gordon_Rrs = boring_rt.calc_Rrs(odict['a'][::wstep], odict['bb'][::wstep])
+    gordon_Rrs = boring_rt.calc_Rrs(odict['a'], odict['bb'])
+
+    # MODIS?
+    if MODIS:
+        model_wave = boring_modis.modis_wave
+        model_Rrs = boring_modis.convert_to_modis(wave_true, gordon_Rrs)
 
     # Init the models
-    anw_model = boring_anw.init_model(model_names[0], wave)
-    bbnw_model = boring_bbnw.init_model(model_names[1], wave)
-    models = [anw_model, bbnw_model]
 
-    # Bricaud?
-    if models[0].name == 'ExpBricaud':
+    # Extras?
+    if models[0].uses_Chl:
         models[0].set_aph(odict['Chl'])
+    if models[1].uses_basis_params:  # Lee
+        models[1].set_basis_func(odict['Y'])
 
     # Interpolate
-    aw_interp = np.interp(wave, wave_true, aw)
+    aw_interp = np.interp(model_wave, wave_true, aw)
 
     #embed(header='figs 167')
 
-    # Reconstruc
+    # Reconstruct
     if use_LM:
         if full_LM:
             params = d_chains['ans'][idx]
         else:
             params = d_chains['ans']
         model_Rrs, a_mean, bb_mean = chisq_fit.fit_func(
-            wave, *params, models=models, return_full=True)
+            model_wave, *params, models=models, return_full=True)
     else:
         raise ValueError("Need to implement")
         #a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
@@ -264,7 +267,7 @@ def recon_one(model_names:list, idx:int, wstep:int=1, max_wave:float=None,
         #    models, d_chains['chains']) 
 
     # Return as a dict
-    rdict = dict(wave=wave, Rrs=Rrs, varRrs=varRrs, noise_lbl=noise_lbl,
+    rdict = dict(wave=model_wave, Rrs=Rrs, varRrs=varRrs, noise_lbl=noise_lbl,
                  noises=noises, idx=idx,
                  a_true=a_true, bb_true=bb_true,
                  aw=aw, adg=adg, aph=aph,

@@ -17,6 +17,7 @@ from boring import evaluate
 
 # ############################################################
 def show_fit(models:list, inputs:np.ndarray,
+             ex_a_params:np.ndarray, ex_bb_params:np.ndarray,
              outfile:str=None,
              figsize:tuple=(14,6),
              fontsize:float=12.,
@@ -55,7 +56,8 @@ def show_fit(models:list, inputs:np.ndarray,
     # Reconstruc
     if use_LM:
         model_Rrs, a_mean, bb_mean = evaluate.reconstruct_chisq_fits(
-            models, params)
+            models, params, Chl=ex_a_params, bb_basis_params=ex_bb_params)
+            #d_chains['Chl'], bb_basis_params=d_chains['Y']) # Lee
     else:
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
             model_Rrs, sigRs = evaluate.reconstruct_from_chains(

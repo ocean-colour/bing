@@ -23,16 +23,11 @@ def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
     Returns:
         bbNWModel: The model
     """
-    if model_name == 'Pow':
-        return bbNWPow(wave, prior_dicts)
-    elif model_name == 'Cst':
-        return bbNWCst(wave, prior_dicts)
-    elif model_name == 'Lee':
-        return bbNWLee(wave, prior_dicts)
-    else:
+    model_dict = {'Cst': bbNWCst, 'Pow': bbNWPow, 'Lee': bbNWLee}
+    if model_name not in model_dict.keys():
         raise ValueError(f"Unknown model: {model_name}")
-
-
+    else:
+        return model_dict[model_name](wave, prior_dicts)
 
 class bbNWModel:
     """
@@ -66,6 +61,11 @@ class bbNWModel:
     basis_func:np.ndarray = None
     """
     The basis function for the model
+    """
+
+    uses_basis_params:bool = False
+    """
+    Whether the model uses basis parameters
     """
 
     def __init__(self, wave:np.ndarray, prior_dicts:list):
@@ -146,6 +146,14 @@ class bbNWModel:
             bb_nw (np.ndarray): The non-water absorption coefficient
         """
 
+    def set_basis_func(self, param:float):
+        """
+        Set the basis function for the model
+
+        Parameters:
+            param (float): The basis function
+        """
+
 
 class bbNWCst(bbNWModel):
     """
@@ -223,6 +231,7 @@ class bbNWLee(bbNWModel):
     name = 'Lee'
     nparam = 1
     pivot = 600.
+    uses_basis_params = True
 
     def __init__(self, wave:np.ndarray, prior_dicts:list):
         bbNWModel.__init__(self, wave, prior_dicts)
@@ -230,7 +239,7 @@ class bbNWLee(bbNWModel):
         # Lee+2002
         self.Y = None
 
-    def set_Y(self, Y:float):
+    def set_basis_func(self, Y:float):
         self.Y = Y
         self.basis_func = (self.pivot/self.wave)**self.Y
 

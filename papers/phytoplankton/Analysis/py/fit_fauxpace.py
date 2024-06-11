@@ -57,16 +57,17 @@ def fit(model_names:list, Nspec:int=None, scl_noise:float=0.02,
     varRrs = []
     params = []
     Chls = []
+    Ys = []
     for ss in idx:
         odict = anly_utils.prep_l23_data(
             ss, scl_noise=scl_noise, ds=ds)
         # Rrs
         gordon_Rrs = big_rt.calc_Rrs(odict['a'], odict['bb'])
         # Params
-        if models[0].name in ['ExpBricaud', 'GIOP']:
+        if models[0].uses_Chl:
             models[0].set_aph(odict['Chl'])
-        if models[1].name == 'Lee':
-            models[1].set_Y(odict['Y'])
+        if models[1].uses_basis_params:  # Lee
+            models[1].set_basis_func(odict['Y'])
         # Interpolate
         PACE_Rrs = np.interp(PACE_wave, l23_wave, gordon_Rrs)
         PACE_a = np.interp(PACE_wave, l23_wave, odict['a'])
@@ -84,6 +85,7 @@ def fit(model_names:list, Nspec:int=None, scl_noise:float=0.02,
         params.append(p0)
         # Others
         Chls.append(odict['Chl'])
+        Ys.append(odict['Y'])
     # Arrays
     Rrs = np.array(Rrs)
     params = np.array(params)
@@ -122,7 +124,7 @@ def fit(model_names:list, Nspec:int=None, scl_noise:float=0.02,
     outfile = outfile.replace('BIG', 'BIG_LM')
     np.savez(outfile, ans=all_ans, cov=all_cov,
             wave=PACE_wave, obs_Rrs=Rrs, varRrs=varRrs,
-            idx=all_idx, Chl=Chls)
+            idx=all_idx, Chl=Chls, Y=Ys)
     print(f"Saved: {outfile}")                        
 
 

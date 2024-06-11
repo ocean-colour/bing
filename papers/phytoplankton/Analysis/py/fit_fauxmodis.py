@@ -12,6 +12,7 @@ from oceancolor.hydrolight import loisel23
 
 from boring.models import anw as boring_anw
 from boring.models import bbnw as boring_bbnw
+from boring.models import utils as model_utils
 from boring import inference as boring_inf
 from boring import rt as boring_rt
 from boring import chisq_fit
@@ -31,14 +32,9 @@ def fit(model_names:list, Nspec:int=None,
     ds = loisel23.load_ds(4,0)
     l23_wave = ds.Lambda.data
 
-    # MODIS wavelengths
-    modis_wave = boring_modis.modis_wave #[412, 443, 469, 488, 531, 547, 555, 645, 667, 678, 748]# , 859, 869] # nm
-    modis_wave = np.array(modis_wave)
-
     # Init the models
-    anw_model = boring_anw.init_model(model_names[0], modis_wave)
-    bbnw_model = boring_bbnw.init_model(model_names[1], modis_wave)
-    models = [anw_model, bbnw_model]
+    model_wave = boring_modis.modis_wave
+    models = model_utils.init(model_names, model_wave)
     
     # Prep
     if Nspec is None:
@@ -55,18 +51,20 @@ def fit(model_names:list, Nspec:int=None,
     varRrs = []
     params = []
     Chls = []
+    Ys = []
     for ss in idx:
         odict = anly_utils.prep_l23_data(
             ss, scl_noise=scl_noise, ds=ds)
         # Rrs
         gordon_Rrs = boring_rt.calc_Rrs(odict['a'], odict['bb'])
         # Params
-        if models[0].name in ['ExpBricaud', 'GIOP']:
+        if models[0].uses_Chl:
             models[0].set_aph(odict['Chl'])
+
         # Interpolate
-        modis_Rrs = np.interp(modis_wave, l23_wave, gordon_Rrs)
-        modis_a = np.interp(modis_wave, l23_wave, odict['a'])
-        modis_bb = np.interp(modis_wave, l23_wave, odict['bb'])
+        modis_Rrs = boring_modis.convert_to_modis(l23_wave, gordon_Rrs)
+        modis_a = boring_modis.convert_to_modis(l23_wave, odict['a'])
+        modis_bb = boring_modis.convert_to_modis(l23_wave, odict['bb'])
 
         Rrs.append(modis_Rrs)
         # varRrs
@@ -80,6 +78,7 @@ def fit(model_names:list, Nspec:int=None,
         params.append(p0)
         # Others
         Chls.append(odict['Chl'])
+        Ys.append(odict['Y'])
     # Arrays
     Rrs = np.array(Rrs)
     params = np.array(params)
@@ -98,10 +97,10 @@ def fit(model_names:list, Nspec:int=None,
     all_idx = []
     # Fit
     for item in items:
-        if models[0].name in ['ExpBricaud', 'GIOP']:
+        if models[0].uses_Chl:
             models[0].set_aph(odict['Chl'])
-        if models[1].name == 'Lee':
-            models[1].set_Y(odict['Y'])
+        if models[1].uses_basis_params:  # Lee
+            models[1].set_basis_func(odict['Y'])
         try:
             ans, cov, idx = chisq_fit.fit(item, models)
         except RuntimeError:
@@ -120,7 +119,7 @@ def fit(model_names:list, Nspec:int=None,
     outfile = outfile.replace('BORING', 'BORING_LM')
     np.savez(outfile, ans=all_ans, cov=all_cov,
             wave=modis_wave, obs_Rrs=Rrs, varRrs=varRrs,
-            idx=all_idx, Chl=Chls)
+            idx=all_idx, Chl=Chls, Y=Ys)
     print(f"Saved: {outfile}")                        
 
 

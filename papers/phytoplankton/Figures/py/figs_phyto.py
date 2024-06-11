@@ -20,8 +20,8 @@ from oceancolor.utils import plotting
 from oceancolor.water import absorption
 from oceancolor.hydrolight import loisel23
 
-
-#from boring import rt as boring_rt
+from boring import plotting as boring_plot
+from boring.models import utils as model_utils
 #from boring.models import anw as boring_anw
 #from boring.models import bbnw as boring_bbnw
 #from boring import chisq_fit
@@ -182,15 +182,37 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                  outroot='fig_BORING_fit', show_bbnw:bool=True,
                  add_noise:bool=False, log_Rrs:bool=False,
                  full_LM:bool=True,
+                 MODIS:bool=False,
                  show_trueRrs:bool=False, 
                  max_wave:float=None,
-                 wstep:int=1, use_LM:bool=False,
+                 use_LM:bool=False,
                  set_abblim:bool=True, scl_noise:float=None): 
 
+    # Load the fits
+    chain_file, noises, noise_lbl = anly_utils.get_chain_file(
+        model_names, scl_noise, add_noise, idx, use_LM=use_LM,
+        full_LM=full_LM, MODIS=MODIS)
+    print(f'Loading: {chain_file}')
+    d = np.load(chain_file)
+
+    # Prep 
+    model_wave = d['wave']
+    models = model_utils.init(model_names, model_wave)
+
+    # Outfile
+    outfile = outroot + f'_{model_names[0]}{model_names[1]}_{idx}_{noise_lbl}{noises}.png'
+    if use_LM:
+        outfile = outfile.replace('BORING', 'BORING_LM')
+
+    axes = boring_plot.show_fit(models, d['ans'][idx],
+                                ex_a_params=d['Chl'][idx],
+                                ex_bb_params=d['Y'][idx])
+    
+    '''
     rdict = anly_utils.recon_one(
-        model_names, idx, wstep=wstep, max_wave=max_wave,
+        model_names, idx, max_wave=max_wave,
         scl_noise=scl_noise, add_noise=add_noise, use_LM=use_LM,
-        full_LM=full_LM)
+        full_LM=full_LM, MODIS=MODIS)
     # Unpack what we need
     noise_lbl = rdict['noise_lbl']
     noises = rdict['noises']
@@ -255,13 +277,7 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     # #########################################################
     # b
     ax_bb = plt.subplot(gs[2])
-    if show_bbnw:
-        use_bbw = bbw[::wstep]
-        show_bb = bbnw
-    else:
-        use_bbw = 0.
-        show_bb = bbnw
-    ax_bb.plot(wave_true, show_bb, 'ko', label='True')
+    ax_bb.plot(wave_true, bbnw, 'ko', label='True')
     ax_bb.plot(wave, bb_mean-use_bbw, 'g-', label='Retrieval')
     if not use_LM:
         ax_bb.fill_between(wave, bb_5-use_bbw, bb_95-use_bbw,
@@ -307,6 +323,7 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
         plotting.set_fontsize(ax, 14)
         if ss > 1:
             ax.set_xlabel('Wavelength (nm)')
+    '''
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
@@ -344,7 +361,6 @@ def fig_multi_fits(models:list=None, indices:list=None, max_wave:float=None,
 def compare_models(models:list, idx:int, axes:list, max_wave:float=None,
                    add_noise:bool=False, scl_noise:float=None,
                    log_Rrs:bool=True, lbl_wavelengths:bool=True,
-                   wstep:int=1, 
                    use_LM:bool=True, full_LM:bool=True):
 
     # Loop on models
@@ -353,7 +369,7 @@ def compare_models(models:list, idx:int, axes:list, max_wave:float=None,
 
 
         rdict = anly_utils.recon_one(
-            model_names, idx, wstep=wstep, 
+            model_names, idx, 
             scl_noise=scl_noise, add_noise=add_noise, use_LM=use_LM,
             full_LM=full_LM, max_wave=max_wave)
         # Unpack what we need
@@ -386,12 +402,12 @@ def compare_models(models:list, idx:int, axes:list, max_wave:float=None,
             ax_anw.plot(wave_true, a_true-aw, 'ko', label='True', zorder=1)
             ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
 
-        ax_anw.plot(wave, a_mean-aw[::wstep], clr, label='Retreival')
+        ax_anw.plot(wave, a_mean-aw, clr, label='Retreival')
 
 
         # #########################################################
         # b
-        use_bbw = bbw[::wstep]
+        use_bbw = bbw
         ax_bb = axes[2]
         if ss == 0:
             ax_bb.plot(wave_true, bbnw, 'ko', label='True')
@@ -630,7 +646,7 @@ def fig_spectra(idx:int,
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
-def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
+def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
                 outfile:str='fig_all_bic.png', MODIS:bool=False,
                 comp_ks:tuple=((3,4),(4,5)),
                 PACE:bool=False, log_x:bool=True):
@@ -657,6 +673,7 @@ def fig_all_ic(use_LM:bool=True, wstep:int=1, show_AIC:bool=False,
     D_BIC_B = np.maximum(D_BIC_B, -5.)
     #embed(header='690 of fig_all_bic')
 
+    embed(header='fig_all_bic 660')
 
     fig = plt.figure(figsize=(14,6))
     plt.clf()
@@ -848,7 +865,7 @@ def main(flg):
         #fig_all_ic(MODIS=True, show_AIC=True, 
         #           outfile='fig_all_aic_MODIS.png')
         fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
-                   comp_ks=((2,3), (2,9)))
+                   comp_ks=((2,3), (3,9)))
 
     # BIC/AIC for PACE
     if flg == 6:
@@ -873,8 +890,11 @@ def main(flg):
         #             log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
         #fig_mcmc_fit(['ExpBricaud', 'Pow'], idx=170, 
         #             log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
-        fig_mcmc_fit(['ExpNMF', 'Pow'], idx=170, full_LM=False,
-                     log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
+        #fig_mcmc_fit(['ExpNMF', 'Pow'], idx=170, full_LM=False,
+        #             log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
+        fig_mcmc_fit(['GIOP', 'Lee'], idx=170, full_LM=True,
+            MODIS=True,
+                     log_Rrs=True, use_LM=True)#, full_LM=False)
 
 
 

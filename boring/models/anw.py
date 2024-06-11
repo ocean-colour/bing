@@ -53,6 +53,11 @@ class aNWModel:
     The number of parameters for the model
     """
 
+    uses_Chl:bool = False
+    """
+    Does the model use chlorophyll?
+    """
+
     a_w:np.ndarray = None
     """
     The absorption coefficient of water
@@ -259,6 +264,7 @@ class aNWExpBricaud(aNWModel):
     name = 'ExpBricaud'
     nparam = 3
     pivot = 400.
+    uses_Chl = True
 
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         aNWModel.__init__(self, wave, prior_dicts)
@@ -312,6 +318,7 @@ class aNWGIOP(aNWModel):
     name = 'GIOP'
     nparam = 2
     pivot = 400.
+    uses_Chl = True
 
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         aNWModel.__init__(self, wave, prior_dicts)

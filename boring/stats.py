@@ -38,7 +38,8 @@ def calc_chisq(model_Rrs:np.ndarray, gordon_Rrs:np.ndarray, scl_noise:float,
 def calc_ICs(gordon_Rrs:np.ndarray, models:list, params:np.ndarray, 
               scl_noise:float, use_LM:bool=False,
               debug:bool=False, Chl:np.ndarray=None,
-              noise_vector:np.ndarray=None):
+              noise_vector:np.ndarray=None,
+              bb_basis_params:np.ndarray=None):
     """ Calculate the Akaike and Bayesian Information Criterion
     
     Args:
@@ -49,6 +50,8 @@ def calc_ICs(gordon_Rrs:np.ndarray, models:list, params:np.ndarray,
         use_LM (bool, optional): Flag indicating whether to use Levenberg-Marquardt algorithm. Defaults to False.
         debug (bool, optional): Flag indicating whether to enable debugging. Defaults to False.
         Chl (np.ndarray, optional): Array of chlorophyll-a concentration values. Defaults to None.
+        bb_basis_params (ndarray, optional): The basis parameters to use for the fits. Default is None.
+            (nspec, nparams)
     
     Returns:
         float: Bayesian Information Criterion (BIC) value.
@@ -56,7 +59,7 @@ def calc_ICs(gordon_Rrs:np.ndarray, models:list, params:np.ndarray,
     
     if use_LM:
         model_Rrs, _, _ = boring_eval.reconstruct_chisq_fits(
-            models, params, Chl=Chl)
+            models, params, Chl=Chl, bb_basis_params=bb_basis_params)
     else:
         raise ValueError("Not ready for MCMC yet")
 
