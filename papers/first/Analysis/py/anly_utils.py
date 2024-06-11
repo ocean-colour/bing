@@ -5,18 +5,18 @@ import numpy as np
 
 from oceancolor.hydrolight import loisel23
 
-from big import rt as big_rt
-from big.models import anw as big_anw
-from big.models import bbnw as big_bbnw
-from big import stats as big_stats
-from big import chisq_fit
-from big.satellites import pace as big_pace
+from boring import rt as boring_rt
+from boring.models import anw as boring_anw
+from boring.models import bbnw as boring_bbnw
+from boring import stats as boring_stats
+from boring import chisq_fit
+from boring.satellites import pace as boring_pace
 
 from IPython import embed
 
 def chain_filename(model_names:list, scl_noise, add_noise,
                        idx:int=None, MODIS:bool=False, PACE:bool=False): 
-    outfile = f'../Analysis/Fits/BIG_{model_names[0]}{model_names[1]}'
+    outfile = f'../Analysis/Fits/BORING_{model_names[0]}{model_names[1]}'
 
     if idx is not None:
         outfile += f'_{idx}'
@@ -51,10 +51,10 @@ def get_chain_file(model_names, scl_noise, add_noise, idx,
     else:
         cidx = str(idx)
 
-    chain_file = f'../Analysis/Fits/BIG_{model_names[0]}{model_names[1]}_{cidx}_{noise_lbl}{noises}.npz'
+    chain_file = f'../Analysis/Fits/BORING_{model_names[0]}{model_names[1]}_{cidx}_{noise_lbl}{noises}.npz'
     # LM
     if use_LM:
-        chain_file = chain_file.replace('BIG', 'BIG_LM')
+        chain_file = chain_file.replace('BORING', 'BORING_LM')
     return chain_file, noises, noise_lbl
 
 def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
@@ -90,8 +90,8 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
         wave = d_chains['wave']
 
         # Init the models
-        anw_model = big_anw.init_model(model_names[0], wave)
-        bbnw_model = big_bbnw.init_model(model_names[1], wave)
+        anw_model = boring_anw.init_model(model_names[0], wave)
+        bbnw_model = boring_bbnw.init_model(model_names[1], wave)
         models = [anw_model, bbnw_model]
 
 
@@ -101,11 +101,11 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
             sv_idx = []
         for s2n in s2ns:
             if PACE and (s2n == 'PACE'):
-                noise_vector = big_pace.gen_noise_vector(anw_model.wave)
+                noise_vector = boring_pace.gen_noise_vector(anw_model.wave)
             else:
                 noise_vector = None
             # Calculate BIC
-            AICs, BICs = big_stats.calc_ICs(
+            AICs, BICs = boring_stats.calc_ICs(
                 d_chains['obs_Rrs'], models, d_chains['ans'],
                             s2n, use_LM=use_LM, debug=False,
                             Chl=d_chains['Chl'],
@@ -153,7 +153,7 @@ def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
     aph = ds.aph.data[idx,iwave]
 
     # For bp
-    rrs = Rrs / (big_rt.A_Rrs + big_rt.B_Rrs*Rrs)
+    rrs = Rrs / (boring_rt.A_Rrs + boring_rt.B_Rrs*Rrs)
     i440 = np.argmin(np.abs(true_wave-440))
     i555 = np.argmin(np.abs(true_wave-555))
     Y = 2.2 * (1 - 1.2 * np.exp(-0.9 * rrs[i440]/rrs[i555]))
@@ -233,11 +233,11 @@ def recon_one(model_names:list, idx:int, wstep:int=1, max_wave:float=None,
     wave_true = odict['true_wave']
     Rrs_true = odict['true_Rrs']
 
-    gordon_Rrs = big_rt.calc_Rrs(odict['a'][::wstep], odict['bb'][::wstep])
+    gordon_Rrs = boring_rt.calc_Rrs(odict['a'][::wstep], odict['bb'][::wstep])
 
     # Init the models
-    anw_model = big_anw.init_model(model_names[0], wave)
-    bbnw_model = big_bbnw.init_model(model_names[1], wave)
+    anw_model = boring_anw.init_model(model_names[0], wave)
+    bbnw_model = boring_bbnw.init_model(model_names[1], wave)
     models = [anw_model, bbnw_model]
 
     # Bricaud?
