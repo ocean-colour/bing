@@ -57,7 +57,6 @@ def fit_one(model_names:list, idx:int, n_cores=20,
         model_wave = wave
         
     # Models
-    model_wave = boring_modis.modis_wave
     models = model_utils.init(model_names, model_wave)
     
     # Initialize the MCMC

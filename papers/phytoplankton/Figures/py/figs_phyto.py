@@ -208,130 +208,16 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                                 ex_a_params=d['Chl'][idx],
                                 ex_bb_params=d['Y'][idx])
     
-    '''
-    rdict = anly_utils.recon_one(
-        model_names, idx, max_wave=max_wave,
-        scl_noise=scl_noise, add_noise=add_noise, use_LM=use_LM,
-        full_LM=full_LM, MODIS=MODIS)
-    # Unpack what we need
-    noise_lbl = rdict['noise_lbl']
-    noises = rdict['noises']
-    wave_true = rdict['wave_true']
-    Rrs_true = rdict['Rrs_true']
-    a_true = rdict['a_true']
-    a_mean = rdict['a_mean']
-    bb_true = rdict['bb_true']
-    aw = rdict['aw']
-    adg = rdict['adg']
-    aph = rdict['aph']
-    aw_interp = rdict['aw_interp']
-    wave = rdict['wave']
-    bbw = rdict['bbw']
-    bbnw = rdict['bbnw']
-    bb_mean = rdict['bb_mean']
-    gordon_Rrs = rdict['gordon_Rrs']
-    model_Rrs = rdict['model_Rrs']
-    #sigRs = rdict['sigRs']
-    #a_5 = rdict['a_5']
-    #a_95 = rdict['a_95']
-    
-    
-
-    # Outfile
-    outfile = outroot + f'_{model_names[0]}{model_names[1]}_{idx}_{noise_lbl}{noises}.png'
-    if use_LM:
-        outfile = outfile.replace('BORING', 'BORING_LM')
-
-    # #########################################################
-    # Plot the solution
-    lgsz = 14.
-
-    fig = plt.figure(figsize=(14,6))
-    plt.clf()
-    gs = gridspec.GridSpec(1,3)
-    
-    # #########################################################
-    # a without water
-
-    ax_anw = plt.subplot(gs[1])
-    ax_anw.plot(wave_true, a_true-aw, 'ko', label='True', zorder=1)
-    ax_anw.plot(wave, a_mean-aw_interp, 'r-', label='Retreival')
-    if not use_LM:
-        ax_anw.fill_between(wave, a_5-aw_interp, a_95-aw_interp, 
-            color='r', alpha=0.5, label='Uncertainty') 
-    
-    ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
-
-    ax_anw.plot(wave_true, adg, '-', color='brown', label=r'$a_{\rm dg}$')
-    ax_anw.plot(wave_true, aph, 'b-', label=r'$a_{\rm ph}$')
-
-    #else:
-    #    ax_a.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
-
-    ax_anw.legend(fontsize=10.)
-    if set_abblim:
-        ax_anw.set_ylim(bottom=0., top=2*(a_true-aw).max())
-    #ax_a.tick_params(labelbottom=False)  # Hide x-axis labels
-
-
-    # #########################################################
-    # b
-    ax_bb = plt.subplot(gs[2])
-    ax_bb.plot(wave_true, bbnw, 'ko', label='True')
-    ax_bb.plot(wave, bb_mean-use_bbw, 'g-', label='Retrieval')
-    if not use_LM:
-        ax_bb.fill_between(wave, bb_5-use_bbw, bb_95-use_bbw,
-            color='g', alpha=0.5, label='Uncertainty') 
-
-    #ax_bb.set_xlabel('Wavelength (nm)')
-    if show_bbnw:
-        ax_bb.set_ylabel(r'$b_bnw(\lambda) \; [{\rm m}^{-1}]$')
-    else:
-        ax_bb.set_ylabel(r'$b_b(\lambda) \; [{\rm m}^{-1}]$')
-
-    ax_bb.legend(fontsize=lgsz)
-    if set_abblim:
-        ax_bb.set_ylim(bottom=0., top=2*show_bb.max())
-
-
-    # #########################################################
-    # Rs
-    ax_R = plt.subplot(gs[0])
-    if show_trueRrs:
-        ax_R.plot(wave_true, Rrs_true, 'kx', label='True L23')
-    ax_R.plot(wave, gordon_Rrs, 'k+', label='L23 + Gordon')
-    ax_R.plot(wave, model_Rrs, 'r-', label='Fit', zorder=10)
-    if not use_LM:
-        ax_R.fill_between(wave, model_Rrs-sigRs, model_Rrs+sigRs, 
-            color='r', alpha=0.5, zorder=10) 
-
-    #if add_noise:
-    #    ax_R.plot(d_chains['wave'], d_chains['obs_Rrs'], 'bs', label='Observed')
-
-    ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
-
-    ax_R.legend(fontsize=lgsz)
-    
-    # Log scale y-axis
-    if log_Rrs:
-        ax_R.set_yscale('log')
-    else:
-        ax_R.set_ylim(bottom=0., top=1.1*Rrs_true.max())
-    
-    # axes
-    for ss, ax in enumerate([ax_anw, ax_R, ax_bb]):
-        plotting.set_fontsize(ax, 14)
-        if ss > 1:
-            ax.set_xlabel('Wavelength (nm)')
-    '''
-
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
 
 # ############################################################
-def fig_multi_fits(models:list=None, indices:list=None, max_wave:float=None,
+def fig_multi_fits(models:list=None, 
+                   indices:list=None, 
+                   min_wave:float=400.,
+                   max_wave:float=700.,
                  outroot='fig_multi_fits'): 
 
     if models is None:
@@ -348,17 +234,18 @@ def fig_multi_fits(models:list=None, indices:list=None, max_wave:float=None,
                    [plt.subplot(gs[0]), plt.subplot(gs[1]), 
                     plt.subplot(gs[2])],
                    lbl_wavelengths=False,
-                   max_wave=max_wave)
+                   min_wave=min_wave, max_wave=max_wave)
     compare_models(models, indices[1], 
                    [plt.subplot(gs[3]), plt.subplot(gs[4]), 
                     plt.subplot(gs[5])],
-                   max_wave=max_wave)
+                    min_wave=min_wave, max_wave=max_wave)
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
-def compare_models(models:list, idx:int, axes:list, max_wave:float=None,
+def compare_models(models:list, idx:int, axes:list, 
+                   min_wave:float=None, max_wave:float=None,
                    add_noise:bool=False, scl_noise:float=None,
                    log_Rrs:bool=True, lbl_wavelengths:bool=True,
                    use_LM:bool=True, full_LM:bool=True):
@@ -371,7 +258,7 @@ def compare_models(models:list, idx:int, axes:list, max_wave:float=None,
         rdict = anly_utils.recon_one(
             model_names, idx, 
             scl_noise=scl_noise, add_noise=add_noise, use_LM=use_LM,
-            full_LM=full_LM, max_wave=max_wave)
+            full_LM=full_LM, min_wave=min_wave, max_wave=max_wave)
         # Unpack what we need
         noise_lbl = rdict['noise_lbl']
         noises = rdict['noises']
@@ -852,17 +739,11 @@ def main(flg):
         fig_spectra(170, bbscl=20)
 
     if flg == 2:
-        fig_multi_fits(max_wave=700.)#[('Cst','Cst'), ('Exp','Cst'), ('Exp','Pow'), ('ExpBricaud','Pow')], 
+        fig_multi_fits()#[('Cst','Cst'), ('Exp','Cst'), ('Exp','Pow'), ('ExpBricaud','Pow')], 
                        #[170, 1032])
 
-    # BIC/AIC for 70 + fixed relative error
-    if flg == 4:
-        fig_all_ic(outfile='fig_all_bic_46.png',
-                   comp_ks=((3,4), (4,6)))
-        #fig_all_ic(show_AIC=True, outfile='fig_all_aic.png')
-
     # BIC/AIC for MODIS+L23
-    if flg == 5:
+    if flg == 4:
         fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png',
                    log_x=False) 
         #fig_all_ic(MODIS=True, show_AIC=True, 
@@ -871,9 +752,17 @@ def main(flg):
         #           comp_ks=((2,3), (3,9)))
 
     # BIC/AIC for PACE
-    if flg == 6:
-        fig_all_ic(PACE=True, outfile='fig_all_bic_PACE.png')
+    if flg == 5:
+        fig_all_ic(PACE=True, outfile='fig_all_bic_PACE.png',
+                   log_x=False)
 
+    # BIC/AIC for 70 + fixed relative error
+    if flg == 6:
+        fig_all_ic(outfile='fig_all_bic_46.png',
+                   comp_ks=((3,4), (4,6)))
+        #fig_all_ic(show_AIC=True, outfile='fig_all_aic.png')
+
+    # ########################################
     # Supp
     if flg == 10:
         fig_u()

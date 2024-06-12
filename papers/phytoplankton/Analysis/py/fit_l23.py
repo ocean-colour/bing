@@ -24,6 +24,7 @@ def fit(model_names:list,
         prior_approach:str='log',
         nsteps=80000, nburn=8000,
         use_chisq:bool=False,
+        min_wave:float=None,
         max_wave:float=None,
         MODIS:bool=False, PACE:bool=False,
         scl_noise:float=0.02, add_noise:bool=False,
@@ -45,13 +46,13 @@ def fit(model_names:list,
     """
     # Load L23
     ds = loisel23.load_ds(4,0)
+    gd_wave = np.ones_like(ds.Lambda.data, dtype=bool)
     if max_wave is not None:
-        imax = np.argmin(np.abs(ds.Lambda.data - max_wave))
-        iwave = np.arange(imax)
-    else:
-        iwave = np.arange(ds.Lambda.size)
+        gd_wave &= ds.Lambda.data <= max_wave
+    if min_wave is not None:
+        gd_wave &= ds.Lambda.data >= min_wave
 
-    wave = ds.Lambda.data[iwave]
+    wave = ds.Lambda.data[gd_wave]
 
     # Wavelenegths
     if MODIS:
@@ -63,7 +64,6 @@ def fit(model_names:list,
         model_wave = wave
         
     # Models
-    model_wave = boring_modis.modis_wave
     models = model_utils.init(model_names, model_wave)
 
     # Initialize the MCMC
@@ -180,12 +180,12 @@ def main(flg):
 
     # Full L23 with LM; constant relative error
     if flg == 3:
-        fit(['Cst', 'Cst'], use_chisq=True, max_wave=700.)
-        fit(['Exp', 'Cst'], use_chisq=True, max_wave=700.)
-        fit(['Exp', 'Pow'], use_chisq=True, max_wave=700.)
-        fit(['ExpBricaud', 'Pow'], use_chisq=True, max_wave=700.)
-        fit(['ExpNMF', 'Pow'], use_chisq=True, max_wave=700.)
-        fit(['GIOP', 'Lee'], use_chisq=True, max_wave=700.)
+        fit(['Cst', 'Cst'], use_chisq=True, max_wave=700., min_wave=400.)
+        fit(['Exp', 'Cst'], use_chisq=True, max_wave=700., min_wave=400.)
+        fit(['Exp', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
+        fit(['ExpBricaud', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
+        fit(['ExpNMF', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
+        fit(['GIOP', 'Lee'], use_chisq=True, max_wave=700., min_wave=400.)
 
 
     # MODIS

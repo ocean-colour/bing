@@ -100,7 +100,8 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
             sv_idx = []
         for s2n in s2ns:
             if PACE and (s2n == 'PACE'):
-                noise_vector = boring_pace.gen_noise_vector(anw_model.wave)
+                noise_vector = boring_pace.gen_noise_vector(
+                    models[0].wave)
             else:
                 noise_vector = None
             # Calculate BIC
@@ -126,7 +127,7 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
         
 
 def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
-                  ds=None, max_wave:float=None):
+                  ds=None, max_wave:float=None, min_wave:float=None):
     """ Prepare L23 the data for the fit """
 
     # Load
@@ -135,12 +136,12 @@ def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
 
     wave = ds.Lambda.data
 
+    gd_wave = np.ones_like(ds.Lambda.data, dtype=bool)
     if max_wave is not None:
-        imax = np.argmin(np.abs(ds.Lambda.data - max_wave))
-        iwave = np.arange(imax)
-    else:
-        iwave = np.arange(ds.Lambda.size)
-
+        gd_wave &= ds.Lambda.data <= max_wave
+    if min_wave is not None:
+        gd_wave &= ds.Lambda.data >= min_wave
+    iwave = np.where(gd_wave)[0]
 
     # Grab
     Rrs = ds.Rrs.data[idx,iwave]
@@ -206,9 +207,12 @@ def save_fits(all_samples, all_idx, outfile,
     print(f"Saved: {outfile}")
 
 # #############################################################################
-def recon_one(model_names:list, idx:int, max_wave:float=None,
-              scl_noise:float=None, add_noise:bool=False, use_LM:bool=False,
-              full_LM:bool=False, MODIS=False, PACE=False):
+def recon_one(model_names:list, idx:int, 
+              min_wave:float=None, max_wave:float=None,
+              scl_noise:float=None, add_noise:bool=False, 
+              use_LM:bool=False,
+              full_LM:bool=False, MODIS=False, PACE=False,
+              limit_wave_to_fit:bool=True):
 
     # Load up the chains or parameters
     chain_file, noises, noise_lbl = get_chain_file(
@@ -218,7 +222,7 @@ def recon_one(model_names:list, idx:int, max_wave:float=None,
     d_chains = np.load(chain_file)
 
     # Load the data
-    odict = prep_l23_data(idx, max_wave=max_wave)
+    odict = prep_l23_data(idx, min_wave=min_wave, max_wave=max_wave)
     model_wave = odict['wave']
     Rrs = odict['Rrs']
     varRrs = odict['varRrs']
@@ -238,8 +242,13 @@ def recon_one(model_names:list, idx:int, max_wave:float=None,
     if MODIS:
         model_wave = boring_modis.modis_wave
         model_Rrs = boring_modis.convert_to_modis(wave_true, gordon_Rrs)
+    elif PACE:
+        model_wave = boring_pace.pace_wave
+    else:
+        model_wave = wave_true
 
     # Init the models
+    models = model_utils.init(model_names, model_wave)
 
     # Extras?
     if models[0].uses_Chl:
@@ -271,7 +280,7 @@ def recon_one(model_names:list, idx:int, max_wave:float=None,
                  noises=noises, idx=idx,
                  a_true=a_true, bb_true=bb_true,
                  aw=aw, adg=adg, aph=aph,
-                 anw_model=anw_model, bbnw_model=bbnw_model,
+                 anw_model=models[0], bbnw_model=models[1],
                  aw_interp=aw_interp, 
                  bbw=bbw, bbnw=bbnw,
                  wave_true=wave_true, Rrs_true=Rrs_true,
