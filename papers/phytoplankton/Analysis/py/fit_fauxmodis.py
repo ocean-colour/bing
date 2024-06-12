@@ -29,6 +29,8 @@ def fit(model_names:list, Nspec:int=None,
     """
     Fits the data with or without considering any errors.
     """
+
+    raise DeprecationWarning("Use fit_l23.py instead")
     # Load L23
     ds = loisel23.load_ds(4,0)
     l23_wave = ds.Lambda.data

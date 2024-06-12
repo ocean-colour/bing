@@ -4,11 +4,16 @@ import numpy as np
 
 from oceancolor.hydrolight import loisel23
 
-from big.models import anw as big_anw
-from big.models import bbnw as big_bbnw
-from big import inference as big_inf
-from big import rt as big_rt
-from big import chisq_fit
+from boring.models import anw as boring_anw
+from boring.models import bbnw as boring_bbnw
+from boring.models import utils as model_utils
+from boring import inference as boring_inf
+from boring import rt as boring_rt
+from boring import chisq_fit
+
+from boring.satellites import modis as boring_modis
+from boring.satellites import pace as boring_pace
+from boring.satellites import utils as sat_utils
 
 import anly_utils 
 
@@ -20,8 +25,9 @@ def fit(model_names:list,
         nsteps=80000, nburn=8000,
         use_chisq:bool=False,
         max_wave:float=None,
+        MODIS:bool=False, PACE:bool=False,
         scl_noise:float=0.02, add_noise:bool=False,
-        n_cores:int=20, wstep:int=1, debug:bool=False): 
+        n_cores:int=20, debug:bool=False): 
     """
     Fits the data with or without considering any errors.
 
@@ -45,17 +51,23 @@ def fit(model_names:list,
     else:
         iwave = np.arange(ds.Lambda.size)
 
-    wave = ds.Lambda.data[iwave][::wstep]
+    wave = ds.Lambda.data[iwave]
 
-    # Init the models
-    if not use_chisq:
-        raise ValueError("Add the priors!!")
-    anw_model = big_anw.init_model(model_names[0], wave)
-    bbnw_model = big_bbnw.init_model(model_names[1], wave)
-    models = [anw_model, bbnw_model]
-    
+    # Wavelenegths
+    if MODIS:
+        model_wave = boring_modis.modis_wave
+    elif PACE:
+        model_wave = boring_pace.pace_wave
+        PACE_error = boring_pace.gen_noise_vector(model_wave)
+    else:
+        model_wave = wave
+        
+    # Models
+    model_wave = boring_modis.modis_wave
+    models = model_utils.init(model_names, model_wave)
+
     # Initialize the MCMC
-    pdict = big_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
+    pdict = boring_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
 
     # Prep
     if Nspec is None:
@@ -72,28 +84,36 @@ def fit(model_names:list,
     varRrs = []
     params = []
     Chls = []
+    Ys = []
     for ss in idx:
         odict = anly_utils.prep_l23_data(
-            ss, scl_noise=scl_noise, step=wstep, ds=ds,
+            ss, scl_noise=scl_noise, ds=ds,
             max_wave=max_wave)
         # Rrs
-        gordon_Rrs = big_rt.calc_Rrs(odict['a'][::wstep], 
-                                 odict['bb'][::wstep])
-        Rrs.append(gordon_Rrs)
-        # varRrs
-        ivarRrs = (scl_noise * gordon_Rrs)**2
-        varRrs.append(ivarRrs)
-        # Params
-        if models[0].name in ['ExpBricaud', 'GIOP']:
+        gordon_Rrs = boring_rt.calc_Rrs(odict['a'], odict['bb'])
+        # Internals
+        if models[0].uses_Chl:
             models[0].set_aph(odict['Chl'])
+        if models[1].uses_basis_params:  # Lee
+            models[1].set_basis_func(odict['Y'])
 
-        p0_a = anw_model.init_guess(odict['anw'][::wstep])
-        p0_b = bbnw_model.init_guess(odict['bbnw'][::wstep])
+        # Interpolate
+        l23_wave = odict['true_wave']
+        model_Rrs = sat_utils.convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
+        model_anw = sat_utils.convert_to_satwave(l23_wave, odict['anw'], model_wave)
+        model_bbnw = sat_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
+        model_varRrs = (scl_noise * model_Rrs)**2
+
+        p0_a = models[0].init_guess(model_anw)
+        p0_b = models[1].init_guess(model_bbnw)
         p0 = np.concatenate((np.log10(np.atleast_1d(p0_a)), 
                          np.log10(np.atleast_1d(p0_b))))
         params.append(p0)
         # Others
+        varRrs.append(model_varRrs)
+        Rrs.append(model_Rrs)
         Chls.append(odict['Chl'])
+        Ys.append(odict['Y'])
     # Arrays
     Rrs = np.array(Rrs)
     params = np.array(params)
@@ -113,10 +133,10 @@ def fit(model_names:list,
         all_idx = []
         # Fit
         for item in items:
-            if models[0].name in ['ExpBricaud', 'GIOP']:
-                models[0].set_aph(odict['Chl'])
-            if models[1].name == 'Lee':
-                models[1].set_Y(odict['Y'])
+            if models[0].uses_Chl:
+                models[0].set_aph(Chls[item[3]])
+            if models[1].uses_basis_params:  # Lee
+                models[1].set_basis_func(Ys[item[3]])
             try:
                 ans, cov, idx = chisq_fit.fit(item, models)
             except RuntimeError:
@@ -132,10 +152,10 @@ def fit(model_names:list,
             prev_ans = ans
             prev_cov = cov
         # Save
-        outfile = outfile.replace('BIG', 'BIG_LM')
+        outfile = outfile.replace('BORING', 'BORING_LM')
         np.savez(outfile, ans=all_ans, cov=all_cov,
-              wave=wave, obs_Rrs=Rrs, varRrs=varRrs,
-              idx=all_idx, Chl=Chls)
+              wave=model_wave, obs_Rrs=Rrs, varRrs=varRrs,
+              idx=all_idx, Chl=Chls, Y=Ys)
     else:
         embed(header='fit 116; need to deal with Chl')
         all_samples, all_idx = big_inf.fit_batch(
@@ -145,57 +165,6 @@ def fit(model_names:list,
                          extras=dict(Rrs=Rrs, varRrs=varRrs))
     print(f"Saved: {outfile}")                        
 
-def reconstruct(model_names:list, wstep:int=1,
-        prior_approach:str='log',
-        scl_noise:float=0.02, add_noise:bool=False):
-    # Load L23
-    ds = loisel23.load_ds(4,0)
-    wave = ds.Lambda.data[::wstep]
-
-    # Init the models
-    anw_model = big_anw.init_model(model_names[0], wave, prior_approach)
-    bbnw_model = big_bbnw.init_model(model_names[1], wave, prior_approach)
-    models = [anw_model, bbnw_model]
-
-    # Load the chains
-    chain_file = anly_utils.chain_filename(
-        model_names, scl_noise, add_noise)
-    d_chains = np.load(chain_file)
-
-    # Loop me
-    recon_Rrs = []
-    recon_sigRs = []
-    recon_a = []
-    recon_bb = []
-    recon_a_5 = []
-    recon_a_95 = []
-    recon_bb_5 = []
-    recon_bb_95 = []
-    # Parallize?
-    for ss in range(d_chains['chains'].shape[0]):
-        if ss % 100 == 0:
-            print(f'Working on {ss}')
-        # Reconstruct
-        a_mean, bb_mean, a_5, a_95, bb_5, bb_95, Rrs, sigRs =\
-            anly_utils.reconstruct(models, d_chains['chains'][ss])
-        # Save what we want
-        recon_Rrs.append(Rrs)
-        recon_sigRs.append(sigRs)
-        recon_a.append(a_mean)
-        recon_bb.append(bb_mean)
-        recon_a_5.append(a_5)
-        recon_a_95.append(a_95)
-        recon_bb_5.append(bb_5)
-        recon_bb_95.append(bb_95)
-
-    # Save
-    basename = os.path.basename(chain_file)
-    outfile = 'recon_' + basename
-    np.savez(outfile, Rrs=recon_Rrs, idx=d_chains['idx'],
-             sigRs=recon_sigRs, a=recon_a, bb=recon_bb,
-             a_5=recon_a_5, a_95=recon_a_95,
-             bb_5=recon_bb_5, bb_95=recon_bb_95)
-    print(f'Saved: {outfile}')
 
 def main(flg):
     flg = int(flg)
@@ -207,7 +176,6 @@ def main(flg):
     # Full L23
     if flg == 2:
         fit(['Exp', 'Pow'], nsteps=50000, nburn=5000)
-        reconstruct(['Exp', 'Pow']) 
 
     # Full L23 with LM; constant relative error
     if flg == 3:
@@ -216,6 +184,18 @@ def main(flg):
         fit(['Exp', 'Pow'], use_chisq=True, max_wave=700.)
         fit(['ExpBricaud', 'Pow'], use_chisq=True, max_wave=700.)
         fit(['ExpNMF', 'Pow'], use_chisq=True, max_wave=700.)
+        fit(['GIOP', 'Lee'], use_chisq=True, max_wave=700.)
+
+
+    # MODIS
+    if flg == 4:
+        fit(['Cst', 'Cst'], use_chisq=True, MODIS=True)
+        fit(['Exp', 'Cst'], use_chisq=True, MODIS=True)
+        fit(['Exp', 'Pow'], use_chisq=True, MODIS=True)
+        fit(['ExpBricaud', 'Pow'], use_chisq=True, MODIS=True)
+        fit(['ExpNMF', 'Pow'], use_chisq=True, MODIS=True)
+        fit(['GIOP', 'Lee'], use_chisq=True, MODIS=True)
+
 
 # Command line execution
 if __name__ == '__main__':
