@@ -199,12 +199,13 @@ def main(flg):
 
     # PACE
     if flg == 5:
-        fit(['Cst', 'Cst'], use_chisq=True, PACE=True)
-        fit(['Exp', 'Cst'], use_chisq=True, PACE=True)
-        fit(['Exp', 'Pow'], use_chisq=True, PACE=True)
-        fit(['ExpBricaud', 'Pow'], use_chisq=True, PACE=True)
-        fit(['ExpNMF', 'Pow'], use_chisq=True, PACE=True)
-        fit(['GIOP', 'Lee'], use_chisq=True, PACE=True)
+        #fit(['Cst', 'Cst'], use_chisq=True, PACE=True)
+        #fit(['Exp', 'Cst'], use_chisq=True, PACE=True)
+        #fit(['Exp', 'Pow'], use_chisq=True, PACE=True)
+        #fit(['ExpBricaud', 'Pow'], use_chisq=True, PACE=True)
+        #fit(['ExpNMF', 'Pow'], use_chisq=True, PACE=True)
+        fit(['GIOP', 'Pow'], use_chisq=True, PACE=True)
+        #fit(['GIOP', 'Lee'], use_chisq=True, PACE=True)
 
 # Command line execution
 if __name__ == '__main__':
