@@ -29,11 +29,13 @@ def fit_one(model_names:list, idx:int, n_cores=20,
             scl_noise:float=0.02, use_chisq:bool=False,
             scl:float=None,  # Scaling for the priors
             add_noise:bool=False,
+            max_wave:float=None,
             show:bool=False,
             MODIS:bool=False,
             PACE:bool=False):
 
-    odict = anly_utils.prep_l23_data(idx, scl_noise=scl_noise)
+    odict = anly_utils.prep_l23_data(idx, scl_noise=scl_noise,
+                                     max_wave=max_wave)
 
     # Unpack
     wave = odict['wave']
@@ -90,7 +92,7 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     cbb = models[1].eval_bb(p0[models[0].nparam:])
     pRrs = boring_rt.calc_Rrs(ca, cbb)
     print(f'Initial Rrs guess: {np.mean((model_Rrs-pRrs)/model_Rrs)}')
-    #embed(header='65 of fit one')
+    embed(header='95 of fit one')
     
 
     # Set the items
@@ -156,6 +158,11 @@ def main(flg):
     # GIOP
     if flg == 5:
         fit_one(['GIOP', 'Lee'], idx=0, use_chisq=True, show=True)
+
+    # Debug
+    if flg == 99:
+        fit_one(['ExpNMF', 'Pow'], idx=1067, 
+                use_chisq=True, show=True, max_wave=700.)
 
 # Command line execution
 if __name__ == '__main__':

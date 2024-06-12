@@ -57,7 +57,7 @@ def fit(model_names:list,
     if MODIS:
         model_wave = boring_modis.modis_wave
     elif PACE:
-        model_wave = boring_pace.pace_wave
+        model_wave = boring_pace.PACE_wave
         PACE_error = boring_pace.gen_noise_vector(model_wave)
     else:
         model_wave = wave
@@ -124,7 +124,8 @@ def fit(model_names:list,
 
     # Output file
     outfile = anly_utils.chain_filename(
-        model_names, scl_noise, add_noise)
+        model_names, scl_noise, add_noise, 
+        MODIS=MODIS, PACE=PACE)
 
     # Fit
     if use_chisq:
@@ -196,6 +197,14 @@ def main(flg):
         fit(['ExpNMF', 'Pow'], use_chisq=True, MODIS=True)
         fit(['GIOP', 'Lee'], use_chisq=True, MODIS=True)
 
+    # PACE
+    if flg == 5:
+        fit(['Cst', 'Cst'], use_chisq=True, PACE=True)
+        fit(['Exp', 'Cst'], use_chisq=True, PACE=True)
+        fit(['Exp', 'Pow'], use_chisq=True, PACE=True)
+        fit(['ExpBricaud', 'Pow'], use_chisq=True, PACE=True)
+        fit(['ExpNMF', 'Pow'], use_chisq=True, PACE=True)
+        fit(['GIOP', 'Lee'], use_chisq=True, PACE=True)
 
 # Command line execution
 if __name__ == '__main__':
