@@ -183,17 +183,23 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                  add_noise:bool=False, log_Rrs:bool=False,
                  full_LM:bool=True,
                  MODIS:bool=False,
+                 PACE:bool=False,
                  show_trueRrs:bool=False, 
                  max_wave:float=None,
                  use_LM:bool=False,
-                 set_abblim:bool=True, scl_noise:float=None): 
+                 set_abblim:bool=True, scl_noise:float=0.02): 
 
     # Load the fits
     chain_file, noises, noise_lbl = anly_utils.get_chain_file(
         model_names, scl_noise, add_noise, idx, use_LM=use_LM,
-        full_LM=full_LM, MODIS=MODIS)
+        full_LM=full_LM, MODIS=MODIS, PACE=PACE)
     print(f'Loading: {chain_file}')
     d = np.load(chain_file)
+
+    # Data
+    odict = anly_utils.prep_l23_data(idx, scl_noise=scl_noise,
+                                     max_wave=max_wave)
+    #embed(header='figs 167')
 
     # Prep 
     model_wave = d['wave']
@@ -204,9 +210,13 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     if use_LM:
         outfile = outfile.replace('BORING', 'BORING_LM')
 
-    axes = boring_plot.show_fit(models, d['ans'][idx],
-                                ex_a_params=d['Chl'][idx],
-                                ex_bb_params=d['Y'][idx])
+    axes = boring_plot.show_fit(
+        models, d['ans'][idx], ex_a_params=d['Chl'][idx], 
+        ex_bb_params=d['Y'][idx],
+        Rrs_true=dict(wave=odict['wave'], spec=odict['gordon_Rrs']),
+        anw_true=dict(wave=odict['true_wave'], spec=odict['anw']),
+        bbnw_true=dict(wave=odict['true_wave'], spec=odict['bbnw']),
+        )
     
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
@@ -727,6 +737,106 @@ def fig_one_bic(models:list=None, idx:int=170,
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
+def fig_Sexp(outfile='fig_Sexp.png'):
+
+
+    # Load
+    ds = loisel23.load_ds(4,0)
+    l23_wave = ds.Lambda.data
+    l23_Rrs = ds.Rrs.data
+    a = ds.a.data
+    bb = ds.bb.data
+    adg = ds.ag.data + ds.ad.data
+    aph = ds.aph.data
+    anw = ds.anw.data
+
+    ks = [3,4,5]
+    pdict = {}
+    for k in ks:
+        pdict[k] = {}
+        # Model names
+        if k == 3:
+            model_names = ['Exp', 'Cst']
+        elif k == 4:
+            model_names = ['Exp', 'Pow']
+        elif k == 5:
+            model_names = ['ExpBricaud', 'Pow']
+        else:
+            raise ValueError("Bad k")
+
+        chain_file, noises, noise_lbl = anly_utils.get_chain_file(
+            model_names, 0.02, False, 'L23', use_LM=True,
+            PACE=True)
+        # Load up
+        d = np.load(chain_file)
+        # Parse
+        pdict[k]['params'] = d['ans']
+        if k == ks[0]:
+            pdict['Rrs'] = d['obs_Rrs']
+            pdict['idx'] = d['idx']
+
+    Sexp = pdict[4]['params'][:,1]
+
+    '''
+    def exp_func(wave, A, S, pivot=440.):
+        return A * np.exp(-S*(wave-pivot))
+
+    # Fit
+    p0 = [0.2, 0.015]
+    adg_fits = []
+    cut = (l23_wave > 400.) & (l23_wave < 525.)
+    for iadg in adg:
+        ans, cov =  curve_fit(exp_func, l23_wave[cut], 
+                            iadg[cut],
+                            p0=p0, #sigma=np.sqrt(varRrs),
+                            full_output=False)
+        # 
+        adg_fits.append(ans)
+    adg_fits = np.array(adg_fits)
+    '''
+
+    i440 = np.argmin(np.abs(l23_wave-440.))
+    aph_anw = aph[:,i440]/anw[:,i440]
+
+    xmin, xmax = 0.08, 0.9
+    #
+    cut = Sexp > -6.
+    fig = plt.figure(figsize=(10,6))
+    ax = plt.gca()
+    #
+    ax.scatter(aph_anw[cut], 10**Sexp[cut], s=1, color='k')
+    # Sg
+    #ax.fill_between([xmin, xmax], [np.log10(0.01)]*2, [np.log10(0.02)]*2, color='cyan', alpha=0.3, label=r'$S_g$')
+    ax.fill_between([xmin, xmax], [0.01]*2, [0.02]*2, color='cyan', alpha=0.3, label=r'$S_g$')
+    # Sd
+    ax.fill_between([xmin, xmax], [0.007]*2, [0.015]*2, color='yellow', alpha=0.3, label=r'$S_d$')
+    #ax.fill_between([xmin, xmax], [np.log10(0.007)]*2, [np.log10(0.015)]*2, color='brown', alpha=0.3, label=r'$S_d$')
+    # Fit to a_dg
+    #ax.fill_between([xmin, xmax], [np.log10(adg_fits[:,1].min())]*2, [np.log10(adg_fits[:,1].max())]*2, color='yellow', alpha=0.3, label=r'$S_{dg}$')
+    # Werdell2013
+    #ax.axhline(np.log10(0.018), color='k', ls='--', label='GIOP')
+    #ax.axhline(np.log10(0.0206), color='k', ls=':', label='GSM')
+    ax.axhline(0.018, color='k', ls='--', label='GIOP')
+    ax.axhline(0.0206, color='k', ls=':', label='GSM')
+    # Tara extreme
+    #ax.axhline(np.log10(0.004746), color='r', ls='-', label='Tara')
+    ax.axhline(0.004746, color='r', ls='-', label='Tara')
+    #
+    #ax.set_ylabel(r'$\log_{10} \, S_{\rm exp}$')
+    ax.set_ylabel(r'$S_{\rm exp} \rm \; [nm^{-1}]$')
+    ax.set_xlabel(r'$[a_{\rm ph}/a_{\rm nw}] (440)$')
+    ax.set_xlim(xmin, xmax)
+    #
+    #ax.set_ylim(-3., None)
+    ax.set_ylim(0, 0.022)
+    ax.legend(fontsize=15.)
+    #
+    plotting.set_fontsize(ax, 17.)
+    
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+
 
 def main(flg):
     if flg== 'all':
@@ -770,6 +880,9 @@ def main(flg):
     if flg == 11:
         fig_Kd()
 
+    if flg == 12:
+        fig_Sexp()
+
     # LM fits
     if flg == 30:
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True)
@@ -784,9 +897,10 @@ def main(flg):
         #             log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
         #fig_mcmc_fit(['ExpNMF', 'Pow'], idx=170, full_LM=False,
         #             log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
-        fig_mcmc_fit(['GIOP', 'Lee'], idx=170, full_LM=True,
-            MODIS=True,
-                     log_Rrs=True, use_LM=True)#, full_LM=False)
+        #fig_mcmc_fit(['ExpBricaud', 'Pow'], idx=170, full_LM=True,
+        #fig_mcmc_fit(['GIOP', 'Lee'], idx=170, full_LM=True,
+        fig_mcmc_fit(['GIOP', 'Pow'], idx=170, full_LM=True,
+            PACE=True, log_Rrs=True, use_LM=True)#, full_LM=False)
 
 
 

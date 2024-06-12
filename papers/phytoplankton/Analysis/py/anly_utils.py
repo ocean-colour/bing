@@ -167,12 +167,16 @@ def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
     Rrs = Rrs[::step]
     wave = wave[::step]
 
+    # Gordon
+    gordon_Rrs = boring_rt.calc_Rrs(a, bb)
+
     # Error
     varRrs = (scl_noise * Rrs)**2
 
     # Dict me
     odict = dict(wave=wave, Rrs=Rrs, varRrs=varRrs, a=a, bb=bb, 
                  true_wave=true_wave, true_Rrs=true_Rrs,
+                 gordon_Rrs=gordon_Rrs,
                  bbw=ds.bb.data[idx,iwave]-ds.bbnw.data[idx,iwave],
                  bbnw=ds.bbnw.data[idx,iwave],
                  aw=ds.a.data[idx,iwave]-ds.anw.data[idx,iwave],
