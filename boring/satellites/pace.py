@@ -12,8 +12,17 @@ from IPython import embed
 PACE_wave = np.arange(400, 701, 5)
 
 def gen_noise_vector(wave:np.ndarray):
+    """
+    Generate a noise vector based on PACE error.
+
+    Parameters:
+        wave (np.ndarray): Array of wavelengths.
+
+    Returns:
+        np.ndarray: Noise vector based on PACE error.
+    """
     # Load PACE error
-    pace_file = os.path.join(files('big'), 'data', 'PACE', 'PACE_error.csv')
+    pace_file = files('boring').joinpath(os.path.join('data', 'PACE', 'PACE_error.csv'))
     PACE_errors = pandas.read_csv(pace_file)
 
     # Interpolate

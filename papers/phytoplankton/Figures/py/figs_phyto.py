@@ -480,12 +480,9 @@ def fig_chi2_model(model:str, idx:int=170, chain_file=None,
 
 # ############################################################
 def fig_spectra(idx:int, 
-                 outroot='fig_spectra_', show_bbnw:bool=False,
-                 add_noise:bool=False, log_Rrs:bool=False,
-                 show_trueRrs:bool=False,
+                 outroot='fig_spectra_', 
                  show_acomps:bool=False,
-                 bbscl:float=20,
-                 set_abblim:bool=True, scl_noise:float=None): 
+                 bbscl:float=20):
 
     # Outfile
     outfile = outroot + f'{idx}.png'
@@ -500,7 +497,7 @@ def fig_spectra(idx:int,
     adg = odict['adg']
     bb = odict['bb']
     bbw = odict['bbw']
-    bnw = odict['bb'] - bbw
+    bbnw = odict['bb'] - bbw
 
     #
     fig = plt.figure(figsize=(9,5))
@@ -518,7 +515,7 @@ def fig_spectra(idx:int,
     ax.plot(wave, bb, ':', color='k', label=r'$b_{b}$', zorder=1)
 
     ax.plot(wave, bbscl*bbw, ':', color='blue', label=f'{bbscl}*'+r'$b_{b,w}$', zorder=1)
-    ax.plot(wave, bbscl*bnw, ':', color='red', label=f'{bbscl}*'+r'$b_{b,nw}$', zorder=1)
+    ax.plot(wave, bbscl*bbnw, ':', color='red', label=f'{bbscl}*'+r'$b_{b,nw}$', zorder=1)
 
     #
     # Legend filled white
@@ -534,19 +531,23 @@ def fig_spectra(idx:int,
     plotting.set_fontsize(ax, 15)
 
     # Fill between
+    aw_to_anw = aw/anw
+    bbw_to_bbnw = bbw/bbnw
+    ratio = 5.
+    red_idx = np.argmin(np.abs(aw_to_anw - ratio))
+    blue_idx = np.argmin(np.abs(bbw_to_bbnw - ratio))
+
     alpha=0.3
-    ax.fill_between([500., 750.], 0, ymax, color='red', alpha=alpha)
-    ax.fill_between([350., 450.], 0, ymax, color='blue', alpha=alpha)
+    ax.fill_between([wave[red_idx], 750.], 0, ymax, color='red', alpha=alpha)
+    ax.fill_between([350., wave[blue_idx]], 0, ymax, color='blue', alpha=alpha)
 
-    # Add text
-    yl1, yl2 = 0.075, 0.07
-    x1, x2 = 505., 445.
     # Red
-    ax.text(x1, yl1, r'$a_w \gg a_{nw}$', fontsize=15, ha='left')
-    ax.text(x1, yl2, r'$b_{b,nw} \approx b_{b,w}$', fontsize=15, ha='left')
+    buff = 5.
+    ax.text(wave[red_idx]+buff, 0.025, r'$a_w > '+f'{int(ratio)}'+r'a_{nw}$', fontsize=15, ha='left')
+    ax.text(wave[red_idx]+buff, 0.02, r'$b_{b,nw} \approx b_{b,w}$', fontsize=15, ha='left')
 
-    ax.text(x2, yl1, r'$b_{b,w} \gg b_{b,nw}$', fontsize=15, ha='right')
-    ax.text(x2, yl2, r'$a_{nw} > a_{w}$', fontsize=15, ha='right')
+    ax.text(wave[blue_idx]-buff, 0.07, r'$b_{b,w} >'+f'{int(ratio)}'+r'b_{b,nw}$', fontsize=15, ha='right')
+    ax.text(wave[blue_idx]-buff, 0.075, r'$a_{nw} > a_{w}$', fontsize=15, ha='right')
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
@@ -592,7 +593,7 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
     for ss in range(2):
         ax = plt.subplot(gs[ss])
         D_BIC = D_BIC_A if ss == 0 else D_BIC_B
-        subset = f'{comp_ks[ss][0]}{comp_ks[ss][1]}'
+        subset = f'{comp_ks[ss][0]},{comp_ks[ss][1]}'
         for ss, s2n in enumerate(s2ns):
             if log_x:
                 xvals = np.log10(D_BIC[ss] + 6.)
@@ -601,7 +602,13 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
             # CDF
             srt = np.sort(xvals)
             yvals = np.arange(srt.size) / srt.size
-            ax.plot(srt, yvals, label=f's2n={s2n}', linewidth=3)
+            try:
+                fs2n = int(1./float(s2n))
+                color = None
+            except ValueError:
+                fs2n = s2n
+                color = 'k'
+            ax.plot(srt, yvals, label=f'S/N={fs2n}', color=color, linewidth=3)
             # PDF
             #ax34.hist(xvals, bins=nbins,
             #        histtype='step', 
@@ -845,7 +852,8 @@ def main(flg):
     # BIC/AIC for MODIS+L23
     if flg == 4:
         fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png',
-                   log_x=False) 
+                   log_x=False,
+                   comp_ks=((2,3), (3,5)))
         #fig_all_ic(MODIS=True, show_AIC=True, 
         #           outfile='fig_all_aic_MODIS.png')
         #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
