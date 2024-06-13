@@ -91,7 +91,7 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     cbb = models[1].eval_bb(p0[models[0].nparam:])
     pRrs = boring_rt.calc_Rrs(ca, cbb)
     print(f'Initial Rrs guess: {np.mean((model_Rrs-pRrs)/model_Rrs)}')
-    embed(header='95 of fit one')
+    #embed(header='95 of fit one')
     
 
     # Set the items
@@ -160,8 +160,10 @@ def main(flg):
 
     # Debug
     if flg == 99:
-        fit_one(['ExpNMF', 'Pow'], idx=1067, 
+        fit_one(['GSM', 'GSM'], idx=170, 
                 use_chisq=True, show=True, max_wave=700.)
+        #fit_one(['ExpNMF', 'Pow'], idx=1067, 
+        #        use_chisq=True, show=True, max_wave=700.)
 
 # Command line execution
 if __name__ == '__main__':

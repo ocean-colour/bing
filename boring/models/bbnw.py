@@ -23,7 +23,8 @@ def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
     Returns:
         bbNWModel: The model
     """
-    model_dict = {'Cst': bbNWCst, 'Pow': bbNWPow, 'Lee': bbNWLee}
+    model_dict = {'Cst': bbNWCst, 'Pow': bbNWPow, 
+                  'Lee': bbNWLee, 'GSM': bbNWGSM}
     if model_name not in model_dict.keys():
         raise ValueError(f"Unknown model: {model_name}")
     else:
@@ -122,6 +123,8 @@ class bbNWModel:
             return functions.constant(self.wave, params)
         elif self.name == 'Lee':
             return functions.gen_basis(params[...,-1:], [self.basis_func])
+        elif self.name == 'GSM':
+            return functions.gen_basis(params[...,-1:], [self.basis_func])
         else:
             raise ValueError(f"Unknown model: {self.name}")
 
@@ -212,6 +215,80 @@ class bbNWPow(bbNWModel):
         """
         i600 = np.argmin(np.abs(self.wave-self.pivot))
         p0_bb = np.array([bb_nw[i600], 1.])
+        assert p0_bb.size == self.nparam
+
+        # Return
+        return p0_bb 
+
+class bbNWPow(bbNWModel):
+    """
+    Power-law model for non-water backscattering
+        bb_nw = Bnw * (600/wave)^beta
+
+    Attributes:
+
+    """
+    name = 'Pow'
+    nparam = 2
+    pivot = 600.
+
+    def __init__(self, wave:np.ndarray, prior_dicts:list):
+        bbNWModel.__init__(self, wave, prior_dicts)
+
+    def init_guess(self, bb_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            a_nw (np.ndarray): The non-water absorption coefficient
+
+        Returns:
+            np.ndarray: The initial guess for the parameters
+        """
+        i600 = np.argmin(np.abs(self.wave-self.pivot))
+        p0_bb = np.array([bb_nw[i600], 1.])
+        assert p0_bb.size == self.nparam
+
+        # Return
+        return p0_bb 
+
+class bbNWGSM(bbNWModel):
+    """
+    Power-law model for non-water backscattering
+
+        bb_nw = Bnw * (443/wave)^eta
+
+     with eta = 1.0337
+
+    Attributes:
+
+    """
+    name = 'GSM'
+    nparam = 1
+    pivot = 443.
+
+    def __init__(self, wave:np.ndarray, prior_dicts:list):
+        bbNWModel.__init__(self, wave, prior_dicts)
+
+        # Lee+2002
+        self.eta = 1.0337
+        self.set_basis_func()
+
+    def set_basis_func(self):
+        self.basis_func = (self.pivot/self.wave)**self.eta
+
+    def init_guess(self, bb_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            a_nw (np.ndarray): The non-water absorption coefficient
+
+        Returns:
+            np.ndarray: The initial guess for the parameters
+        """
+        i600 = np.argmin(np.abs(self.wave-self.pivot))
+        p0_bb = np.array([bb_nw[i600]])
         assert p0_bb.size == self.nparam
 
         # Return

@@ -776,25 +776,6 @@ def fig_Sexp(outfile='fig_Sexp.png'):
             pdict['idx'] = d['idx']
 
     Sexp = pdict[4]['params'][:,1]
-
-    '''
-    def exp_func(wave, A, S, pivot=440.):
-        return A * np.exp(-S*(wave-pivot))
-
-    # Fit
-    p0 = [0.2, 0.015]
-    adg_fits = []
-    cut = (l23_wave > 400.) & (l23_wave < 525.)
-    for iadg in adg:
-        ans, cov =  curve_fit(exp_func, l23_wave[cut], 
-                            iadg[cut],
-                            p0=p0, #sigma=np.sqrt(varRrs),
-                            full_output=False)
-        # 
-        adg_fits.append(ans)
-    adg_fits = np.array(adg_fits)
-    '''
-
     i440 = np.argmin(np.abs(l23_wave-440.))
     aph_anw = aph[:,i440]/anw[:,i440]
 
@@ -899,7 +880,9 @@ def main(flg):
         #             log_Rrs=True, use_LM=True, max_wave=700.)#, full_LM=False)
         #fig_mcmc_fit(['ExpBricaud', 'Pow'], idx=170, full_LM=True,
         #fig_mcmc_fit(['GIOP', 'Lee'], idx=170, full_LM=True,
-        fig_mcmc_fit(['GIOP', 'Pow'], idx=170, full_LM=True,
+        #fig_mcmc_fit(['GIOP', 'Pow'], idx=170, full_LM=True,
+        #    PACE=True, log_Rrs=True, use_LM=True)#, full_LM=False)
+        fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=True,
             PACE=True, log_Rrs=True, use_LM=True)#, full_LM=False)
 
 

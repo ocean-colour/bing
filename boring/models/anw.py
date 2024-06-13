@@ -29,7 +29,8 @@ def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
         aNWModel: The model
     """
     model_dict = {'Exp': aNWExp, 'Cst': aNWCst, 'ExpBricaud': aNWExpBricaud,
-                  'GIOP': aNWGIOP, 'ExpNMF': aNWExpNMF, 'ExpFix': aNWExpFix}
+                  'GIOP': aNWGIOP, 'ExpNMF': aNWExpNMF, 'ExpFix': aNWExpFix,
+                  'GSM': aNWGSM}
     if model_name not in model_dict.keys():
         raise ValueError(f"Unknown model: {model_name}")
     else:
@@ -132,7 +133,7 @@ class aNWModel:
             a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
             a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
             return a_dg + a_ph
-        elif self.name == 'GIOP':
+        elif self.name in ['GIOP', 'GSM']:
             a_dg = functions.exponential(self.wave, params, pivot=self.pivot, S=self.Sdg)
             a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
             return a_dg + a_ph
@@ -414,44 +415,47 @@ class aNWExpNMF(aNWModel):
 
 class aNWGSM(aNWModel):
     """
-    GSM (M
+    GSM (Manitorena+2002)
     Exponential model with Sdg fixed + Bricaud aph for non-water absorption
         adg = Adg * exp(-Sdg*(wave-400))
-            Sdg = 0.018
-        aph = Aph * [A_B * chlA**E_B]
+            Sdg = 0.0206
+        aph = Chl * a_ph*
+            with a_ph* an interpolation of Maritorena+2002 values
 
     Attributes:
 
     """
-    name = 'GIOP'
+    name = 'GSM'
     nparam = 2
-    pivot = 400.
+    pivot = 443.
     uses_Chl = True
 
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         aNWModel.__init__(self, wave, prior_dicts)
 
-        # Sdg
-        self.Sdg = 0.018
+        # Sdg 
+        self.Sdg = 0.0206
 
     def set_aph(self, Chla):
         # ##################################
-        # Bricaud
-        b1998 = ph_absorption.load_bricaud1998()
+        # Maritorena+2002
+        interp_wv = [412., 443., 490., 510., 555.]
+        interp_aph_star = [0.00665, 0.05582, 0.02055, 0.01910, 0.01015]
 
         # Interpolate
-        f_b1998_A = interp1d(b1998['lambda'], b1998.Aphi, bounds_error=False, fill_value=0.)
-        f_b1998_E = interp1d(b1998['lambda'], b1998.Ephi, bounds_error=False, fill_value=0.)
+        f = interp1d(interp_wv, interp_aph_star, kind='linear', fill_value='extrapolate')
 
         # Apply
-        L23_A = f_b1998_A(self.wave)
-        L23_E = f_b1998_E(self.wave)
+        aph_star = f(self.wave)
 
-        self.a_ph = L23_A * Chla**L23_E
+        # Truncate at 400
+        aph_star[self.wave < 400] = 0.
 
-        # Normalize at 440
-        iwave = np.argmin(np.abs(self.wave-440))
-        self.a_ph /= self.a_ph[iwave]
+        # Minimum value is 0
+        aph_star[aph_star < 0.] = 0.
+
+        self.a_ph = aph_star
+        self.Chla = Chla
 
     def init_guess(self, a_nw:np.ndarray):
         """
@@ -463,8 +467,8 @@ class aNWGSM(aNWModel):
         Returns:
             np.ndarray: The initial guess for the parameters
         """
-        i400 = np.argmin(np.abs(self.wave-400))
-        p0_a = np.array([a_nw[i400]/2., a_nw[i400]/2.])
+        ipivot = np.argmin(np.abs(self.wave-self.pivot))
+        p0_a = np.array([a_nw[ipivot]/2., self.Chla])
         assert p0_a.size == self.nparam
         # Return
         return p0_a

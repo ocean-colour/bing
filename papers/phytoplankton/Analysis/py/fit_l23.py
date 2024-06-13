@@ -180,22 +180,24 @@ def main(flg):
 
     # Full L23 with LM; constant relative error
     if flg == 3:
-        fit(['Cst', 'Cst'], use_chisq=True, max_wave=700., min_wave=400.)
-        fit(['Exp', 'Cst'], use_chisq=True, max_wave=700., min_wave=400.)
-        fit(['Exp', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
-        fit(['ExpBricaud', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
-        fit(['ExpNMF', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
-        fit(['GIOP', 'Lee'], use_chisq=True, max_wave=700., min_wave=400.)
+        #fit(['Cst', 'Cst'], use_chisq=True, max_wave=700., min_wave=400.)
+        #fit(['Exp', 'Cst'], use_chisq=True, max_wave=700., min_wave=400.)
+        #fit(['Exp', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
+        #fit(['ExpBricaud', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
+        #fit(['ExpNMF', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
+        #fit(['GIOP', 'Lee'], use_chisq=True, max_wave=700., min_wave=400.)
+        fit(['GSM', 'GSM'], use_chisq=True, max_wave=700., min_wave=400.)
 
 
     # MODIS
     if flg == 4:
-        fit(['Cst', 'Cst'], use_chisq=True, MODIS=True)
-        fit(['Exp', 'Cst'], use_chisq=True, MODIS=True)
-        fit(['Exp', 'Pow'], use_chisq=True, MODIS=True)
-        fit(['ExpBricaud', 'Pow'], use_chisq=True, MODIS=True)
-        fit(['ExpNMF', 'Pow'], use_chisq=True, MODIS=True)
-        fit(['GIOP', 'Lee'], use_chisq=True, MODIS=True)
+        #fit(['Cst', 'Cst'], use_chisq=True, MODIS=True)
+        #fit(['Exp', 'Cst'], use_chisq=True, MODIS=True)
+        #fit(['Exp', 'Pow'], use_chisq=True, MODIS=True)
+        #fit(['ExpBricaud', 'Pow'], use_chisq=True, MODIS=True)
+        #fit(['ExpNMF', 'Pow'], use_chisq=True, MODIS=True)
+        #fit(['GIOP', 'Lee'], use_chisq=True, MODIS=True)
+        fit(['GSM', 'GSM'], use_chisq=True, MODIS=True)
 
     # PACE
     if flg == 5:
@@ -204,8 +206,9 @@ def main(flg):
         #fit(['Exp', 'Pow'], use_chisq=True, PACE=True)
         #fit(['ExpBricaud', 'Pow'], use_chisq=True, PACE=True)
         #fit(['ExpNMF', 'Pow'], use_chisq=True, PACE=True)
-        fit(['GIOP', 'Pow'], use_chisq=True, PACE=True)
+        #fit(['GIOP', 'Pow'], use_chisq=True, PACE=True)
         #fit(['GIOP', 'Lee'], use_chisq=True, PACE=True)
+        fit(['GSM', 'GSM'], use_chisq=True, PACE=True)
 
 # Command line execution
 if __name__ == '__main__':
