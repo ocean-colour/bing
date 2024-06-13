@@ -15,6 +15,7 @@ from boring import inference as boring_inf
 from boring import rt as boring_rt
 from boring import chisq_fit
 from boring import plotting as boring_plot
+from boring import priors as boring_priors
 
 from boring.satellites import modis as boring_modis
 from boring.satellites import pace as boring_pace
@@ -55,7 +56,7 @@ def fit_one(model_names:list, idx:int, n_cores=20,
         PACE_error = boring_pace.gen_noise_vector(PACE_wave)
     else:
         model_wave = wave
-        
+
     # Models
     models = model_utils.init(model_names, model_wave)
     
@@ -99,13 +100,19 @@ def fit_one(model_names:list, idx:int, n_cores=20,
 
     outfile = anly_utils.chain_filename(model_names, scl_noise, add_noise, idx=idx)
     if not use_chisq:
-        raise ValueError("Need to implement")
+        prior_dict = dict(flavor='uniform', pmin=-6, pmax=5)
+
+        for jj in range(2):
+            models[jj].priors = boring_priors.Priors(
+                [prior_dict]*models[jj].nparam)
+
         # Fit
         chains, idx = boring_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
 
         # Save
         anly_utils.save_fits(chains, idx, outfile,
-              extras=dict(wave=wave, obs_Rrs=gordon_Rrs, varRrs=varRrs))
+              extras=dict(wave=wave, obs_Rrs=gordon_Rrs, 
+                          varRrs=varRrs, Chl=odict['Chl'], Y=odict['Y']))
     else:
         # Fit
         ans, cov, idx = chisq_fit.fit(items[0], models)
@@ -121,7 +128,8 @@ def fit_one(model_names:list, idx:int, n_cores=20,
         # Save
         outfile = outfile.replace('BORING', 'BORING_LM')
         np.savez(outfile, ans=ans, cov=cov,
-              wave=wave, obs_Rrs=gordon_Rrs, varRrs=varRrs)
+              wave=wave, obs_Rrs=gordon_Rrs, varRrs=varRrs,
+              Chl=odict['Chl'], Y=odict['Y'])
         print(f"Saved: {outfile}")
         #
         return ans, cov
@@ -164,6 +172,11 @@ def main(flg):
                 use_chisq=True, show=True, max_wave=700.)
         #fit_one(['ExpNMF', 'Pow'], idx=1067, 
         #        use_chisq=True, show=True, max_wave=700.)
+
+    # Debug
+    if flg == 100:
+        fit_one(['GSM', 'GSM'], idx=170, 
+                use_chisq=False, show=True, max_wave=700.)
 
 # Command line execution
 if __name__ == '__main__':
