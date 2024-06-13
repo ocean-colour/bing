@@ -63,7 +63,7 @@ class UniformPrior(Prior):
         self.pmin = pdict['pmin']
         self.pmax = pdict['pmax']
 
-    def calc(self, params:np.ndarray):
+    def calc(self, param:float):
         """
         Calculate the prior for the parameters
 
@@ -73,7 +73,7 @@ class UniformPrior(Prior):
         Returns:
             bool: True if the parameters are within the prior, False otherwise
         """
-        if (params[0] < self.pmin) or (params[1] > self.pmax):
+        if (param < self.pmin) or (param > self.pmax):
             return -np.inf
         else:
             return 0
@@ -104,9 +104,10 @@ class Priors:
         Set the priors for the model
 
         """
+        self.priors = []
         for pdict in pdicts:
             if pdict['flavor'] == 'uniform':
-                self.priors = UniformPrior(pdict)
+                self.priors.append(UniformPrior(pdict))
             else:
                 raise ValueError(f"Unknown prior flavor: {pdict['flavor']}")
 
@@ -114,3 +115,8 @@ class Priors:
         prior_sum = 0.
         for kk,prior in enumerate(self.priors):
             prior_sum += prior.calc(params[kk])
+        #
+        return prior_sum
+
+    def __repr__(self):
+        return f"<Priors: {self.priors}>"

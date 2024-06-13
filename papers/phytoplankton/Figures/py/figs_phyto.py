@@ -210,9 +210,18 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     if use_LM:
         outfile = outfile.replace('BORING', 'BORING_LM')
 
+    # Inputs
+    params = d['ans'] if use_LM else d['chains']
+    a_params = d['Chl']
+    bb_params = d['Y']
+    if full_LM:
+        params = params[idx]
+        a_params = a_params[idx]
+        bb_params = bb_params[idx]
+            
     axes = boring_plot.show_fit(
-        models, d['ans'][idx], ex_a_params=d['Chl'][idx], 
-        ex_bb_params=d['Y'][idx],
+        models, params,
+        ex_a_params=a_params, ex_bb_params=bb_params,
         Rrs_true=dict(wave=odict['wave'], spec=odict['gordon_Rrs']),
         anw_true=dict(wave=odict['true_wave'], spec=odict['anw']),
         bbnw_true=dict(wave=odict['true_wave'], spec=odict['bbnw']),
@@ -882,8 +891,8 @@ def main(flg):
         #fig_mcmc_fit(['GIOP', 'Lee'], idx=170, full_LM=True,
         #fig_mcmc_fit(['GIOP', 'Pow'], idx=170, full_LM=True,
         #    PACE=True, log_Rrs=True, use_LM=True)#, full_LM=False)
-        fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=True,
-            PACE=True, log_Rrs=True, use_LM=True)#, full_LM=False)
+        fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=False,
+            PACE=True, log_Rrs=True, use_LM=False)#, full_LM=False)
 
 
 
