@@ -334,6 +334,8 @@ def compare_models(models:list, idx:int, axes:list,
         ax_R.plot(wave, model_Rrs, '-', color=clr, label=f'k={nparm}', zorder=10)
         ax_R.legend(fontsize=lgsz, loc='lower left')
 
+        rel_err = np.abs(model_Rrs - gordon_Rrs) / gordon_Rrs
+        print(f"Model {model_names}: {rel_err.mean():0.3f} {rel_err.max():0.3f}")
         
     # axes
     for ss, ax in enumerate(axes):
@@ -568,6 +570,7 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
     elif PACE:
         s2ns += ['PACE']
 
+    #embed(header='fig_all_ic 571')
     Adict, Bdict = anly_utils.calc_ICs(
         ks, s2ns, use_LM=use_LM, MODIS=MODIS, PACE=PACE)
         
@@ -651,6 +654,104 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
+
+
+
+def fig_bic_modis_pace(use_LM:bool=True, 
+                outfile:str='fig_bic_modis_pace.png', 
+                log_x:bool=False):
+
+
+    r_s2ns = [0.05, 0.10, 0.2]
+    ks = [4,5]
+
+    fig = plt.figure(figsize=(14,6))
+    plt.clf()
+    gs = gridspec.GridSpec(1,2)
+
+    xlbl = 'BIC'
+    for ss in range(2):
+
+        if ss==0:
+            s2ns = r_s2ns + ['MODIS_Aqua']
+            MODIS = True
+            PACE = False
+            dataset = 'MODIS'
+        else:
+            s2ns = r_s2ns + ['PACE']
+            MODIS = False
+            PACE = True
+            dataset = 'PACE'
+
+        #embed(header='fig_all_ic 571')
+        Adict, Bdict = anly_utils.calc_ICs(
+            ks, s2ns, use_LM=use_LM, MODIS=MODIS, PACE=PACE)
+            
+        # Generate a pandas table
+        D_BIC_A = Bdict[ks[0]] - Bdict[ks[1]]
+
+
+    #embed(header='fig_all_bic 660')
+
+        ax = plt.subplot(gs[ss])
+        D_BIC = D_BIC_A #if ss == 0 else D_BIC_B
+        subset = f'{ks[0]},{ks[1]}'
+        for ss, s2n in enumerate(s2ns):
+            if log_x:
+                xvals = np.log10(D_BIC[ss] + 6.)
+            else:
+                xvals = D_BIC[ss]
+            # CDF
+            srt = np.sort(xvals)
+            yvals = np.arange(srt.size) / srt.size
+            try:
+                fs2n = int(1./float(s2n))
+                color = None
+                ls = ':'
+                lw = 1
+            except ValueError:
+                fs2n = s2n
+                color = 'k'
+                ls = '-'
+                lw = 3
+            ax.plot(srt, yvals, label=f'S/N={fs2n}', color=color, linewidth=lw, ls=ls)
+        if log_x:
+            ax.set_xlabel(r'$\log_{10}(\Delta \, \rm '+xlbl+'_{'+f'{subset}'+r'} + 6)$')
+        else:
+            ax.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{'+f'{subset}'+r'}$')
+
+        # Make it pretty
+        # Title
+        ax.text(0.9, 0.8, dataset, ha='right', va='top', 
+                fontsize=19, transform=ax.transAxes)
+
+        ax.set_ylabel('CDF')
+        ax.grid(True)
+        plotting.set_fontsize(ax, 17)
+        #
+        xmax = 30. if MODIS else 50.
+        if not log_x:
+            ax.set_xlim(-5., xmax)
+        else:
+            ax.set_xlim(0.25, None)
+        ax.set_ylim(0.,1)
+        ax.legend(fontsize=17)
+
+        # Vertical line at 0
+        vline = 0.
+        if log_x:
+            vline = np.log10(vline + 6.)
+        ax.axvline(vline, color='r', linestyle='--', lw=2)
+        # Grab ylimits
+        xl = ax.get_xlim()
+        yl = ax.get_ylim()
+        #ax.text(5, 0.6, 'Complex model favored', fontsize=18, ha='left')
+
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+
+
 
 
 
@@ -849,11 +950,14 @@ def main(flg):
         fig_multi_fits()#[('Cst','Cst'), ('Exp','Cst'), ('Exp','Pow'), ('ExpBricaud','Pow')], 
                        #[170, 1032])
 
+    if flg == 3:
+        fig_bic_modis_pace()
+
     # BIC/AIC for MODIS+L23
-    if flg == 4:
+    if flg == 20:
         fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png',
                    log_x=False,
-                   comp_ks=((2,3), (3,5)))
+                   comp_ks=((2,3), (4,5)))
         #fig_all_ic(MODIS=True, show_AIC=True, 
         #           outfile='fig_all_aic_MODIS.png')
         #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',

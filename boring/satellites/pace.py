@@ -11,7 +11,7 @@ from IPython import embed
 # Defatuls
 PACE_wave = np.arange(400, 701, 5)
 
-def gen_noise_vector(wave:np.ndarray):
+def gen_noise_vector(wave:np.ndarray, include_sampling:bool=False):
     """
     Generate a noise vector based on PACE error.
 
@@ -31,7 +31,8 @@ def gen_noise_vector(wave:np.ndarray):
     dwv_PACE = np.abs(np.median(np.roll(PACE_errors['wave'], -1) - PACE_errors['wave']))
 
     # Correct for sampling (approx)
-    PACE_error /= np.sqrt(dwv/dwv_PACE)
+    if include_sampling:
+        PACE_error /= np.sqrt(dwv/dwv_PACE)
 
     # Return
     return PACE_error

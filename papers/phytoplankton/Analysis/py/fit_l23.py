@@ -21,7 +21,6 @@ from IPython import embed
 
 def fit(model_names:list, 
         Nspec:int=None, 
-        prior_approach:str='log',
         nsteps=80000, nburn=8000,
         use_chisq:bool=False,
         min_wave:float=None,

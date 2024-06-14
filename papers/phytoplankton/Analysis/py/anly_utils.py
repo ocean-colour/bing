@@ -16,6 +16,13 @@ from boring.satellites import modis as boring_modis
 
 from IPython import embed
 
+kdict = {2: ['Cst', 'Cst'],
+            3: ['Exp', 'Cst'],
+            4: ['Exp', 'Pow'],
+            5: ['ExpBricaud', 'Pow'],
+            6: ['ExpNMF', 'Pow'],
+            9: ['GIOP', 'Lee']}
+
 def chain_filename(model_names:list, scl_noise, add_noise,
                        idx:int=None, MODIS:bool=False, PACE:bool=False): 
     outfile = f'../Analysis/Fits/BORING_{model_names[0]}{model_names[1]}'
@@ -35,6 +42,7 @@ def chain_filename(model_names:list, scl_noise, add_noise,
         outfile += f'_n{int(100*scl_noise):02d}'
     outfile += '.npz'
     return outfile
+
 
 def get_chain_file(model_names, scl_noise, add_noise, idx,
                    use_LM=False, full_LM=True, MODIS:bool=False,
@@ -69,20 +77,7 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
         Bdict[k] = []
 
         # Model names
-        if k == 2:
-            model_names = ['Cst', 'Cst']
-        elif k == 3:
-            model_names = ['Exp', 'Cst']
-        elif k == 4:
-            model_names = ['Exp', 'Pow']
-        elif k == 5:
-            model_names = ['ExpBricaud', 'Pow']
-        elif k == 6:
-            model_names = ['ExpNMF', 'Pow']
-        elif k == 9: # GIOP
-            model_names = ['GIOP', 'Lee']
-        else:
-            raise ValueError("Bad k")
+        model_names = kdict[k]
 
         chain_file, noises, noise_lbl = get_chain_file(
             model_names, 0.02, False, 'L23', use_LM=use_LM,
@@ -95,13 +90,15 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
         models = model_utils.init(model_names, wave)
 
         # Loop on S/N
-        if k == 3:
+        if k == ks[0]:
             sv_s2n = []
             sv_idx = []
         for s2n in s2ns:
             if PACE and (s2n == 'PACE'):
                 noise_vector = boring_pace.gen_noise_vector(
                     models[0].wave)
+            elif MODIS and (s2n == 'MODIS_Aqua'):
+                noise_vector = boring_modis.modis_aqua_error
             else:
                 noise_vector = None
             # Calculate BIC
