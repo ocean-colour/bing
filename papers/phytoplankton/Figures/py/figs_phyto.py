@@ -657,13 +657,14 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
 
 
 
+# ################################
 def fig_bic_modis_pace(use_LM:bool=True, 
                 outfile:str='fig_bic_modis_pace.png', 
                 log_x:bool=False):
 
 
     r_s2ns = [0.05, 0.10, 0.2]
-    ks = [4,5]
+    ks = [3,5]
 
     fig = plt.figure(figsize=(14,6))
     plt.clf()
@@ -676,12 +677,12 @@ def fig_bic_modis_pace(use_LM:bool=True,
             s2ns = r_s2ns + ['MODIS_Aqua']
             MODIS = True
             PACE = False
-            dataset = 'MODIS'
+            dataset = '(a) Multi-spectral'
         else:
             s2ns = r_s2ns + ['PACE']
             MODIS = False
             PACE = True
-            dataset = 'PACE'
+            dataset = '(b) Hyperspectral'
 
         #embed(header='fig_all_ic 571')
         Adict, Bdict = anly_utils.calc_ICs(
@@ -722,14 +723,14 @@ def fig_bic_modis_pace(use_LM:bool=True,
 
         # Make it pretty
         # Title
-        ax.text(0.9, 0.8, dataset, ha='right', va='top', 
+        ax.text(0.9, 0.7, dataset, ha='right', va='top', 
                 fontsize=19, transform=ax.transAxes)
 
         ax.set_ylabel('CDF')
         ax.grid(True)
         plotting.set_fontsize(ax, 17)
         #
-        xmax = 30. if MODIS else 50.
+        xmax = 30. #if MODIS else 50.
         if not log_x:
             ax.set_xlim(-5., xmax)
         else:
@@ -854,7 +855,7 @@ def fig_one_bic(models:list=None, idx:int=170,
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
-def fig_Sexp(outfile='fig_Sexp.png'):
+def fig_Sexp(outfile='fig_Sexp.png', kmodel:int=4):
 
 
     # Load
@@ -892,7 +893,7 @@ def fig_Sexp(outfile='fig_Sexp.png'):
             pdict['Rrs'] = d['obs_Rrs']
             pdict['idx'] = d['idx']
 
-    Sexp = pdict[4]['params'][:,1]
+    Sexp = pdict[kmodel]['params'][:,1]
     i440 = np.argmin(np.abs(l23_wave-440.))
     aph_anw = aph[:,i440]/anw[:,i440]
 

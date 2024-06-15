@@ -254,6 +254,7 @@ class bbNWPow(bbNWModel):
 
 class bbNWGSM(bbNWModel):
     """
+    Manitorena+2002
     Power-law model for non-water backscattering
 
         bb_nw = Bnw * (443/wave)^eta
@@ -270,7 +271,7 @@ class bbNWGSM(bbNWModel):
     def __init__(self, wave:np.ndarray, prior_dicts:list):
         bbNWModel.__init__(self, wave, prior_dicts)
 
-        # Lee+2002
+        # Manitorena+2002
         self.eta = 1.0337
         self.set_basis_func()
 
