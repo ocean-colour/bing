@@ -19,6 +19,7 @@ from boring import priors as boring_priors
 
 from boring.satellites import modis as boring_modis
 from boring.satellites import pace as boring_pace
+from boring.satellites import seawifs as boring_seawifs
 from boring.satellites import utils as sat_utils
 
 from IPython import embed
@@ -33,6 +34,7 @@ def fit_one(model_names:list, idx:int, n_cores=20,
             max_wave:float=None,
             show:bool=False,
             MODIS:bool=False,
+            SeaWiFS:bool=False,
             PACE:bool=False):
 
     odict = anly_utils.prep_l23_data(idx, scl_noise=scl_noise,
@@ -54,6 +56,8 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     elif PACE:
         model_wave = boring_pace.pace_wave
         PACE_error = boring_pace.gen_noise_vector(PACE_wave)
+    elif SeaWiFS:
+        model_wave = boring_seawifs.seawifs_wave
     else:
         model_wave = wave
 
@@ -173,8 +177,14 @@ def main(flg):
         #fit_one(['ExpNMF', 'Pow'], idx=1067, 
         #        use_chisq=True, show=True, max_wave=700.)
 
-    # Debug
+    # Develop SeaWiFS
     if flg == 100:
+        fit_one(['Exp', 'Cst'], idx=170, 
+                use_chisq=True, show=True, max_wave=700.,
+                SeaWiFS=True)
+
+    # Bayes development
+    if flg == 101:
         fit_one(['GSM', 'GSM'], idx=170, 
                 use_chisq=False, show=True, max_wave=700.)
 
