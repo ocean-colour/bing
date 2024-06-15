@@ -1,37 +1,37 @@
-/begin_header
-/start_date=1970-01-01
-/end_date=2030-01-01
-/north_latitude=90[deg]
-/south_latitude=-90[deg]
-/east_longitude=180[deg]
-/west_longitude=-180[deg]
-! Date processed: 2024-06-15 14:11:50 GMT
-! Date archived: 1970-01-01 to 2030-01-01
-! Water depth: 0 to 10000
-! Data sources: 
-! Exclusions:
-!                                                             , SeaWiFS             
-!  Minimum valid satellite pixels                             ,                  50 
-!  Maximum solar zenith angle                                 ,                  75 
-!  Maximum satellite zenith angle                             ,                  60 
-!  Maximum time difference between satellite and in situ      ,                   3 
-!  Maximum coefficient of variation of satellite pixels       ,                0.15 
-!  Maximum irradiance difference between measured and modeled ,                  20 
-!  Maximum windspeed                                          ,                  35 
-!  Most Data Recent Update                                    , 2024-05-02 14:46:45 
-! Statistics:
-!  Product Name , #    , Mean Bias , Mean Absolute Error (MAE) , SeaWiFS Range       , In situ Range       
-!  rrs412       , 3173 ,  -0.00006 ,                   0.00126 , -0.003950 - 0.01980 , -0.000025 - 0.02150 
-!  rrs443       , 3511 ,  -0.00000 ,                   0.00098 , -0.002576 - 0.02152 , 0.000066 - 0.02227  
-!  rrs490       , 3051 ,  -0.00042 ,                   0.00086 , -0.000691 - 0.02697 , 0.000389 - 0.03020  
-!  rrs510       , 1622 ,  -0.00012 ,                   0.00060 , 0.000482 - 0.02702  , 0.000654 - 0.03023  
-!  rrs555       , 3025 ,  -0.00032 ,                   0.00072 , 0.000886 - 0.02627  , 0.000292 - 0.03052  
-!  rrs670       , 2581 ,  -0.00007 ,                   0.00026 , -0.000542 - 0.01236 , 0.000019 - 0.01090  
-/missing=-999
-/delimiter=comma
-/fields=id,latitude,longitude,date_time,cruise,seawifs_filename,seawifs_es_error,seawifs_pixel_total,seawifs_tdiff,seawifs_solz,seawifs_senz,seawifs_cv,seawifs_windspeed,seawifs_rrs412,seawifs_rrs443,seawifs_rrs490,seawifs_rrs510,seawifs_rrs555,seawifs_rrs670,insitu_rrs412,insitu_rrs443,insitu_rrs490,insitu_rrs510,insitu_rrs555,insitu_rrs670,insitu_data_source
-/units=none,degrees,degrees,yyyy-mm-dd hh:mm:ss,none,none,unitless,unitless,seconds,degrees,degrees,unitless,m*s^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,unitless
-/end_header
+#/begin_header
+#/start_date=1970-01-01
+#/end_date=2030-01-01
+#/north_latitude=90[deg]
+#/south_latitude=-90[deg]
+#/east_longitude=180[deg]
+#/west_longitude=-180[deg]
+#! Date processed: 2024-06-15 14:11:50 GMT
+#! Date archived: 1970-01-01 to 2030-01-01
+#! Water depth: 0 to 10000
+#! Data sources: 
+#! Exclusions:
+#!                                                             , SeaWiFS             
+#!  Minimum valid satellite pixels                             ,                  50 
+#!  Maximum solar zenith angle                                 ,                  75 
+#!  Maximum satellite zenith angle                             ,                  60 
+#!  Maximum time difference between satellite and in situ      ,                   3 
+#!  Maximum coefficient of variation of satellite pixels       ,                0.15 
+#!  Maximum irradiance difference between measured and modeled ,                  20 
+#!  Maximum windspeed                                          ,                  35 
+#!  Most Data Recent Update                                    , 2024-05-02 14:46:45 
+#! Statistics:
+#!  Product Name , #    , Mean Bias , Mean Absolute Error (MAE) , SeaWiFS Range       , In situ Range       
+#!  rrs412       , 3173 ,  -0.00006 ,                   0.00126 , -0.003950 - 0.01980 , -0.000025 - 0.02150 
+#!  rrs443       , 3511 ,  -0.00000 ,                   0.00098 , -0.002576 - 0.02152 , 0.000066 - 0.02227  
+#!  rrs490       , 3051 ,  -0.00042 ,                   0.00086 , -0.000691 - 0.02697 , 0.000389 - 0.03020  
+#!  rrs510       , 1622 ,  -0.00012 ,                   0.00060 , 0.000482 - 0.02702  , 0.000654 - 0.03023  
+#!  rrs555       , 3025 ,  -0.00032 ,                   0.00072 , 0.000886 - 0.02627  , 0.000292 - 0.03052  
+#!  rrs670       , 2581 ,  -0.00007 ,                   0.00026 , -0.000542 - 0.01236 , 0.000019 - 0.01090  
+#/missing=-999
+#/delimiter=comma
+id,latitude,longitude,date_time,cruise,seawifs_filename,seawifs_es_error,seawifs_pixel_total,seawifs_tdiff,seawifs_solz,seawifs_senz,seawifs_cv,seawifs_windspeed,seawifs_rrs412,seawifs_rrs443,seawifs_rrs490,seawifs_rrs510,seawifs_rrs555,seawifs_rrs670,insitu_rrs412,insitu_rrs443,insitu_rrs490,insitu_rrs510,insitu_rrs555,insitu_rrs670,insitu_data_source
+#/units=none,degrees,degrees,yyyy-mm-dd hh:mm:ss,none,none,unitless,unitless,seconds,degrees,degrees,unitless,m*s^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,sr^-1,unitless
+#/end_header
 1114,45.31390000,12.50830000,2002-06-20 10:31:00,j5,S2002171114713.L2_MLAC.R0000021033_45N_45N_12E_12E.hdf_OCVAL.nc_j5_1114_B5.tgz,1.20000000,25,5549,24.30,31.13,0.058,3.089,0.00437300,0.00452900,0.00501400,0.00499200,0.00453000,0.00054100,0.00465649,0.00531583,0.00701699,0.00588965,0.00638325,-999,seabass
 1116,45.31390000,12.50830000,2002-06-22 10:06:00,j5,S2002173113141.L2_MLAC.R0000021033_45N_45N_12E_12E.hdf_OCVAL.nc_j5_1116_B5.tgz,3.90000000,25,6126,23.08,22.02,0.076,2.289,0.00671200,0.00627600,0.00641900,0.00649800,0.00617200,0.00112100,0.00400321,0.00441847,0.00534464,0.00455471,0.00358542,-999,seabass
 1121,45.31390000,12.50830000,2002-06-25 10:27:00,j5,S2002176115745.L2_MLAC.R0000021033_45N_45N_12E_12E.hdf_OCVAL.nc_j5_1121_B5.tgz,10.30000000,25,6411,25.23,41.38,0.042,7.906,0.00428700,0.00425800,0.00450800,0.00463000,0.00432600,0.00045800,0.00395311,0.00403021,0.00480949,0.00369869,0.00291282,-999,seabass
