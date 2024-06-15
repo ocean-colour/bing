@@ -324,14 +324,14 @@ def compare_models(models:list, idx:int, axes:list,
         # Rs
         ax_R = axes[0]
         if ss == 0:
-            ax_R.plot(wave, gordon_Rrs, 'k+', label='Observed')
+            ax_R.plot(wave, gordon_Rrs, 'k+', label='True')
             ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [{\rm sr}^{-1}$]')
-            lgsz = 12.
+            lgsz = 11.
             if log_Rrs:
                 ax_R.set_yscale('log')
             else:
                 ax_R.set_ylim(bottom=0., top=1.1*Rrs_true.max())
-        ax_R.plot(wave, model_Rrs, '-', color=clr, label=f'k={nparm}', zorder=10)
+        ax_R.plot(wave, model_Rrs, '-', color=clr, label=f'[k={nparm}]', zorder=10)
         ax_R.legend(fontsize=lgsz, loc='lower left')
 
         rel_err = np.abs(model_Rrs - gordon_Rrs) / gordon_Rrs
