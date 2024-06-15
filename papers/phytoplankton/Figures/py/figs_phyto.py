@@ -608,10 +608,15 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
             try:
                 fs2n = int(1./float(s2n))
                 color = None
+                ls = ':'
+                lw = 2
             except ValueError:
                 fs2n = s2n
                 color = 'k'
-            ax.plot(srt, yvals, label=f'S/N={fs2n}', color=color, linewidth=3)
+                ls = '-'
+                lw = 3
+            ax.plot(srt, yvals, label=f'S/N={fs2n}', color=color, 
+                    linewidth=lw, ls=ls)
             # PDF
             #ax34.hist(xvals, bins=nbins,
             #        histtype='step', 
@@ -645,7 +650,7 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
         vline = 5. if show_AIC else 0.
         if log_x:
             vline = np.log10(vline + 6.)
-        ax.axvline(vline, color='k', linestyle='--', lw=2)
+        ax.axvline(vline, color='r', linestyle='--', lw=2)
         # Grab ylimits
         xl = ax.get_xlim()
         yl = ax.get_ylim()
@@ -955,10 +960,10 @@ def main(flg):
         fig_bic_modis_pace()
 
     # BIC/AIC for MODIS+L23
-    if flg == 20:
+    if flg == 4:
         fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png',
                    log_x=False,
-                   comp_ks=((2,3), (4,5)))
+                   comp_ks=((2,3), (3,4)))
         #fig_all_ic(MODIS=True, show_AIC=True, 
         #           outfile='fig_all_aic_MODIS.png')
         #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
