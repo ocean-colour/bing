@@ -2,6 +2,8 @@
 import os
 import numpy as np
 
+from scipy.interpolate import interp1d
+
 from oceancolor.hydrolight import loisel23
 
 from boring.models import anw as boring_anw
@@ -11,13 +13,34 @@ from boring import inference as boring_inf
 from boring import rt as boring_rt
 from boring import chisq_fit
 
-from boring.satellites import modis as boring_modis
-from boring.satellites import pace as boring_pace
-from boring.satellites import utils as sat_utils
+from oceancolor.satellites import modis as sat_modis
+from oceancolor.satellites import pace as sat_pace
+from oceancolor.satellites import seawifs as sat_seawifs
 
 import anly_utils 
 
 from IPython import embed
+
+def convert_to_satwave(wave:np.ndarray, spec:np.ndarray,
+                     sat_wave:np.ndarray):
+    """
+    Convert the spectrum to MODIS wavelengths
+
+    Parameters:
+        wave (np.ndarray): Wavelengths of the input Rrs
+        spec (np.ndarray): Spectrum. a, b, Rrs, etc. 
+        sat_wave (np.ndarray): Wavelengths of the satellite
+
+    Returns:
+        np.ndarray: Rrs at MODIS wavelengths
+    """
+    # Interpolate
+    f = interp1d(wave, spec, kind='linear', fill_value='extrapolate')
+    new_spec = f(sat_wave)
+
+    # Return
+    return new_spec
+
 
 def fit(model_names:list, 
         Nspec:int=None, 
@@ -25,7 +48,7 @@ def fit(model_names:list,
         use_chisq:bool=False,
         min_wave:float=None,
         max_wave:float=None,
-        MODIS:bool=False, PACE:bool=False,
+        MODIS:bool=False, PACE:bool=False, SeaWiFS:bool=False,
         scl_noise:float=0.02, add_noise:bool=False,
         n_cores:int=20, debug:bool=False): 
     """
@@ -55,10 +78,12 @@ def fit(model_names:list,
 
     # Wavelenegths
     if MODIS:
-        model_wave = boring_modis.modis_wave
+        model_wave = sat_modis.modis_wave
     elif PACE:
-        model_wave = boring_pace.PACE_wave
-        PACE_error = boring_pace.gen_noise_vector(model_wave)
+        model_wave = sat_pace.PACE_wave
+        PACE_error = sat_pace.gen_noise_vector(model_wave)
+    elif SeaWiFS:
+        model_wave = sat_seawifs.seawifs_wave
     else:
         model_wave = wave
         
@@ -98,9 +123,9 @@ def fit(model_names:list,
 
         # Interpolate
         l23_wave = odict['true_wave']
-        model_Rrs = sat_utils.convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
-        model_anw = sat_utils.convert_to_satwave(l23_wave, odict['anw'], model_wave)
-        model_bbnw = sat_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
+        model_Rrs = convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
+        model_anw = convert_to_satwave(l23_wave, odict['anw'], model_wave)
+        model_bbnw = convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
         model_varRrs = (scl_noise * model_Rrs)**2
 
         p0_a = models[0].init_guess(model_anw)
@@ -124,7 +149,7 @@ def fit(model_names:list,
     # Output file
     outfile = anly_utils.chain_filename(
         model_names, scl_noise, add_noise, 
-        MODIS=MODIS, PACE=PACE)
+        MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
 
     # Fit
     if use_chisq:
@@ -169,6 +194,9 @@ def fit(model_names:list,
 def main(flg):
     flg = int(flg)
 
+    PACE = False
+    SeaWiFS = False
+
     # Testing
     if flg == 1:
         fit(['Exp', 'Pow'], Nspec=50, nsteps=10000, nburn=1000)
@@ -198,16 +226,22 @@ def main(flg):
         fit(['GIOP', 'Lee'], use_chisq=True, MODIS=True)
         fit(['GSM', 'GSM'], use_chisq=True, MODIS=True)
 
-    # PACE
+    # All models
     if flg == 5:
-        fit(['Cst', 'Cst'], use_chisq=True, PACE=True)
-        fit(['Exp', 'Cst'], use_chisq=True, PACE=True)
-        fit(['Exp', 'Pow'], use_chisq=True, PACE=True)
-        fit(['ExpBricaud', 'Pow'], use_chisq=True, PACE=True)
-        fit(['ExpNMF', 'Pow'], use_chisq=True, PACE=True)
-        fit(['GIOP', 'Pow'], use_chisq=True, PACE=True)
-        fit(['GIOP', 'Lee'], use_chisq=True, PACE=True)
-        fit(['GSM', 'GSM'], use_chisq=True, PACE=True)
+        PACE = True
+
+    if flg == 6:
+        SeaWiFS = True
+
+    if flg in [5,6]:
+        fit(['Cst', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
+        fit(['Exp', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
+        fit(['Exp', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
+        fit(['ExpBricaud', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
+        fit(['ExpNMF', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
+        fit(['GIOP', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
+        fit(['GIOP', 'Lee'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
+        fit(['GSM', 'GSM'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
 
 # Command line execution
 if __name__ == '__main__':

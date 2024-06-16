@@ -569,6 +569,7 @@ def fig_spectra(idx:int,
 def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
                 outfile:str='fig_all_bic.png', MODIS:bool=False,
                 comp_ks:tuple=((3,4),(4,5)),
+                SeaWiFS:bool=False,
                 PACE:bool=False, log_x:bool=True):
 
     Bdict = {}
@@ -580,10 +581,13 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
         s2ns += ['MODIS_Aqua']
     elif PACE:
         s2ns += ['PACE']
+    elif SeaWiFS:
+        s2ns += ['SeaWiFS']
 
     #embed(header='fig_all_ic 571')
     Adict, Bdict = anly_utils.calc_ICs(
-        ks, s2ns, use_LM=use_LM, MODIS=MODIS, PACE=PACE)
+        ks, s2ns, use_LM=use_LM, MODIS=MODIS, PACE=PACE,
+        SeaWiFS=SeaWiFS)
         
     # Generate a pandas table
     D_BIC_A = Bdict[comp_ks[0][0]] - Bdict[comp_ks[0][1]]
@@ -985,11 +989,13 @@ def main(flg):
         fig_all_ic(PACE=True, outfile='fig_all_bic_PACE.png',
                    log_x=False)
 
-    # BIC/AIC for 70 + fixed relative error
+    # BIC/AIC for PACE
     if flg == 6:
-        fig_all_ic(outfile='fig_all_bic_46.png',
-                   comp_ks=((3,4), (4,6)))
-        #fig_all_ic(show_AIC=True, outfile='fig_all_aic.png')
+        fig_all_ic(SeaWiFS=True, outfile='fig_all_bic_SeaWiFS.png',
+                   comp_ks=((2,3), (3,4)),
+                   log_x=False)
+
+
 
     # ########################################
     # Supp

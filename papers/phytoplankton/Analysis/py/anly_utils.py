@@ -4,6 +4,9 @@ import os
 import numpy as np
 
 from oceancolor.hydrolight import loisel23
+from oceancolor.satellites import pace as sat_pace
+from oceancolor.satellites import modis as sat_modis
+from oceancolor.satellites import seawifs as sat_seawifs
 
 from boring import rt as boring_rt
 from boring.models import anw as boring_anw
@@ -11,8 +14,7 @@ from boring.models import bbnw as boring_bbnw
 from boring.models import utils as model_utils
 from boring import stats as boring_stats
 from boring import chisq_fit
-from boring.satellites import pace as boring_pace
-from boring.satellites import modis as boring_modis
+
 
 from IPython import embed
 
@@ -24,7 +26,8 @@ kdict = {2: ['Cst', 'Cst'],
             9: ['GIOP', 'Lee']}
 
 def chain_filename(model_names:list, scl_noise, add_noise,
-                       idx:int=None, MODIS:bool=False, PACE:bool=False): 
+                       idx:int=None, MODIS:bool=False, 
+                       PACE:bool=False, SeaWiFS:bool=False): 
     outfile = f'../Analysis/Fits/BORING_{model_names[0]}{model_names[1]}'
 
     if idx is not None:
@@ -34,6 +37,8 @@ def chain_filename(model_names:list, scl_noise, add_noise,
             outfile += '_M23'
         elif PACE:
             outfile += '_P23'
+        elif SeaWiFS:
+            outfile += '_S23'
         else:
             outfile += '_L23'
     if add_noise:
@@ -46,7 +51,7 @@ def chain_filename(model_names:list, scl_noise, add_noise,
 
 def get_chain_file(model_names, scl_noise, add_noise, idx,
                    use_LM=False, full_LM=True, MODIS:bool=False,
-                   PACE:bool=False):
+                   PACE:bool=False, SeaWiFS:bool=False):
     scl_noise = 0.02 if scl_noise is None else scl_noise
     noises = f'{int(100*scl_noise):02d}'
     noise_lbl = 'N' if add_noise else 'n'
@@ -56,6 +61,8 @@ def get_chain_file(model_names, scl_noise, add_noise, idx,
             cidx = 'M23'
         elif PACE:
             cidx = 'P23'
+        elif SeaWiFS:
+            cidx = 'S23'
         else:
             cidx = 'L23'
     else:
@@ -68,7 +75,7 @@ def get_chain_file(model_names, scl_noise, add_noise, idx,
     return chain_file, noises, noise_lbl
 
 def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
-             MODIS:bool=False, PACE:bool=False):
+             MODIS:bool=False, PACE:bool=False, SeaWiFS:bool=False):
 
     Bdict = dict()
     Adict = dict()
@@ -81,7 +88,7 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
 
         chain_file, noises, noise_lbl = get_chain_file(
             model_names, 0.02, False, 'L23', use_LM=use_LM,
-            MODIS=MODIS, PACE=PACE)
+            MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
         d_chains = np.load(chain_file)
         print(f'Loaded: {chain_file}')
         wave = d_chains['wave']
@@ -95,10 +102,12 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
             sv_idx = []
         for s2n in s2ns:
             if PACE and (s2n == 'PACE'):
-                noise_vector = boring_pace.gen_noise_vector(
+                noise_vector = sat_pace.gen_noise_vector(
                     models[0].wave)
             elif MODIS and (s2n == 'MODIS_Aqua'):
-                noise_vector = boring_modis.modis_aqua_error
+                noise_vector = sat_modis.modis_aqua_error
+            elif SeaWiFS and (s2n == 'SeaWiFS'):
+                noise_vector = sat_seawifs.seawifs_error
             else:
                 noise_vector = None
             # Calculate BIC
