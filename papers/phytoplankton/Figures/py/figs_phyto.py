@@ -72,7 +72,7 @@ def fig_u(outfile='fig_u.png'):
         return rrs
 
     # GIOP
-    uval = np.linspace(0., 0.25, 1000)
+    uval = np.linspace(0., 0.40, 1000)
     rrs_GIOP = rrs_func(uval, G1, G2)
     Rrs_GIOP = A*rrs_GIOP / (1 - B*rrs_GIOP)
 
@@ -96,9 +96,20 @@ def fig_u(outfile='fig_u.png'):
         usrt = np.argsort(u[:,idx])
         ax.plot(u[usrt,idx], irrs[usrt], '-', color=clr, 
                 label=r'Fit: $G_1='+f'{ans[0]:0.2f},'+r'G_2='+f'{ans[1]:0.2f}'+r'$')
+        # Stats
+        if idx == i370:
+            uv = 0.35
+            ss = np.argmin(np.abs(uv - u[:,idx]))
+            rrsv = rrs_func(uv, G1, G2)
+            print(f"Perecent error: {100.*(rrsv-rrs[ss,idx])/rrs[ss,idx]:0.2f}%")
+            #embed(header='figs 167')
+        # RMS of fit
+        rms = np.sqrt(np.mean((rrs[usrt,idx] - irrs)**2/(irrs**2)))
+        print(f"wv={lbl}, rRMS={10*rms:0.4f}")
 
     # GIOP
     ax.plot(uval, rrs_GIOP, 'k--', label='Gordon')
+    ax.grid()
     #
     ax.set_xlabel(r'$u(\lambda)$')
     ax.set_ylabel(r'$r_{\rm rs} (\lambda)$')
