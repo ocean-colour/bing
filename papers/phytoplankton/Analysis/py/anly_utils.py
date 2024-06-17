@@ -5,9 +5,13 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 from oceancolor.hydrolight import loisel23
-from oceancolor.satellites import pace as sat_pace
-from oceancolor.satellites import modis as sat_modis
-from oceancolor.satellites import seawifs as sat_seawifs
+try:
+    from oceancolor.satellites import pace as sat_pace
+except:
+    pass
+else:
+    from oceancolor.satellites import modis as sat_modis
+    from oceancolor.satellites import seawifs as sat_seawifs
 
 from boring import rt as boring_rt
 from boring.models import anw as boring_anw

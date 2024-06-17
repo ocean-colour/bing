@@ -1,9 +1,11 @@
 """ Figs for Gordon Analyses """
 import os, sys
+from importlib.resources import files
 
 import numpy as np
 
 from scipy.optimize import curve_fit
+from scipy.stats import sigmaclip
 import pandas
 
 
@@ -17,7 +19,6 @@ import seaborn as sns
 import corner
 
 from oceancolor.utils import plotting 
-from oceancolor.water import absorption
 from oceancolor.hydrolight import loisel23
 
 from boring import plotting as boring_plot
@@ -30,6 +31,7 @@ from boring.models import utils as model_utils
 # Local
 sys.path.append(os.path.abspath("../Analysis/py"))
 import anly_utils
+import modis as sat_modis
 
 from IPython import embed
 
@@ -108,16 +110,16 @@ def fig_u(outfile='fig_u.png'):
         print(f"wv={lbl}, rRMS={10*rms:0.4f}")
 
     # GIOP
-    ax.plot(uval, rrs_GIOP, 'k--', label='Gordon')
+    ax.plot(uval, rrs_GIOP, 'k--', label=f'Gordon: '+r'$G_1='+f'{G1}, '+r'$G_2=$'+f'{G2}'+r'$')
     ax.grid()
     #
     ax.set_xlabel(r'$u(\lambda)$')
     ax.set_ylabel(r'$r_{\rm rs} (\lambda)$')
-    ax.legend(fontsize=11)
+    ax.legend(fontsize=10)
     plotting.set_fontsize(ax, 15.)
     
     #
-    #plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
@@ -584,6 +586,81 @@ def fig_spectra(idx:int,
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
+
+def fig_satellite_noise(satellite:str, wave:int, min_Rrs:float=-0.03):
+
+    # Load up the data
+    if satellite == 'MODIS_Aqua':
+        # Load
+        sat_file = files('boring').joinpath(os.path.join('data', 'MODIS', 'MODIS_matchups_rrs.csv'))
+        sat_key = 'aqua_rrs'
+        insitu_key = 'insitu_rrs'
+    else:
+        raise ValueError("Not ready for this satellite yet")
+
+    outfile = f'fig_noise_{satellite}_{wave}.png'
+    matchups = pandas.read_csv(sat_file, comment='#')
+    cut = np.isfinite(matchups[f'{sat_key}{wave}']) & (matchups[f'{sat_key}{wave}'] > min_Rrs) & (
+        matchups[f'{insitu_key}{wave}'] > min_Rrs)
+
+    matchups = matchups[cut].copy()
+
+    #embed(header='fig_all_bic 660')
+
+    fig = plt.figure(figsize=(14,6))
+    plt.clf()
+    gs = gridspec.GridSpec(1,2)
+
+    # Compare in-situ with 
+    ax_c = plt.subplot(gs[0])
+
+    #embed(header='figs 167')
+    ax_c.plot(matchups[f'{insitu_key}{wave}'], matchups[f'{sat_key}{wave}'], 
+              'ko', markersize=0.5)
+    # 1-1 line
+    mxval = np.concatenate([matchups[f'{insitu_key}{wave}'], matchups[f'{sat_key}{wave}']]).max()
+    ax_c.plot([0., mxval], [0., mxval], 'r--')
+
+    # Labels
+    ax_c.set_xlabel(f'In-situ '+r'$R_{\rm rs}$'+f'({wave} nm)'+r' [sr$^{-1}$]')
+    ax_c.set_ylabel(f'{satellite} '+r'$R_{\rm rs}$'+f'({wave} nm)'+r' [sr$^{-1}$]')
+
+    ax_c.text(0.1, 0.9, f'{satellite}', fontsize=17, transform=ax_c.transAxes, ha='left')
+
+    # ###########################################3
+    # Histogram the diff
+    ax_h = plt.subplot(gs[1])
+    diff = matchups[f'{insitu_key}{wave}'] - matchups[f'{sat_key}{wave}']
+
+    ax_h.hist(diff, bins=100, histtype='step', color='k', linewidth=2)
+    _, low, high = sigmaclip(diff, low=4., high=4.)
+
+    # Show clipped regions
+    ax_h.axvline(low, color='r', linestyle='--')
+    ax_h.axvline(high, color='r', linestyle='--')
+
+    # Stats
+    sig_cut = (diff > low) & (diff < high)
+    std = np.std(diff[sig_cut])
+
+    # Text me
+    ax_h.text(0.95, 0.9, f'RMS={std:0.4f}'+r' [sr$^{-1}$]', fontsize=17, 
+              transform=ax_h.transAxes, ha='right')
+
+    # Labels
+    ax_h.set_xlabel(r'$\Delta R_{\rm rs}$'+f'({wave}) '+r'[sr$^{-1}$]')
+    ax_h.set_ylabel('N')
+
+    # axes
+    for ax in [ax_c, ax_h]:
+        plotting.set_fontsize(ax, 19)
+
+    # Finish
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+
+
 def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
                 outfile:str='fig_all_bic.png', MODIS:bool=False,
                 comp_ks:tuple=((3,4),(4,5)),
@@ -1023,7 +1100,11 @@ def main(flg):
     if flg == 11:
         fig_Kd()
 
+    # Satellite Noise
     if flg == 12:
+        fig_satellite_noise('MODIS_Aqua', 443)
+
+    if flg == 13:
         fig_Sexp()
 
     # Fits
