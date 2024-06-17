@@ -28,7 +28,6 @@ import anly_utils
 def fit_one(model_names:list, idx:int, n_cores=20, 
             nsteps:int=10000, nburn:int=1000, 
             scl_noise:float=0.02, use_chisq:bool=False,
-            scl:float=None,  # Scaling for the priors
             add_noise:bool=False,
             max_wave:float=None,
             show:bool=False,
@@ -41,12 +40,6 @@ def fit_one(model_names:list, idx:int, n_cores=20,
 
     # Unpack
     wave = odict['wave']
-    Rrs = odict['Rrs']
-    varRrs = odict['varRrs']
-    a = odict['a']
-    bb = odict['bb']
-    bbw = odict['bbw']
-    aw = odict['aw']
     l23_wave = odict['true_wave']
 
     # Wavelenegths
@@ -82,7 +75,11 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     model_Rrs = anly_utils.convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
     model_anw = anly_utils.convert_to_satwave(l23_wave, odict['anw'], model_wave)
     model_bbnw = anly_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
-    model_varRrs = (scl_noise * model_Rrs)**2
+
+    if scl_noise == 'SeaWiFS':
+        model_varRrs = sat_seawifs.seawifs_error**2
+    else:
+        model_varRrs = (scl_noise * model_Rrs)**2
 
     # Initial guess
     p0_a = models[0].init_guess(model_anw)
@@ -115,9 +112,12 @@ def fit_one(model_names:list, idx:int, n_cores=20,
         chains, idx = boring_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
 
         # Save
-        anly_utils.save_fits(chains, idx, outfile,
-              extras=dict(wave=model_wave, obs_Rrs=model_Rrs, 
-                          varRrs=varRrs, Chl=odict['Chl'], Y=odict['Y']))
+        anly_utils.save_fits(chains, idx, outfile, 
+                             extras=dict(wave=model_wave, 
+                                         obs_Rrs=model_Rrs, 
+                                         varRrs=model_varRrs, 
+                                         Chl=odict['Chl'], 
+                                         Y=odict['Y']))
     else:
         # Fit
         ans, cov, idx = chisq_fit.fit(items[0], models)
@@ -133,7 +133,7 @@ def fit_one(model_names:list, idx:int, n_cores=20,
         # Save
         outfile = outfile.replace('BORING', 'BORING_LM')
         np.savez(outfile, ans=ans, cov=cov,
-              wave=wave, obs_Rrs=gordon_Rrs, varRrs=varRrs,
+              wave=wave, obs_Rrs=gordon_Rrs, varRrs=model_varRrs,
               Chl=odict['Chl'], Y=odict['Y'])
         print(f"Saved: {outfile}")
         #
@@ -171,6 +171,23 @@ def main(flg):
     if flg == 5:
         fit_one(['GIOP', 'Lee'], idx=0, use_chisq=True, show=True)
 
+    # Bayes on GSM with SeaWiFS noise
+    if flg == 6:
+        fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True,
+                use_chisq=False, show=True, nburn=5000,
+                nsteps=50000, scl_noise='SeaWiFS')
+        fit_one(['GSM', 'GSM'], idx=1032, SeaWiFS=True,
+                use_chisq=False, show=True, nburn=5000,
+                nsteps=50000, scl_noise='SeaWiFS')
+
+    # Bayes on GIOP with MODIS noise
+    if flg == 7:
+        fit_one(['GIOP', 'Lee'], idx=170, SeaWiFS=True,
+                use_chisq=False, show=True, nburn=5000,
+                nsteps=50000)
+        fit_one(['GIOP', 'Lee'], idx=1032, SeaWiFS=True,
+                use_chisq=False, show=True, nburn=5000,
+                nsteps=50000)
     # Debug
     if flg == 99:
         fit_one(['GSM', 'GSM'], idx=170, 
@@ -188,8 +205,11 @@ def main(flg):
     if flg == 101:
         #fit_one(['GSM', 'GSM'], idx=170, 
         #        use_chisq=False, show=True, max_wave=700.)
-        fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True,
-                use_chisq=False, show=True)
+        #fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True,
+        #        use_chisq=False, show=True, scl_noise='SeaWiFS')
+        fit_one(['GIOP', 'Lee'], idx=170, SeaWiFS=True,
+                use_chisq=False, show=True, scl_noise='SeaWiFS')
+
 
 # Command line execution
 if __name__ == '__main__':

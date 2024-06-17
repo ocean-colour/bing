@@ -51,11 +51,15 @@ def chain_filename(model_names:list, scl_noise, add_noise,
     if add_noise:
         outfile += f'_N{int(100*scl_noise):02d}'
     else:
-        outfile += f'_n{int(100*scl_noise):02d}'
+        if scl_noise == 'SeaWiFS':
+            outfile += '_nS'
+        else:
+            outfile += f'_n{int(100*scl_noise):02d}'
     outfile += '.npz'
     return outfile
 
 
+'''
 def get_chain_file(model_names, scl_noise, add_noise, idx,
                    use_LM=False, full_LM=True, MODIS:bool=False,
                    PACE:bool=False, SeaWiFS:bool=False):
@@ -88,6 +92,7 @@ def get_chain_file(model_names, scl_noise, add_noise, idx,
     if use_LM:
         chain_file = chain_file.replace('BORING', 'BORING_LM')
     return chain_file, noises, noise_lbl
+'''
 
 def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
              MODIS:bool=False, PACE:bool=False, SeaWiFS:bool=False):
@@ -212,10 +217,10 @@ def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
     gordon_Rrs = boring_rt.calc_Rrs(a, bb)
 
     # Error
-    varRrs = (scl_noise * Rrs)**2
+    #varRrs = (scl_noise * Rrs)**2
 
     # Dict me
-    odict = dict(wave=wave, Rrs=Rrs, varRrs=varRrs, a=a, bb=bb, 
+    odict = dict(wave=wave, Rrs=Rrs, a=a, bb=bb, 
                  true_wave=true_wave, true_Rrs=true_Rrs,
                  gordon_Rrs=gordon_Rrs,
                  bbw=ds.bb.data[idx,iwave]-ds.bbnw.data[idx,iwave],

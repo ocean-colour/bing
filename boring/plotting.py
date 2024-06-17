@@ -128,7 +128,12 @@ def show_fit(models:list, inputs:np.ndarray,
     # Rs
     ax_R = plt.subplot(gs[0])
     if Rrs_true is not None:
-        ax_R.plot(Rrs_true['wave'], Rrs_true['spec'], 'k+', label='True', zorder=1)
+        if 'var' in Rrs_true.keys():
+            ax_R.errorbar(Rrs_true['wave'], Rrs_true['spec'], 
+                yerr=np.sqrt(Rrs_true['var']), color='k',
+                fmt='o', capsize=5) 
+        else:
+            ax_R.plot(Rrs_true['wave'], Rrs_true['spec'], 'k+', label='True', zorder=1)
     #ax_R.plot(wave, gordon_Rrs, 'k+', label='L23 + Gordon')
     ax_R.plot(wave, model_Rrs, 'b-', label='Fit', zorder=10)
     if not use_LM:
@@ -149,7 +154,7 @@ def show_fit(models:list, inputs:np.ndarray,
     for ss, ax in enumerate(axes):
         plotting.set_fontsize(ax, fontsize)
         ax.set_xlabel('Wavelength (nm)')
-        ax.legend(fontsize=10.)
+        ax.legend(fontsize=15.)
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     if outfile is not None:

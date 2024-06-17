@@ -190,18 +190,20 @@ def fig_Kd(outfile='fig_Kd.png'):
 
 # ############################################################
 def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
-                 outroot='fig_BORING_fit', 
+                 outroot='fig_fit_', 
                  add_noise:bool=False, 
                  full_LM:bool=True,
-                 MODIS:bool=False, PACE:bool=False, SeaWiFS:bool=False,
+                 MODIS:bool=False, 
+                 PACE:bool=False, 
+                 SeaWiFS:bool=False,
                  max_wave:float=None,
                  use_LM:bool=False,
                  scl_noise:float=0.02): 
 
     # Load the fits
-    chain_file, noises, noise_lbl = anly_utils.get_chain_file(
-        model_names, scl_noise, add_noise, idx, use_LM=use_LM,
-        full_LM=full_LM, MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
+    chain_file = anly_utils.chain_filename(
+        model_names, scl_noise, add_noise, idx=idx, 
+        MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
     print(f'Loading: {chain_file}')
     d = np.load(chain_file)
 
@@ -215,7 +217,8 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     models = model_utils.init(model_names, model_wave)
 
     # Outfile
-    outfile = outroot + f'_{model_names[0]}{model_names[1]}_{idx}_{noise_lbl}{noises}.png'
+    bcfile = os.path.basename(chain_file)
+    outfile = outroot + bcfile.replace('npz', 'png')
     if use_LM:
         outfile = outfile.replace('BORING', 'BORING_LM')
 
@@ -237,7 +240,8 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     axes = boring_plot.show_fit(
         models, params,
         ex_a_params=a_params, ex_bb_params=bb_params,
-        Rrs_true=dict(wave=d['wave'], spec=d['obs_Rrs']),
+        Rrs_true=dict(wave=d['wave'], spec=d['obs_Rrs'],
+                      var=d['varRrs']),
         anw_true=dict(wave=odict['true_wave'], spec=odict['anw']),
         bbnw_true=dict(wave=odict['true_wave'], spec=odict['bbnw']),
         )
@@ -362,21 +366,22 @@ def compare_models(models:list, idx:int, axes:list,
 
 
 
-def fig_corner(model_names:list, outroot:str='fig_corner', idx:int=170,
+def fig_corner(model_names:list, outroot:str='fig_corner_', idx:int=170,
                  full_LM:bool=True, scl_noise:float=None,
                  MODIS:bool=False, PACE:bool=False,
                  SeaWiFS:bool=False,
                  use_LM:bool=False, add_noise:bool=False): 
 
     # Load the fits
-    chain_file, noises, noise_lbl = anly_utils.get_chain_file(
-        model_names, scl_noise, add_noise, idx, use_LM=use_LM,
-        full_LM=full_LM, MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
+    chain_file = anly_utils.chain_filename(
+        model_names, scl_noise, add_noise, idx=idx, 
+        MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
     print(f'Loading: {chain_file}')
     d_chains = np.load(chain_file)
 
     # Outfile
-    outfile = outroot + f'_{model_names[0]}{model_names[1]}_{idx}_{noise_lbl}{noises}.png'
+    bcfile = os.path.basename(chain_file)
+    outfile = outroot + bcfile.replace('npz', 'png')
 
     burn = 7000
     thin = 1
@@ -1042,12 +1047,12 @@ def main(flg):
         #fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=False,
         #    PACE=True, log_Rrs=True, use_LM=False)#, full_LM=False)
         fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=False,
-            SeaWiFS=True, use_LM=False)#, full_LM=False)
+            SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS')#, full_LM=False)
 
     # Corner
     if flg == 31:
         fig_corner(['GSM', 'GSM'], idx=170, full_LM=False,
-            SeaWiFS=True, use_LM=False)#, full_LM=False)
+            SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS')
 
 
 # Command line execution
