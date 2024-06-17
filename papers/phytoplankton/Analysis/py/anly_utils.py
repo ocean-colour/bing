@@ -2,6 +2,7 @@
 import os
 
 import numpy as np
+from scipy.interpolate import interp1d
 
 from oceancolor.hydrolight import loisel23
 from oceancolor.satellites import pace as sat_pace
@@ -32,6 +33,12 @@ def chain_filename(model_names:list, scl_noise, add_noise,
 
     if idx is not None:
         outfile += f'_{idx}'
+        if MODIS:
+            outfile += '_M'
+        elif PACE:
+            outfile += '_P'
+        elif SeaWiFS:
+            outfile += '_S'
     else:
         if MODIS:
             outfile += '_M23'
@@ -67,8 +74,16 @@ def get_chain_file(model_names, scl_noise, add_noise, idx,
             cidx = 'L23'
     else:
         cidx = str(idx)
+        if MODIS:
+            csat = '_M'
+        elif PACE:
+            csat = '_P'
+        elif SeaWiFS:
+            csat = '_S'
+        else:
+            csat = ''
 
-    chain_file = f'../Analysis/Fits/BORING_{model_names[0]}{model_names[1]}_{cidx}_{noise_lbl}{noises}.npz'
+    chain_file = f'../Analysis/Fits/BORING_{model_names[0]}{model_names[1]}_{cidx}{csat}_{noise_lbl}{noises}.npz'
     # LM
     if use_LM:
         chain_file = chain_file.replace('BORING', 'BORING_LM')
@@ -131,6 +146,26 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
     # Return
     return Adict, Bdict
         
+
+def convert_to_satwave(wave:np.ndarray, spec:np.ndarray,
+                     sat_wave:np.ndarray):
+    """
+    Convert the spectrum to MODIS wavelengths
+
+    Parameters:
+        wave (np.ndarray): Wavelengths of the input Rrs
+        spec (np.ndarray): Spectrum. a, b, Rrs, etc. 
+        sat_wave (np.ndarray): Wavelengths of the satellite
+
+    Returns:
+        np.ndarray: Rrs at MODIS wavelengths
+    """
+    # Interpolate
+    f = interp1d(wave, spec, kind='linear', fill_value='extrapolate')
+    new_spec = f(sat_wave)
+
+    # Return
+    return new_spec
 
 def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
                   ds=None, max_wave:float=None, min_wave:float=None):

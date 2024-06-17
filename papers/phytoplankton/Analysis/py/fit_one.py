@@ -17,10 +17,9 @@ from boring import chisq_fit
 from boring import plotting as boring_plot
 from boring import priors as boring_priors
 
-from boring.satellites import modis as boring_modis
-from boring.satellites import pace as boring_pace
-from boring.satellites import seawifs as boring_seawifs
-from boring.satellites import utils as sat_utils
+from oceancolor.satellites import modis as sat_modis
+from oceancolor.satellites import pace as sat_pace
+from oceancolor.satellites import seawifs as sat_seawifs
 
 from IPython import embed
 
@@ -52,12 +51,12 @@ def fit_one(model_names:list, idx:int, n_cores=20,
 
     # Wavelenegths
     if MODIS:
-        model_wave = boring_modis.modis_wave
+        model_wave = sat_modis.modis_wave
     elif PACE:
-        model_wave = boring_pace.pace_wave
-        PACE_error = boring_pace.gen_noise_vector(PACE_wave)
+        model_wave = sat_pace.pace_wave
+        PACE_error = sat_pace.gen_noise_vector(PACE_wave)
     elif SeaWiFS:
-        model_wave = boring_seawifs.seawifs_wave
+        model_wave = sat_seawifs.seawifs_wave
     else:
         model_wave = wave
 
@@ -80,9 +79,9 @@ def fit_one(model_names:list, idx:int, n_cores=20,
 
     # Bricaud?
     # Interpolate
-    model_Rrs = sat_utils.convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
-    model_anw = sat_utils.convert_to_satwave(l23_wave, odict['anw'], model_wave)
-    model_bbnw = sat_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
+    model_Rrs = anly_utils.convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
+    model_anw = anly_utils.convert_to_satwave(l23_wave, odict['anw'], model_wave)
+    model_bbnw = anly_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
     model_varRrs = (scl_noise * model_Rrs)**2
 
     # Initial guess
@@ -102,7 +101,9 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     # Set the items
     items = [(model_Rrs, model_varRrs, p0, idx)]
 
-    outfile = anly_utils.chain_filename(model_names, scl_noise, add_noise, idx=idx)
+    outfile = anly_utils.chain_filename(
+        model_names, scl_noise, add_noise, idx=idx,
+        MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
     if not use_chisq:
         prior_dict = dict(flavor='uniform', pmin=-6, pmax=5)
 
@@ -115,7 +116,7 @@ def fit_one(model_names:list, idx:int, n_cores=20,
 
         # Save
         anly_utils.save_fits(chains, idx, outfile,
-              extras=dict(wave=wave, obs_Rrs=gordon_Rrs, 
+              extras=dict(wave=model_wave, obs_Rrs=model_Rrs, 
                           varRrs=varRrs, Chl=odict['Chl'], Y=odict['Y']))
     else:
         # Fit
@@ -185,8 +186,10 @@ def main(flg):
 
     # Bayes development
     if flg == 101:
-        fit_one(['GSM', 'GSM'], idx=170, 
-                use_chisq=False, show=True, max_wave=700.)
+        #fit_one(['GSM', 'GSM'], idx=170, 
+        #        use_chisq=False, show=True, max_wave=700.)
+        fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True,
+                use_chisq=False, show=True)
 
 # Command line execution
 if __name__ == '__main__':

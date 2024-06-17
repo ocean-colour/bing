@@ -2,7 +2,6 @@
 import os
 import numpy as np
 
-from scipy.interpolate import interp1d
 
 from oceancolor.hydrolight import loisel23
 
@@ -20,26 +19,6 @@ from oceancolor.satellites import seawifs as sat_seawifs
 import anly_utils 
 
 from IPython import embed
-
-def convert_to_satwave(wave:np.ndarray, spec:np.ndarray,
-                     sat_wave:np.ndarray):
-    """
-    Convert the spectrum to MODIS wavelengths
-
-    Parameters:
-        wave (np.ndarray): Wavelengths of the input Rrs
-        spec (np.ndarray): Spectrum. a, b, Rrs, etc. 
-        sat_wave (np.ndarray): Wavelengths of the satellite
-
-    Returns:
-        np.ndarray: Rrs at MODIS wavelengths
-    """
-    # Interpolate
-    f = interp1d(wave, spec, kind='linear', fill_value='extrapolate')
-    new_spec = f(sat_wave)
-
-    # Return
-    return new_spec
 
 
 def fit(model_names:list, 
@@ -123,9 +102,9 @@ def fit(model_names:list,
 
         # Interpolate
         l23_wave = odict['true_wave']
-        model_Rrs = convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
-        model_anw = convert_to_satwave(l23_wave, odict['anw'], model_wave)
-        model_bbnw = convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
+        model_Rrs = anly_utils.convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
+        model_anw = anly_utils.convert_to_satwave(l23_wave, odict['anw'], model_wave)
+        model_bbnw = anly_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
         model_varRrs = (scl_noise * model_Rrs)**2
 
         p0_a = models[0].init_guess(model_anw)

@@ -190,20 +190,18 @@ def fig_Kd(outfile='fig_Kd.png'):
 
 # ############################################################
 def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
-                 outroot='fig_BORING_fit', show_bbnw:bool=True,
-                 add_noise:bool=False, log_Rrs:bool=False,
+                 outroot='fig_BORING_fit', 
+                 add_noise:bool=False, 
                  full_LM:bool=True,
-                 MODIS:bool=False,
-                 PACE:bool=False,
-                 show_trueRrs:bool=False, 
+                 MODIS:bool=False, PACE:bool=False, SeaWiFS:bool=False,
                  max_wave:float=None,
                  use_LM:bool=False,
-                 set_abblim:bool=True, scl_noise:float=0.02): 
+                 scl_noise:float=0.02): 
 
     # Load the fits
     chain_file, noises, noise_lbl = anly_utils.get_chain_file(
         model_names, scl_noise, add_noise, idx, use_LM=use_LM,
-        full_LM=full_LM, MODIS=MODIS, PACE=PACE)
+        full_LM=full_LM, MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
     print(f'Loading: {chain_file}')
     d = np.load(chain_file)
 
@@ -223,17 +221,23 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
 
     # Inputs
     params = d['ans'] if use_LM else d['chains']
+    # Set up the basis functions, etc.
     a_params = d['Chl']
     bb_params = d['Y']
+    if models[0].uses_Chl:
+        models[0].set_aph(float(a_params))
+    if models[1].uses_basis_params:  # Lee
+        models[1].set_basis_func(float(bb_params))
     if full_LM:
         params = params[idx]
         a_params = a_params[idx]
         bb_params = bb_params[idx]
-            
+
+    #embed(header='237 of figs')
     axes = boring_plot.show_fit(
         models, params,
         ex_a_params=a_params, ex_bb_params=bb_params,
-        Rrs_true=dict(wave=odict['wave'], spec=odict['gordon_Rrs']),
+        Rrs_true=dict(wave=d['wave'], spec=d['obs_Rrs']),
         anw_true=dict(wave=odict['true_wave'], spec=odict['anw']),
         bbnw_true=dict(wave=odict['true_wave'], spec=odict['bbnw']),
         )
@@ -358,21 +362,29 @@ def compare_models(models:list, idx:int, axes:list,
 
 
 
-def fig_corner(model, outroot:str='fig_gordon_corner', idx:int=170,
-        scl_noise:float=None,
-        add_noise:bool=False): 
+def fig_corner(model_names:list, outroot:str='fig_corner', idx:int=170,
+                 full_LM:bool=True, scl_noise:float=None,
+                 MODIS:bool=False, PACE:bool=False,
+                 SeaWiFS:bool=False,
+                 use_LM:bool=False, add_noise:bool=False): 
 
-    chain_file, noises, noise_lbl = get_chain_file(model, scl_noise, add_noise, idx)
-    d_chains = inf_io.load_chains(chain_file)
+    # Load the fits
+    chain_file, noises, noise_lbl = anly_utils.get_chain_file(
+        model_names, scl_noise, add_noise, idx, use_LM=use_LM,
+        full_LM=full_LM, MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
+    print(f'Loading: {chain_file}')
+    d_chains = np.load(chain_file)
 
     # Outfile
-    outfile = outroot + f'_{model}_{idx}_{noise_lbl}{noises}.png'
+    outfile = outroot + f'_{model_names[0]}{model_names[1]}_{idx}_{noise_lbl}{noises}.png'
 
     burn = 7000
     thin = 1
     chains = d_chains['chains']
-    coeff = 10**(chains[burn::thin, :, :].reshape(-1, chains.shape[-1]))
+    coeff = 10**(chains[burn::thin, :, :].reshape(
+        -1, chains.shape[-1]))
 
+    '''
     if model == 'hybpow':
         clbls = ['H0', 'g', 'H1', 'H2', 'B1', 'b']
     elif model == 'exppow':
@@ -382,7 +394,8 @@ def fig_corner(model, outroot:str='fig_gordon_corner', idx:int=170,
     elif model == 'giop+':
         clbls = ['Adg', 'Sdg', 'Aph', 'Bnw', 'beta']
     else:
-        clbls = None
+    '''
+    clbls = None
 
     fig = corner.corner(
         coeff, labels=clbls,
@@ -1008,7 +1021,7 @@ def main(flg):
     if flg == 12:
         fig_Sexp()
 
-    # LM fits
+    # Fits
     if flg == 30:
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True)
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True, use_LM=True)
@@ -1026,9 +1039,15 @@ def main(flg):
         #fig_mcmc_fit(['GIOP', 'Lee'], idx=170, full_LM=True,
         #fig_mcmc_fit(['GIOP', 'Pow'], idx=170, full_LM=True,
         #    PACE=True, log_Rrs=True, use_LM=True)#, full_LM=False)
+        #fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=False,
+        #    PACE=True, log_Rrs=True, use_LM=False)#, full_LM=False)
         fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=False,
-            PACE=True, log_Rrs=True, use_LM=False)#, full_LM=False)
+            SeaWiFS=True, use_LM=False)#, full_LM=False)
 
+    # Corner
+    if flg == 31:
+        fig_corner(['GSM', 'GSM'], idx=170, full_LM=False,
+            SeaWiFS=True, use_LM=False)#, full_LM=False)
 
 
 # Command line execution
