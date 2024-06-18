@@ -369,7 +369,7 @@ def compare_models(models:list, idx:int, axes:list,
 def fig_corner(model_names:list, outroot:str='fig_corner_', idx:int=170,
                  full_LM:bool=True, scl_noise:float=None,
                  MODIS:bool=False, PACE:bool=False,
-                 SeaWiFS:bool=False,
+                 SeaWiFS:bool=False, show_log:bool=False,
                  use_LM:bool=False, add_noise:bool=False): 
 
     # Load the fits
@@ -386,8 +386,10 @@ def fig_corner(model_names:list, outroot:str='fig_corner_', idx:int=170,
     burn = 7000
     thin = 1
     chains = d_chains['chains']
-    coeff = 10**(chains[burn::thin, :, :].reshape(
-        -1, chains.shape[-1]))
+    coeff = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+    if not show_log:
+        coeff = 10**coeff
+    
 
     '''
     if model == 'hybpow':
@@ -1052,7 +1054,8 @@ def main(flg):
     # Corner
     if flg == 31:
         fig_corner(['GSM', 'GSM'], idx=170, full_LM=False,
-            SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS')
+            SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS',
+            show_log=True)
 
 
 # Command line execution
