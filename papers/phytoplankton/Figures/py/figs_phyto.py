@@ -716,7 +716,7 @@ def fig_pace_noise(outfile:str='fig_pace_noise.png'):
 def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
                 outfile:str='fig_all_bic.png', MODIS:bool=False,
                 comp_ks:tuple=((3,4),(4,5)),
-                SeaWiFS:bool=False,
+                SeaWiFS:bool=False, xmax:float=None,
                 PACE:bool=False, log_x:bool=True):
 
     Bdict = {}
@@ -801,7 +801,8 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
         ax.grid(True)
         plotting.set_fontsize(ax, 17)
         #
-        xmax = 30. if MODIS else 50.
+        if xmax is None:
+            xmax = 30. if MODIS else 50.
         if not log_x:
             ax.set_xlim(-5., xmax)
         else:
@@ -814,8 +815,8 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
             vline = np.log10(vline + 6.)
         ax.axvline(vline, color='r', linestyle='--', lw=2)
         # Grab ylimits
-        xl = ax.get_xlim()
-        yl = ax.get_ylim()
+        #xl = ax.get_xlim()
+        #yl = ax.get_ylim()
         #ax.text(5, 0.6, 'Complex model favored', fontsize=18, ha='left')
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
@@ -1121,15 +1122,6 @@ def main(flg):
     if flg == 3:
         fig_bic_modis_pace()
 
-    # BIC/AIC for MODIS+L23
-    if flg == 4:
-        fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png',
-                   log_x=False,
-                   comp_ks=((2,3), (3,4)))
-        #fig_all_ic(MODIS=True, show_AIC=True, 
-        #           outfile='fig_all_aic_MODIS.png')
-        #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
-        #           comp_ks=((2,3), (3,9)))
 
     # BIC/AIC for PACE
     if flg == 5:
@@ -1161,6 +1153,20 @@ def main(flg):
     if flg == 13:
         fig_Sexp()
 
+    # BIC/AIC for MODIS+L23
+    if flg == 14:
+        '''
+        fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png',
+                   log_x=False,
+                   comp_ks=((2,3), (3,4)))
+        '''
+        fig_all_ic(MODIS=True, outfile='fig_bic_MODIS_GSMGIOP.png',
+                   log_x=False,
+                   comp_ks=((3,'GIOP'), (3,'GSM')), xmax=5)
+        #fig_all_ic(MODIS=True, show_AIC=True, 
+        #           outfile='fig_all_aic_MODIS.png')
+        #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
+        #           comp_ks=((2,3), (3,9)))
     # Fits
     if flg == 30:
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True)

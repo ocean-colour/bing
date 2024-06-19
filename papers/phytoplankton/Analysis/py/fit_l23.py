@@ -173,6 +173,7 @@ def fit(model_names:list,
 def main(flg):
     flg = int(flg)
 
+    MODIS = False
     PACE = False
     SeaWiFS = False
 
@@ -197,13 +198,7 @@ def main(flg):
 
     # MODIS
     if flg == 4:
-        fit(['Cst', 'Cst'], use_chisq=True, MODIS=True)
-        fit(['Exp', 'Cst'], use_chisq=True, MODIS=True)
-        fit(['Exp', 'Pow'], use_chisq=True, MODIS=True)
-        fit(['ExpBricaud', 'Pow'], use_chisq=True, MODIS=True)
-        fit(['ExpNMF', 'Pow'], use_chisq=True, MODIS=True)
-        fit(['GIOP', 'Lee'], use_chisq=True, MODIS=True)
-        fit(['GSM', 'GSM'], use_chisq=True, MODIS=True)
+        MODIS = True
 
     # All models
     if flg == 5:
@@ -212,15 +207,15 @@ def main(flg):
     if flg == 6:
         SeaWiFS = True
 
-    if flg in [5,6]:
-        fit(['Cst', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
-        fit(['Exp', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
-        fit(['Exp', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
-        fit(['ExpBricaud', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
-        fit(['ExpNMF', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
-        fit(['GIOP', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
-        fit(['GIOP', 'Lee'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
-        fit(['GSM', 'GSM'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS)
+    if flg in [4, 5,6]:
+        fit(['Cst', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
+        fit(['Exp', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
+        fit(['Exp', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
+        fit(['ExpBricaud', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
+        fit(['ExpNMF', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
+        fit(['GIOP', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
+        fit(['GIOP', 'Lee'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
+        fit(['GSM', 'GSM'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
 
 # Command line execution
 if __name__ == '__main__':
