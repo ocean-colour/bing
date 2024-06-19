@@ -1,9 +1,11 @@
 """ Figs for Gordon Analyses """
 import os, sys
+from importlib.resources import files
 
 import numpy as np
 
 from scipy.optimize import curve_fit
+from scipy.stats import sigmaclip
 import pandas
 
 
@@ -17,8 +19,8 @@ import seaborn as sns
 import corner
 
 from oceancolor.utils import plotting 
-from oceancolor.water import absorption
 from oceancolor.hydrolight import loisel23
+from oceancolor.satellites import pace as sat_pace
 
 from boring import plotting as boring_plot
 from boring.models import utils as model_utils
@@ -30,6 +32,7 @@ from boring.models import utils as model_utils
 # Local
 sys.path.append(os.path.abspath("../Analysis/py"))
 import anly_utils
+import modis as sat_modis
 
 from IPython import embed
 
@@ -108,16 +111,16 @@ def fig_u(outfile='fig_u.png'):
         print(f"wv={lbl}, rRMS={10*rms:0.4f}")
 
     # GIOP
-    ax.plot(uval, rrs_GIOP, 'k--', label='Gordon')
+    ax.plot(uval, rrs_GIOP, 'k--', label=f'Gordon: '+r'$G_1='+f'{G1}, '+r'$G_2=$'+f'{G2}'+r'$')
     ax.grid()
     #
     ax.set_xlabel(r'$u(\lambda)$')
     ax.set_ylabel(r'$r_{\rm rs} (\lambda)$')
-    ax.legend(fontsize=11)
+    ax.legend(fontsize=10)
     plotting.set_fontsize(ax, 15.)
     
     #
-    #plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
@@ -586,10 +589,134 @@ def fig_spectra(idx:int,
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
+
+def fig_satellite_noise(satellite:str, wave:int, min_Rrs:float=-0.03):
+
+    # Load up the data
+    if satellite == 'MODIS_Aqua':
+        # Load
+        sat_file = files('boring').joinpath(os.path.join('data', 'MODIS', 'MODIS_matchups_rrs.csv'))
+        sat_key = 'aqua_rrs'
+        insitu_key = 'insitu_rrs'
+    else:
+        raise ValueError("Not ready for this satellite yet")
+
+    outfile = f'fig_noise_{satellite}_{wave}.png'
+    matchups = pandas.read_csv(sat_file, comment='#')
+    cut = np.isfinite(matchups[f'{sat_key}{wave}']) & (matchups[f'{sat_key}{wave}'] > min_Rrs) & (
+        matchups[f'{insitu_key}{wave}'] > min_Rrs)
+
+    matchups = matchups[cut].copy()
+
+    #embed(header='fig_all_bic 660')
+
+    fig = plt.figure(figsize=(14,6))
+    plt.clf()
+    gs = gridspec.GridSpec(1,2)
+
+    # Compare in-situ with 
+    ax_c = plt.subplot(gs[0])
+
+    #embed(header='figs 167')
+    ax_c.plot(matchups[f'{insitu_key}{wave}'], matchups[f'{sat_key}{wave}'], 
+              'ko', markersize=0.5)
+    # 1-1 line
+    mxval = np.concatenate([matchups[f'{insitu_key}{wave}'], matchups[f'{sat_key}{wave}']]).max()
+    ax_c.plot([0., mxval], [0., mxval], 'r--')
+
+    # Labels
+    ax_c.set_xlabel(f'In-situ '+r'$R_{\rm rs}$'+f'({wave} nm)'+r' [sr$^{-1}$]')
+    ax_c.set_ylabel(f'{satellite} '+r'$R_{\rm rs}$'+f'({wave} nm)'+r' [sr$^{-1}$]')
+
+    ax_c.text(0.1, 0.9, f'{satellite}', fontsize=17, transform=ax_c.transAxes, ha='left')
+
+    # ###########################################3
+    # Histogram the diff
+    ax_h = plt.subplot(gs[1])
+    diff = matchups[f'{insitu_key}{wave}'] - matchups[f'{sat_key}{wave}']
+
+    ax_h.hist(diff, bins=100, histtype='step', color='k', linewidth=2)
+    _, low, high = sigmaclip(diff, low=4., high=4.)
+
+    # Show clipped regions
+    ax_h.axvline(low, color='r', linestyle='--')
+    ax_h.axvline(high, color='r', linestyle='--')
+
+    # Stats
+    sig_cut = (diff > low) & (diff < high)
+    std = np.std(diff[sig_cut])
+
+    # Text me
+    ax_h.text(0.95, 0.9, f'RMS={std:0.4f}'+r' [sr$^{-1}$]', fontsize=17, 
+              transform=ax_h.transAxes, ha='right')
+
+    # Labels
+    ax_h.set_xlabel(r'$\Delta R_{\rm rs}$'+f'({wave}) '+r'[sr$^{-1}$]')
+    ax_h.set_ylabel('N')
+
+    # axes
+    for ax in [ax_c, ax_h]:
+        plotting.set_fontsize(ax, 19)
+
+    # Finish
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+
+
+
+def fig_pace_noise(outfile:str='fig_pace_noise.png'):
+
+    # Load up the data
+    pace_file = files('oceancolor').joinpath(os.path.join(
+        'data', 'satellites', 'PACE_error.csv'))
+    actual_PACE_error = pandas.read_csv(pace_file)
+    acut = (actual_PACE_error['wave'] < 700.) & (actual_PACE_error['wave'] > 400.)
+
+    ds = loisel23.load_ds(4,0)
+    l23_wave = ds.Lambda.data
+    l23_PACE_error = sat_pace.gen_noise_vector(l23_wave)
+    lcut = (l23_wave < 700.) & (l23_wave > 400.)
+
+    #embed(header='fig_all_bic 660')
+
+    fig = plt.figure(figsize=(10,6))
+    plt.clf()
+    gs = gridspec.GridSpec(1,1)
+
+    # Compare in-situ with 
+    ax_c = plt.subplot(gs[0])
+
+    #embed(header='figs 167')
+    ax_c.plot(actual_PACE_error['wave'][acut], actual_PACE_error['PACE_sig'][acut], 'b-',
+              label='Median PACE Noise')
+    ax_c.plot(l23_wave[lcut], l23_PACE_error[lcut], 'ko', label='Re-sampled PACE Noise')
+
+    # Labels
+    ax_c.set_xlabel('Wavelength (nm)')
+    ax_c.set_ylabel('Noise [sr$^{-1}$]')
+    ax_c.set_ylim(None, 1e-3)
+    ax_c.grid()
+
+    # Log
+    ax_c.set_yscale('log')
+
+    ax_c.legend(fontsize=15)
+    
+    # axes
+    for ax in [ax_c]:
+        plotting.set_fontsize(ax, 19)
+
+    # Finish
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+
+
 def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
                 outfile:str='fig_all_bic.png', MODIS:bool=False,
                 comp_ks:tuple=((3,4),(4,5)),
-                SeaWiFS:bool=False,
+                SeaWiFS:bool=False, xmax:float=None,
                 PACE:bool=False, log_x:bool=True):
 
     Bdict = {}
@@ -674,7 +801,8 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
         ax.grid(True)
         plotting.set_fontsize(ax, 17)
         #
-        xmax = 30. if MODIS else 50.
+        if xmax is None:
+            xmax = 30. if MODIS else 50.
         if not log_x:
             ax.set_xlim(-5., xmax)
         else:
@@ -687,8 +815,8 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
             vline = np.log10(vline + 6.)
         ax.axvline(vline, color='r', linestyle='--', lw=2)
         # Grab ylimits
-        xl = ax.get_xlim()
-        yl = ax.get_ylim()
+        #xl = ax.get_xlim()
+        #yl = ax.get_ylim()
         #ax.text(5, 0.6, 'Complex model favored', fontsize=18, ha='left')
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
@@ -1080,15 +1208,6 @@ def main(flg):
     if flg == 3:
         fig_bic_modis_pace()
 
-    # BIC/AIC for MODIS+L23
-    if flg == 4:
-        fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png',
-                   log_x=False,
-                   comp_ks=((2,3), (3,4)))
-        #fig_all_ic(MODIS=True, show_AIC=True, 
-        #           outfile='fig_all_aic_MODIS.png')
-        #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
-        #           comp_ks=((2,3), (3,9)))
 
     # BIC/AIC for PACE
     if flg == 5:
@@ -1111,7 +1230,13 @@ def main(flg):
     if flg == 11:
         fig_Kd()
 
+    # Satellite Noise
     if flg == 12:
+        #fig_satellite_noise('MODIS_Aqua', 443)
+        fig_pace_noise()
+
+
+    if flg == 13:
         fig_Sexp()
 
     # Aph vs aph
@@ -1119,6 +1244,20 @@ def main(flg):
         fig_aph_vs_aph('GIOP')
 
 
+    # BIC/AIC for MODIS+L23
+    if flg == 14:
+        '''
+        fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png',
+                   log_x=False,
+                   comp_ks=((2,3), (3,4)))
+        '''
+        fig_all_ic(MODIS=True, outfile='fig_bic_MODIS_GSMGIOP.png',
+                   log_x=False,
+                   comp_ks=((3,'GIOP'), (3,'GSM')), xmax=5)
+        #fig_all_ic(MODIS=True, show_AIC=True, 
+        #           outfile='fig_all_aic_MODIS.png')
+        #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
+        #           comp_ks=((2,3), (3,9)))
     # Fits
     if flg == 30:
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True)

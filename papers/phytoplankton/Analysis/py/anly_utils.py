@@ -5,9 +5,13 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 from oceancolor.hydrolight import loisel23
-from oceancolor.satellites import pace as sat_pace
-from oceancolor.satellites import modis as sat_modis
-from oceancolor.satellites import seawifs as sat_seawifs
+try:
+    from oceancolor.satellites import pace as sat_pace
+except:
+    pass
+else:
+    from oceancolor.satellites import modis as sat_modis
+    from oceancolor.satellites import seawifs as sat_seawifs
 
 from boring import rt as boring_rt
 from boring.models import anw as boring_anw
@@ -24,10 +28,12 @@ kdict = {2: ['Cst', 'Cst'],
             4: ['Exp', 'Pow'],
             5: ['ExpBricaud', 'Pow'],
             6: ['ExpNMF', 'Pow'],
-            9: ['GIOP', 'Lee']}
+            'GIOP': ['GIOP', 'Lee'],
+            'GSM': ['GSM', 'GSM'],
+}
 
 def chain_filename(model_names:list, scl_noise, add_noise,
-                       idx:int=None, MODIS:bool=False, 
+                       idx:int=None, MODIS:bool=False, use_LM:bool=False,
                        PACE:bool=False, SeaWiFS:bool=False): 
     outfile = f'../Analysis/Fits/BORING_{model_names[0]}{model_names[1]}'
 
@@ -55,6 +61,9 @@ def chain_filename(model_names:list, scl_noise, add_noise,
             outfile += '_nS'
         else:
             outfile += f'_n{int(100*scl_noise):02d}'
+    # LM
+    if use_LM:
+        outfile = outfile.replace('BORING', 'BORING_LM')
     outfile += '.npz'
     return outfile
 
@@ -106,8 +115,8 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
         # Model names
         model_names = kdict[k]
 
-        chain_file, noises, noise_lbl = get_chain_file(
-            model_names, 0.02, False, 'L23', use_LM=use_LM,
+        chain_file = chain_filename(
+            model_names, 0.02, False, use_LM=use_LM,
             MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
         d_chains = np.load(chain_file)
         print(f'Loaded: {chain_file}')

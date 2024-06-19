@@ -2,8 +2,8 @@
 import numpy as np
 
 from boring import evaluate as boring_eval
-from oceancolor.satellites import modis as sat_modis
-from oceancolor.satellites import seawifs as sat_seawifs
+#from oceancolor.satellites import modis as sat_modis
+#from oceancolor.satellites import seawifs as sat_seawifs
 
 from IPython import embed
 
