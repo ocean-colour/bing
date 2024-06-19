@@ -976,6 +976,92 @@ def fig_Sexp(outfile='fig_Sexp.png', kmodel:int=4):
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
+def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
+    # Outfile
+    outfile = outroot + f'_{model}.png'
+
+    MODIS = False
+    SeaWiFS = False
+
+    # Init
+    if model == 'GIOP':
+        clr = 'b'
+        model_names = ['GIOP', 'Lee']
+        MODIS = True
+
+    # Load
+    ds = loisel23.load_ds(4,0)
+
+    l23_wave = ds.Lambda.data
+    l23_Rrs = ds.Rrs.data
+    a = ds.a.data
+    bb = ds.bb.data
+    adg = ds.ag.data + ds.ad.data
+    aph = ds.aph.data
+    anw = ds.anw.data
+    
+    chain_file = anly_utils.chain_filename(
+        model_names, 0.02, False, 'L23', use_LM=True,
+        MODIS=MODIS, SeaWiFS=SeaWiFS)
+    # Load up
+    print(f'Loading {chain_file}')
+    d = np.load(chain_file)
+    # Parse
+    pdict[k]['params'] = d['ans']
+    pdict[k]['Chl'] = d['Chl']
+    pdict[k]['Y'] = d['Y']
+    pdict['Rrs'] = d['obs_Rrs']
+    pdict['idx'] = d['idx']
+    pdict['wave'] = d['wave']
+
+    i440_l23 = np.argmin(np.abs(l23_wave-440.))
+    i440_g = np.argmin(np.abs(pdict['wave']-440.))
+    l23_a440 = aph[:,i440_l23]
+
+    models = model_utils.init(model_names, pdict['wave'])
+
+    def calc_aph440(idict:dict, aph_idx):
+        aph_fits = []
+        for ss in range(aph.shape[0]):
+            models[0].set_aph(idict['Chl'][ss])
+            #
+            iaph = functions.gen_basis(idict['params'][ss,aph_idx:aph_idx+1], [models[0].a_ph])
+            aph_fits.append(iaph.flatten())
+        #
+        aph_fits = np.array(aph_fits)
+        aph_fits.shape
+        #
+        #import pdb; pdb.set_trace()
+        g_a440 = aph_fits[:, i440_giopm]
+        return g_a440
+
+    # Calculate
+    #giopm_a440 = calc_aph440(pdict[k_giopm], 1)
+    g_a440 = calc_aph440(pdict[k_g], 1)
+
+    fig = plt.figure(figsize=(10,7))
+    ax = plt.gca()
+    #
+    #ax.scatter(l23_a440, giopm_a440, s=1, color='b', label='GIOP+Pow')
+    ax.scatter(l23_a440, g_a440, s=1, color=clr, label=model)
+    #
+    xmin, xmax = 0.01, 0.5
+    ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
+    ax.plot([xmin, xmax], [2*xmin, 2*xmax], 'k:', label='2 to 2')
+    # Log
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    #
+    ax.set_xlabel(r'$a_{\rm ph}^{\rm L23} (440)$')
+    ax.set_ylabel(r'$a_{\rm ph}^{\rm GIOP} (440)$')
+    #
+    oc_plotting.set_fontsize(ax, 17)
+    ax.legend(fontsize=16.)
+
+    ax.set_ylim(1e-3, 1)
+    #plt.tight_layout()
+    plt.show()
+
 
 def main(flg):
     if flg== 'all':
@@ -1027,6 +1113,11 @@ def main(flg):
 
     if flg == 12:
         fig_Sexp()
+
+    # Aph vs aph
+    if flg == 13:
+        fig_aph_vs_aph('GIOP')
+
 
     # Fits
     if flg == 30:
