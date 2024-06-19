@@ -20,6 +20,7 @@ import corner
 
 from oceancolor.utils import plotting 
 from oceancolor.hydrolight import loisel23
+from oceancolor.satellites import pace as sat_pace
 
 from boring import plotting as boring_plot
 from boring.models import utils as model_utils
@@ -663,6 +664,55 @@ def fig_satellite_noise(satellite:str, wave:int, min_Rrs:float=-0.03):
     print(f"Saved: {outfile}")
 
 
+
+def fig_pace_noise(outfile:str='fig_pace_noise.png'):
+
+    # Load up the data
+    pace_file = files('oceancolor').joinpath(os.path.join(
+        'data', 'satellites', 'PACE_error.csv'))
+    actual_PACE_error = pandas.read_csv(pace_file)
+    acut = (actual_PACE_error['wave'] < 700.) & (actual_PACE_error['wave'] > 400.)
+
+    ds = loisel23.load_ds(4,0)
+    l23_wave = ds.Lambda.data
+    l23_PACE_error = sat_pace.gen_noise_vector(l23_wave)
+    lcut = (l23_wave < 700.) & (l23_wave > 400.)
+
+    #embed(header='fig_all_bic 660')
+
+    fig = plt.figure(figsize=(10,6))
+    plt.clf()
+    gs = gridspec.GridSpec(1,1)
+
+    # Compare in-situ with 
+    ax_c = plt.subplot(gs[0])
+
+    #embed(header='figs 167')
+    ax_c.plot(actual_PACE_error['wave'][acut], actual_PACE_error['PACE_sig'][acut], 'b-',
+              label='Median PACE Noise')
+    ax_c.plot(l23_wave[lcut], l23_PACE_error[lcut], 'ko', label='Re-sampled PACE Noise')
+
+    # Labels
+    ax_c.set_xlabel('Wavelength (nm)')
+    ax_c.set_ylabel('Noise [sr$^{-1}$]')
+    ax_c.set_ylim(None, 1e-3)
+    ax_c.grid()
+
+    # Log
+    ax_c.set_yscale('log')
+
+    ax_c.legend(fontsize=15)
+    
+    # axes
+    for ax in [ax_c]:
+        plotting.set_fontsize(ax, 19)
+
+    # Finish
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+
+
 def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
                 outfile:str='fig_all_bic.png', MODIS:bool=False,
                 comp_ks:tuple=((3,4),(4,5)),
@@ -1104,7 +1154,9 @@ def main(flg):
 
     # Satellite Noise
     if flg == 12:
-        fig_satellite_noise('MODIS_Aqua', 443)
+        #fig_satellite_noise('MODIS_Aqua', 443)
+        fig_pace_noise()
+
 
     if flg == 13:
         fig_Sexp()
