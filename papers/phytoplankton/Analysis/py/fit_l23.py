@@ -105,7 +105,15 @@ def fit(model_names:list,
         model_Rrs = anly_utils.convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
         model_anw = anly_utils.convert_to_satwave(l23_wave, odict['anw'], model_wave)
         model_bbnw = anly_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
-        model_varRrs = (scl_noise * model_Rrs)**2
+
+        if scl_noise == 'SeaWiFS':
+            model_varRrs = sat_seawifs.seawifs_error**2
+        elif scl_noise == 'MODIS_Aqua':
+            model_varRrs = sat_modis.modis_aqua_error**2
+        elif scl_noise == 'PACE':
+            model_varRrs = PACE_error**2
+        else:
+            model_varRrs = (scl_noise * model_Rrs)**2
 
         p0_a = models[0].init_guess(model_anw)
         p0_b = models[1].init_guess(model_bbnw)
@@ -147,16 +155,17 @@ def fit(model_names:list,
                 print("*****************")
                 print(f"Failed on {item[3]}")
                 print("*****************")
-                ans = np.zeros_like(prev_ans)
-                cov = np.zeros_like(prev_cov)
+                ans = np.zeros_like(params[0])
+                cov = np.zeros((len(params[0]), len(params[0])))
+                idx = item[3]
             all_ans.append(ans)
             all_cov.append(cov)
             all_idx.append(idx)
             #
-            prev_ans = ans
             prev_cov = cov
         # Save
         outfile = outfile.replace('BORING', 'BORING_LM')
+        #embed(header='165 of fits')
         np.savez(outfile, ans=all_ans, cov=all_cov,
               wave=model_wave, obs_Rrs=Rrs, varRrs=varRrs,
               idx=all_idx, Chl=Chls, Y=Ys)
@@ -176,6 +185,7 @@ def main(flg):
     MODIS = False
     PACE = False
     SeaWiFS = False
+    scl_noise = 0.02
 
     # Testing
     if flg == 1:
@@ -197,25 +207,36 @@ def main(flg):
 
 
     # MODIS
-    if flg == 4:
+    if flg in [4,7]:
         MODIS = True
 
     # All models
-    if flg == 5:
+    if flg in [5,8]:
         PACE = True
 
-    if flg == 6:
+    if flg in [6,9]:
         SeaWiFS = True
 
-    if flg in [4, 5,6]:
-        fit(['Cst', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
-        fit(['Exp', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
-        fit(['Exp', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
-        fit(['ExpBricaud', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
-        fit(['ExpNMF', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
-        fit(['GIOP', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
-        fit(['GIOP', 'Lee'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
-        fit(['GSM', 'GSM'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS)
+    if flg in [7,8,9]:
+        if MODIS:
+            scl_noise = 'MODIS_Aqua'
+        elif SeaWiFS:
+            scl_noise = 'SeaWiFS'
+        elif PACE:
+            scl_noise = 'SPACEeaWiFS'
+
+    #embed(header='main 168')
+    if flg in [4,5,6,7,8,9]:
+        fit(['Cst', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
+        fit(['Exp', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
+        fit(['Exp', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
+        fit(['ExpBricaud', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
+        fit(['ExpNMF', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
+        fit(['GIOP', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
+        fit(['GIOP', 'Lee'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
+        fit(['GSM', 'GSM'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
+
+    
 
 # Command line execution
 if __name__ == '__main__':

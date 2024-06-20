@@ -24,6 +24,8 @@ from oceancolor.satellites import pace as sat_pace
 
 from boring import plotting as boring_plot
 from boring.models import utils as model_utils
+from boring.models import functions
+
 #from boring.models import anw as boring_anw
 #from boring.models import bbnw as boring_bbnw
 #from boring import chisq_fit
@@ -32,7 +34,6 @@ from boring.models import utils as model_utils
 # Local
 sys.path.append(os.path.abspath("../Analysis/py"))
 import anly_utils
-import modis as sat_modis
 
 from IPython import embed
 
@@ -629,6 +630,7 @@ def fig_satellite_noise(satellite:str, wave:int, min_Rrs:float=-0.03):
     ax_c.set_ylabel(f'{satellite} '+r'$R_{\rm rs}$'+f'({wave} nm)'+r' [sr$^{-1}$]')
 
     ax_c.text(0.1, 0.9, f'{satellite}', fontsize=17, transform=ax_c.transAxes, ha='left')
+    ax_c.grid()
 
     # ###########################################3
     # Histogram the diff
@@ -1023,16 +1025,13 @@ def fig_one_bic(models:list=None, idx:int=170,
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
+
 def fig_Sexp(outfile='fig_Sexp.png', kmodel:int=4):
 
 
     # Load
     ds = loisel23.load_ds(4,0)
     l23_wave = ds.Lambda.data
-    l23_Rrs = ds.Rrs.data
-    a = ds.a.data
-    bb = ds.bb.data
-    adg = ds.ag.data + ds.ad.data
     aph = ds.aph.data
     anw = ds.anw.data
 
@@ -1050,7 +1049,7 @@ def fig_Sexp(outfile='fig_Sexp.png', kmodel:int=4):
         else:
             raise ValueError("Bad k")
 
-        chain_file, noises, noise_lbl = anly_utils.get_chain_file(
+        chain_file = anly_utils.chain_filename(
             model_names, 0.02, False, 'L23', use_LM=True,
             PACE=True)
         # Load up
@@ -1116,28 +1115,37 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
         clr = 'b'
         model_names = ['GIOP', 'Lee']
         MODIS = True
+        scl_noise = 'MODIS_Aqua'
+    elif model == 'GSM':
+        clr = 'b'
+        model_names = ['GSM', 'GSM']
+        SeaWiFS = True
+        scl_noise = 'SeaWiFS'
+    else:
+        raise ValueError("Not ready for this model")
 
     # Load
     ds = loisel23.load_ds(4,0)
 
     l23_wave = ds.Lambda.data
-    l23_Rrs = ds.Rrs.data
-    a = ds.a.data
-    bb = ds.bb.data
-    adg = ds.ag.data + ds.ad.data
     aph = ds.aph.data
-    anw = ds.anw.data
+
+    pdict = {}
+    k_g = model
+    pdict[k_g] = {}
+
     
     chain_file = anly_utils.chain_filename(
-        model_names, 0.02, False, 'L23', use_LM=True,
+        model_names, scl_noise, False, 
         MODIS=MODIS, SeaWiFS=SeaWiFS)
+    chain_file = chain_file.replace('BORING', 'BORING_LM')
     # Load up
     print(f'Loading {chain_file}')
     d = np.load(chain_file)
     # Parse
-    pdict[k]['params'] = d['ans']
-    pdict[k]['Chl'] = d['Chl']
-    pdict[k]['Y'] = d['Y']
+    pdict[k_g]['params'] = d['ans']
+    pdict[k_g]['Chl'] = d['Chl']
+    pdict[k_g]['Y'] = d['Y']
     pdict['Rrs'] = d['obs_Rrs']
     pdict['idx'] = d['idx']
     pdict['wave'] = d['wave']
@@ -1160,7 +1168,7 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
         aph_fits.shape
         #
         #import pdb; pdb.set_trace()
-        g_a440 = aph_fits[:, i440_giopm]
+        g_a440 = aph_fits[:, i440_g]
         return g_a440
 
     # Calculate
@@ -1173,7 +1181,7 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
     #ax.scatter(l23_a440, giopm_a440, s=1, color='b', label='GIOP+Pow')
     ax.scatter(l23_a440, g_a440, s=1, color=clr, label=model)
     #
-    xmin, xmax = 0.01, 0.5
+    xmin, xmax = 1e-3, 1
     ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
     ax.plot([xmin, xmax], [2*xmin, 2*xmax], 'k:', label='2 to 2')
     # Log
@@ -1183,12 +1191,16 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
     ax.set_xlabel(r'$a_{\rm ph}^{\rm L23} (440)$')
     ax.set_ylabel(r'$a_{\rm ph}^{\rm GIOP} (440)$')
     #
-    oc_plotting.set_fontsize(ax, 17)
+    plotting.set_fontsize(ax, 17)
     ax.legend(fontsize=16.)
 
     ax.set_ylim(1e-3, 1)
-    #plt.tight_layout()
-    plt.show()
+
+    # Write
+    plt.tight_layout()
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+
 
 
 def main(flg):
@@ -1232,7 +1244,7 @@ def main(flg):
 
     # Satellite Noise
     if flg == 12:
-        #fig_satellite_noise('MODIS_Aqua', 443)
+        fig_satellite_noise('MODIS_Aqua', 443)
         fig_pace_noise()
 
 
@@ -1240,12 +1252,13 @@ def main(flg):
         fig_Sexp()
 
     # Aph vs aph
-    if flg == 13:
+    if flg == 14:
         fig_aph_vs_aph('GIOP')
+        #fig_aph_vs_aph('GSM')
 
 
     # BIC/AIC for MODIS+L23
-    if flg == 14:
+    if flg == 15:
         '''
         fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png',
                    log_x=False,

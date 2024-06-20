@@ -59,6 +59,10 @@ def chain_filename(model_names:list, scl_noise, add_noise,
     else:
         if scl_noise == 'SeaWiFS':
             outfile += '_nS'
+        elif scl_noise == 'MODIS_Aqua':
+            outfile += '_nM'
+        elif scl_noise == 'PACE':
+            outfile += '_nP'
         else:
             outfile += f'_n{int(100*scl_noise):02d}'
     # LM
