@@ -59,7 +59,7 @@ def fit(model_names:list,
     if MODIS:
         model_wave = sat_modis.modis_wave
     elif PACE:
-        model_wave = sat_pace.PACE_wave
+        model_wave = anly_utils.PACE_wave
         PACE_error = sat_pace.gen_noise_vector(model_wave)
     elif SeaWiFS:
         model_wave = sat_seawifs.seawifs_wave

@@ -23,6 +23,8 @@ from boring import chisq_fit
 
 from IPython import embed
 
+PACE_wave = np.arange(400, 701, 5)
+
 kdict = {2: ['Cst', 'Cst'],
             3: ['Exp', 'Cst'],
             4: ['Exp', 'Pow'],

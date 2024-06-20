@@ -804,7 +804,7 @@ def fig_all_ic(use_LM:bool=True, show_AIC:bool=False,
         plotting.set_fontsize(ax, 17)
         #
         if xmax is None:
-            xmax = 30. if MODIS else 50.
+            xmax = 30. if (MODIS or SeaWiFS) else 50.
         if not log_x:
             ax.set_xlim(-5., xmax)
         else:
@@ -1276,7 +1276,7 @@ def main(flg):
                    comp_ks=((2,3), (3,4)))
         fig_all_ic(SeaWiFS=True, outfile='fig_bic_SeaWiFS_GSM.png',
                    log_x=False,
-                   comp_ks=((3,'GIOP'), (3,'GSM')), xmax=5)
+                   comp_ks=((3,'GSM'), (3,'GSM')), xmax=5)
         #fig_all_ic(MODIS=True, show_AIC=True, 
         #           outfile='fig_all_aic_MODIS.png')
         #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
