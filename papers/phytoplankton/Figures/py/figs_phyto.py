@@ -1117,7 +1117,7 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
         MODIS = True
         scl_noise = 'MODIS_Aqua'
     elif model == 'GSM':
-        clr = 'b'
+        clr = 'g'
         model_names = ['GSM', 'GSM']
         SeaWiFS = True
         scl_noise = 'SeaWiFS'
@@ -1184,12 +1184,13 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
     xmin, xmax = 1e-3, 1
     ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
     ax.plot([xmin, xmax], [2*xmin, 2*xmax], 'k:', label='2 to 2')
+    ax.plot([xmin, xmax], [xmin/2, xmax/2], 'k-.', label='0.5 to 0.5')
     # Log
     ax.set_xscale('log')
     ax.set_yscale('log')
     #
     ax.set_xlabel(r'$a_{\rm ph}^{\rm L23} (440)$')
-    ax.set_ylabel(r'$a_{\rm ph}^{\rm GIOP} (440)$')
+    ax.set_ylabel(r'$a_{\rm ph}^{\rm '+f'{model}'+r'} (440)$')
     #
     plotting.set_fontsize(ax, 17)
     ax.legend(fontsize=16.)
@@ -1253,24 +1254,35 @@ def main(flg):
 
     # Aph vs aph
     if flg == 14:
-        fig_aph_vs_aph('GIOP')
-        #fig_aph_vs_aph('GSM')
+        #fig_aph_vs_aph('GIOP')
+        fig_aph_vs_aph('GSM')
 
 
     # BIC/AIC for MODIS+L23
     if flg == 15:
-        '''
-        fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png',
+
+        #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS.png',
+        #           log_x=False,
+        #           comp_ks=((2,3), (3,4)))
+        fig_all_ic(MODIS=True, outfile='fig_bic_MODIS_GIOP.png',
+                   log_x=False,
+                   comp_ks=((3,'GIOP'), (3,'GIOP+')), xmax=5)
+
+    # BIC/AIC for SeaWiFS+GSM
+    if flg == 16:
+
+        fig_all_ic(SeaWiFS=True, outfile='fig_all_bic_SeaWiFS.png',
                    log_x=False,
                    comp_ks=((2,3), (3,4)))
-        '''
-        fig_all_ic(MODIS=True, outfile='fig_bic_MODIS_GSMGIOP.png',
+        fig_all_ic(SeaWiFS=True, outfile='fig_bic_SeaWiFS_GSM.png',
                    log_x=False,
                    comp_ks=((3,'GIOP'), (3,'GSM')), xmax=5)
         #fig_all_ic(MODIS=True, show_AIC=True, 
         #           outfile='fig_all_aic_MODIS.png')
         #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
         #           comp_ks=((2,3), (3,9)))
+
+
     # Fits
     if flg == 30:
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True)

@@ -29,6 +29,7 @@ kdict = {2: ['Cst', 'Cst'],
             5: ['ExpBricaud', 'Pow'],
             6: ['ExpNMF', 'Pow'],
             'GIOP': ['GIOP', 'Lee'],
+            'GIOP+': ['GIOP', 'Pow'],
             'GSM': ['GSM', 'GSM'],
 }
 
