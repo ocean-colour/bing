@@ -13,12 +13,12 @@ else:
     from oceancolor.satellites import modis as sat_modis
     from oceancolor.satellites import seawifs as sat_seawifs
 
-from boring import rt as boring_rt
-from boring.models import anw as boring_anw
-from boring.models import bbnw as boring_bbnw
-from boring.models import utils as model_utils
-from boring import stats as boring_stats
-from boring import chisq_fit
+from bing import rt as bing_rt
+from bing.models import anw as bing_anw
+from bing.models import bbnw as bing_bbnw
+from bing.models import utils as model_utils
+from bing import stats as bing_stats
+from bing import chisq_fit
 
 
 from IPython import embed
@@ -38,7 +38,7 @@ kdict = {2: ['Cst', 'Cst'],
 def chain_filename(model_names:list, scl_noise, add_noise,
                        idx:int=None, MODIS:bool=False, use_LM:bool=False,
                        PACE:bool=False, SeaWiFS:bool=False): 
-    outfile = f'../Analysis/Fits/BORING_{model_names[0]}{model_names[1]}'
+    outfile = f'../Analysis/Fits/BING_{model_names[0]}{model_names[1]}'
 
     if idx is not None:
         outfile += f'_{idx}'
@@ -70,45 +70,10 @@ def chain_filename(model_names:list, scl_noise, add_noise,
             outfile += f'_n{int(100*scl_noise):02d}'
     # LM
     if use_LM:
-        outfile = outfile.replace('BORING', 'BORING_LM')
+        outfile = outfile.replace('BING', 'BING_LM')
     outfile += '.npz'
     return outfile
 
-
-'''
-def get_chain_file(model_names, scl_noise, add_noise, idx,
-                   use_LM=False, full_LM=True, MODIS:bool=False,
-                   PACE:bool=False, SeaWiFS:bool=False):
-    scl_noise = 0.02 if scl_noise is None else scl_noise
-    noises = f'{int(100*scl_noise):02d}'
-    noise_lbl = 'N' if add_noise else 'n'
-
-    if full_LM:
-        if MODIS:
-            cidx = 'M23'
-        elif PACE:
-            cidx = 'P23'
-        elif SeaWiFS:
-            cidx = 'S23'
-        else:
-            cidx = 'L23'
-    else:
-        cidx = str(idx)
-        if MODIS:
-            csat = '_M'
-        elif PACE:
-            csat = '_P'
-        elif SeaWiFS:
-            csat = '_S'
-        else:
-            csat = ''
-
-    chain_file = f'../Analysis/Fits/BORING_{model_names[0]}{model_names[1]}_{cidx}{csat}_{noise_lbl}{noises}.npz'
-    # LM
-    if use_LM:
-        chain_file = chain_file.replace('BORING', 'BORING_LM')
-    return chain_file, noises, noise_lbl
-'''
 
 def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
              MODIS:bool=False, PACE:bool=False, SeaWiFS:bool=False):
@@ -147,7 +112,7 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
             else:
                 noise_vector = None
             # Calculate BIC
-            AICs, BICs = boring_stats.calc_ICs(
+            AICs, BICs = bing_stats.calc_ICs(
                 d_chains['obs_Rrs'], models, d_chains['ans'],
                             s2n, use_LM=use_LM, debug=False,
                             Chl=d_chains['Chl'],
@@ -216,7 +181,7 @@ def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
     aph = ds.aph.data[idx,iwave]
 
     # For bp
-    rrs = Rrs / (boring_rt.A_Rrs + boring_rt.B_Rrs*Rrs)
+    rrs = Rrs / (bing_rt.A_Rrs + bing_rt.B_Rrs*Rrs)
     i440 = np.argmin(np.abs(true_wave-440))
     i555 = np.argmin(np.abs(true_wave-555))
     Y = 2.2 * (1 - 1.2 * np.exp(-0.9 * rrs[i440]/rrs[i555]))
@@ -230,7 +195,7 @@ def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
     wave = wave[::step]
 
     # Gordon
-    gordon_Rrs = boring_rt.calc_Rrs(a, bb)
+    gordon_Rrs = bing_rt.calc_Rrs(a, bb)
 
     # Error
     #varRrs = (scl_noise * Rrs)**2
@@ -302,14 +267,14 @@ def recon_one(model_names:list, idx:int,
     wave_true = odict['true_wave']
     Rrs_true = odict['true_Rrs']
 
-    gordon_Rrs = boring_rt.calc_Rrs(odict['a'], odict['bb'])
+    gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'])
 
     # MODIS?
     if MODIS:
-        model_wave = boring_modis.modis_wave
-        model_Rrs = boring_modis.convert_to_modis(wave_true, gordon_Rrs)
+        model_wave = bing_modis.modis_wave
+        model_Rrs = bing_modis.convert_to_modis(wave_true, gordon_Rrs)
     elif PACE:
-        model_wave = boring_pace.pace_wave
+        model_wave = bing_pace.pace_wave
     else:
         model_wave = wave_true
 
@@ -354,3 +319,19 @@ def recon_one(model_names:list, idx:int,
                  model_Rrs=model_Rrs, a_mean=a_mean, bb_mean=bb_mean)
     # Return
     return rdict
+
+
+def scale_noise(scl_noise, model_Rrs, model_wave):
+
+    if scl_noise == 'SeaWiFS':
+        model_varRrs = sat_seawifs.seawifs_error**2
+    elif scl_noise == 'MODIS_Aqua':
+        model_varRrs = sat_modis.modis_aqua_error**2
+    elif scl_noise == 'PACE':
+        PACE_error = sat_pace.gen_noise_vector(model_wave)
+        model_varRrs = PACE_error**2
+    else:
+        model_varRrs = (scl_noise * model_Rrs)**2
+
+    # Return
+    return model_varRrs

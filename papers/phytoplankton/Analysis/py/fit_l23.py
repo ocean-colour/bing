@@ -5,12 +5,12 @@ import numpy as np
 
 from oceancolor.hydrolight import loisel23
 
-from boring.models import anw as boring_anw
-from boring.models import bbnw as boring_bbnw
-from boring.models import utils as model_utils
-from boring import inference as boring_inf
-from boring import rt as boring_rt
-from boring import chisq_fit
+from bing.models import anw as bing_anw
+from bing.models import bbnw as bing_bbnw
+from bing.models import utils as model_utils
+from bing import inference as bing_inf
+from bing import rt as bing_rt
+from bing import chisq_fit
 
 from oceancolor.satellites import modis as sat_modis
 from oceancolor.satellites import pace as sat_pace
@@ -70,7 +70,7 @@ def fit(model_names:list,
     models = model_utils.init(model_names, model_wave)
 
     # Initialize the MCMC
-    pdict = boring_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
+    pdict = bing_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
 
     # Prep
     if Nspec is None:
@@ -93,7 +93,7 @@ def fit(model_names:list,
             ss, scl_noise=scl_noise, ds=ds,
             max_wave=max_wave)
         # Rrs
-        gordon_Rrs = boring_rt.calc_Rrs(odict['a'], odict['bb'])
+        gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'])
         # Internals
         if models[0].uses_Chl:
             models[0].set_aph(odict['Chl'])
@@ -106,14 +106,7 @@ def fit(model_names:list,
         model_anw = anly_utils.convert_to_satwave(l23_wave, odict['anw'], model_wave)
         model_bbnw = anly_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
 
-        if scl_noise == 'SeaWiFS':
-            model_varRrs = sat_seawifs.seawifs_error**2
-        elif scl_noise == 'MODIS_Aqua':
-            model_varRrs = sat_modis.modis_aqua_error**2
-        elif scl_noise == 'PACE':
-            model_varRrs = PACE_error**2
-        else:
-            model_varRrs = (scl_noise * model_Rrs)**2
+        model_varRrs = anly_utils.scale_noise(scl_noise, model_Rrs, model_wave)
 
         p0_a = models[0].init_guess(model_anw)
         p0_b = models[1].init_guess(model_bbnw)
@@ -164,7 +157,7 @@ def fit(model_names:list,
             #
             prev_cov = cov
         # Save
-        outfile = outfile.replace('BORING', 'BORING_LM')
+        outfile = outfile.replace('BING', 'BING_LM')
         #embed(header='165 of fits')
         np.savez(outfile, ans=all_ans, cov=all_cov,
               wave=model_wave, obs_Rrs=Rrs, varRrs=varRrs,

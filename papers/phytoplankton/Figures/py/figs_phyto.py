@@ -22,14 +22,14 @@ from oceancolor.utils import plotting
 from oceancolor.hydrolight import loisel23
 from oceancolor.satellites import pace as sat_pace
 
-from boring import plotting as boring_plot
-from boring.models import utils as model_utils
-from boring.models import functions
+from bing import plotting as bing_plot
+from bing.models import utils as model_utils
+from bing.models import functions
 
-#from boring.models import anw as boring_anw
-#from boring.models import bbnw as boring_bbnw
-#from boring import chisq_fit
-#from boring import stats as boring_stats
+#from bing.models import anw as bing_anw
+#from bing.models import bbnw as bing_bbnw
+#from bing import chisq_fit
+#from bing import stats as bing_stats
 
 # Local
 sys.path.append(os.path.abspath("../Analysis/py"))
@@ -224,7 +224,7 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
     bcfile = os.path.basename(chain_file)
     outfile = outroot + bcfile.replace('npz', 'png')
     if use_LM:
-        outfile = outfile.replace('BORING', 'BORING_LM')
+        outfile = outfile.replace('BING', 'BING_LM')
 
     # Inputs
     params = d['ans'] if use_LM else d['chains']
@@ -241,7 +241,7 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
         bb_params = bb_params[idx]
 
     #embed(header='237 of figs')
-    axes = boring_plot.show_fit(
+    axes = bing_plot.show_fit(
         models, params,
         ex_a_params=a_params, ex_bb_params=bb_params,
         Rrs_true=dict(wave=d['wave'], spec=d['obs_Rrs'],
@@ -395,18 +395,16 @@ def fig_corner(model_names:list, outroot:str='fig_corner_', idx:int=170,
         coeff = 10**coeff
     
 
-    '''
-    if model == 'hybpow':
-        clbls = ['H0', 'g', 'H1', 'H2', 'B1', 'b']
-    elif model == 'exppow':
-        clbls = ['Adg', 'g', 'Bnw', 'bnw']
-    elif model == 'hybnmf':
-        clbls = ['H0', 'g', 'H1', 'H2', 'B1', 'B2']
-    elif model == 'giop+':
-        clbls = ['Adg', 'Sdg', 'Aph', 'Bnw', 'beta']
+    if model_names[0] == 'GIOP':
+        clbls = ['Aexp', 'Aph']
     else:
-    '''
-    clbls = None
+        clbls = None
+
+    if model_names[1] == 'Lee':
+        clbls += ['Bnw']
+    else:
+        clbls = None
+    #embed(header='figs 407')
 
     fig = corner.corner(
         coeff, labels=clbls,
@@ -596,7 +594,7 @@ def fig_satellite_noise(satellite:str, wave:int, min_Rrs:float=-0.03):
     # Load up the data
     if satellite == 'MODIS_Aqua':
         # Load
-        sat_file = files('boring').joinpath(os.path.join('data', 'MODIS', 'MODIS_matchups_rrs.csv'))
+        #sat_file = files('boring').joinpath(os.path.join('data', 'MODIS', 'MODIS_matchups_rrs.csv'))
         sat_key = 'aqua_rrs'
         insitu_key = 'insitu_rrs'
     else:
@@ -1138,7 +1136,7 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
     chain_file = anly_utils.chain_filename(
         model_names, scl_noise, False, 
         MODIS=MODIS, SeaWiFS=SeaWiFS)
-    chain_file = chain_file.replace('BORING', 'BORING_LM')
+    chain_file = chain_file.replace('BING', 'BING_LM')
     # Load up
     print(f'Loading {chain_file}')
     d = np.load(chain_file)
@@ -1303,13 +1301,22 @@ def main(flg):
         #    PACE=True, log_Rrs=True, use_LM=True)#, full_LM=False)
         #fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=False,
         #    PACE=True, log_Rrs=True, use_LM=False)#, full_LM=False)
-        fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=False,
-            SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS')#, full_LM=False)
+        pass
+
+    # Bayesian fits
+    if flg == 31:
+        #fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=False,
+        #    SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS')#, full_LM=False)
+        fig_mcmc_fit(['GIOP', 'Lee'], idx=170, full_LM=False,
+            MODIS=True, use_LM=False, scl_noise='MODIS_Aqua')#, full_LM=False)
 
     # Corner
-    if flg == 31:
-        fig_corner(['GSM', 'GSM'], idx=170, full_LM=False,
-            SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS',
+    if flg == 32:
+        #fig_corner(['GSM', 'GSM'], idx=170, full_LM=False,
+        #    SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS',
+        #    show_log=True)
+        fig_corner(['GIOP', 'Lee'], idx=170, full_LM=False,
+            MODIS=True, use_LM=False, scl_noise='MODIS_Aqua',
             show_log=True)
 
 

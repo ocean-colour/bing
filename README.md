@@ -5,4 +5,9 @@
 # Lead Developer(s)
 
 ## Brought to you by J. Xavier Prochaska (UC Santa Cruz) 
-## With input from Robert Frouin (Scripps Institution of Oceanography, SIO), Patrick Gray (University of Maine) and the Ocean Optics Lab at SIO
+## With input from:
+
+* Robert Frouin (Scripps Institution of Oceanography, SIO) 
+* Patrick Gray (University of Maine) 
+* Paul Mattern (UC Santa Cruz)
+* Members of the Ocean Optics Lab at SIO

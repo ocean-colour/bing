@@ -8,14 +8,14 @@ from matplotlib import pyplot as plt
 
 from ihop.inference import noise
 
-from boring.models import anw as boring_anw
-from boring.models import bbnw as boring_bbnw
-from boring.models import utils as model_utils
-from boring import inference as boring_inf
-from boring import rt as boring_rt
-from boring import chisq_fit
-from boring import plotting as boring_plot
-from boring import priors as boring_priors
+from bing.models import anw as bing_anw
+from bing.models import bbnw as bing_bbnw
+from bing.models import utils as model_utils
+from bing import inference as bing_inf
+from bing import rt as bing_rt
+from bing import chisq_fit
+from bing import plotting as bing_plot
+from bing import priors as bing_priors
 
 from oceancolor.satellites import modis as sat_modis
 from oceancolor.satellites import pace as sat_pace
@@ -57,10 +57,10 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     models = model_utils.init(model_names, model_wave)
     
     # Initialize the MCMC
-    pdict = boring_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
+    pdict = bing_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
     
     # Gordon Rrs
-    gordon_Rrs = boring_rt.calc_Rrs(odict['a'], odict['bb'])
+    gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'])
     if add_noise:
         gordon_Rrs = noise.add_noise(gordon_Rrs, perc=scl_noise*100)
 
@@ -76,10 +76,7 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     model_anw = anly_utils.convert_to_satwave(l23_wave, odict['anw'], model_wave)
     model_bbnw = anly_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
 
-    if scl_noise == 'SeaWiFS':
-        model_varRrs = sat_seawifs.seawifs_error**2
-    else:
-        model_varRrs = (scl_noise * model_Rrs)**2
+    model_varRrs = anly_utils.scale_noise(scl_noise, model_Rrs, model_wave)
 
     # Initial guess
     p0_a = models[0].init_guess(model_anw)
@@ -90,7 +87,7 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     # Chk initial guess
     ca = models[0].eval_a(p0[0:models[0].nparam])
     cbb = models[1].eval_bb(p0[models[0].nparam:])
-    pRrs = boring_rt.calc_Rrs(ca, cbb)
+    pRrs = bing_rt.calc_Rrs(ca, cbb)
     print(f'Initial Rrs guess: {np.mean((model_Rrs-pRrs)/model_Rrs)}')
     #embed(header='95 of fit one')
     
@@ -105,11 +102,11 @@ def fit_one(model_names:list, idx:int, n_cores=20,
         prior_dict = dict(flavor='uniform', pmin=-6, pmax=5)
 
         for jj in range(2):
-            models[jj].priors = boring_priors.Priors(
+            models[jj].priors = bing_priors.Priors(
                 [prior_dict]*models[jj].nparam)
 
         # Fit
-        chains, idx = boring_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
+        chains, idx = bing_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
 
         # Save
         anly_utils.save_fits(chains, idx, outfile, 
@@ -123,7 +120,7 @@ def fit_one(model_names:list, idx:int, n_cores=20,
         ans, cov, idx = chisq_fit.fit(items[0], models)
         # Show?
         if show:
-            boring_plot.show_fit(models, ans, odict['Chl'], odict['Y'],
+            bing_plot.show_fit(models, ans, odict['Chl'], odict['Y'],
                                  Rrs_true=dict(wave=model_wave, spec=model_Rrs),
                                  anw_true=dict(wave=l23_wave, spec=odict['anw']),
                                  bbnw_true=dict(wave=l23_wave, spec=odict['bbnw'])
@@ -131,7 +128,7 @@ def fit_one(model_names:list, idx:int, n_cores=20,
             plt.show()
             
         # Save
-        outfile = outfile.replace('BORING', 'BORING_LM')
+        outfile = outfile.replace('BING', 'BING_LM')
         np.savez(outfile, ans=ans, cov=cov,
               wave=wave, obs_Rrs=gordon_Rrs, varRrs=model_varRrs,
               Chl=odict['Chl'], Y=odict['Y'])
@@ -207,8 +204,8 @@ def main(flg):
         #        use_chisq=False, show=True, max_wave=700.)
         #fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True,
         #        use_chisq=False, show=True, scl_noise='SeaWiFS')
-        fit_one(['GIOP', 'Lee'], idx=170, SeaWiFS=True,
-                use_chisq=False, show=True, scl_noise='SeaWiFS')
+        fit_one(['GIOP', 'Lee'], idx=170, MODIS=True,
+                use_chisq=False, show=True, scl_noise='MODIS_Aqua')
 
 
 # Command line execution
