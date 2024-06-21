@@ -200,11 +200,17 @@ def main(flg):
 
     # Bayes development
     if flg == 101:
+        pass
         #fit_one(['GSM', 'GSM'], idx=170, 
         #        use_chisq=False, show=True, max_wave=700.)
         #fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True,
         #        use_chisq=False, show=True, scl_noise='SeaWiFS')
-        fit_one(['GIOP', 'Lee'], idx=170, MODIS=True,
+
+    # Bayes on GIOP
+    if flg == 102:
+        #fit_one(['GIOP', 'Lee'], idx=170, MODIS=True,
+        #        use_chisq=False, show=True, scl_noise='MODIS_Aqua')
+        fit_one(['GIOP', 'Lee'], idx=1032, MODIS=True,
                 use_chisq=False, show=True, scl_noise='MODIS_Aqua')
 
 
