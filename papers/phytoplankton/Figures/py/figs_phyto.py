@@ -383,6 +383,15 @@ def fig_corner(model_names:list, outroot:str='fig_corner_', idx:int=170,
     print(f'Loading: {chain_file}')
     d_chains = np.load(chain_file)
 
+    # Right answer
+    ds = loisel23.load_ds(4,0)
+    i440 = np.argmin(np.abs(ds.Lambda.data-440.))
+    i600 = np.argmin(np.abs(ds.Lambda.data-600.))
+
+    aph_440 = ds.aph.data[idx,i440]
+    adg_440 = ds.ag.data[idx,i440] + ds.ad.data[idx,i440]
+    bbnw_600 = ds.bbnw.data[idx,i600]
+
     # Outfile
     bcfile = os.path.basename(chain_file)
     outfile = outroot + bcfile.replace('npz', 'png')
@@ -397,21 +406,26 @@ def fig_corner(model_names:list, outroot:str='fig_corner_', idx:int=170,
 
     if model_names[0] == 'GIOP':
         clbls = ['Aexp', 'Aph']
+        truths = [adg_440, aph_440]
     else:
         clbls = None
 
     if model_names[1] == 'Lee':
         clbls += ['Bnw']
+        truths += [bbnw_600]
     else:
         clbls = None
     #embed(header='figs 407')
+
+    if show_log and truths is not None:
+        truths = np.log10(truths)
 
     fig = corner.corner(
         coeff, labels=clbls,
         label_kwargs={'fontsize':17},
         color='k',
         #axes_scale='log',
-        #truths=truths,
+        truths=truths,
         show_titles=True,
         title_kwargs={"fontsize": 12},
         )
@@ -1316,6 +1330,9 @@ def main(flg):
         #    SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS',
         #    show_log=True)
         fig_corner(['GIOP', 'Lee'], idx=170, full_LM=False,
+            MODIS=True, use_LM=False, scl_noise='MODIS_Aqua',
+            show_log=True)
+        fig_corner(['GIOP', 'Lee'], idx=1032, full_LM=False,
             MODIS=True, use_LM=False, scl_noise='MODIS_Aqua',
             show_log=True)
 

@@ -208,8 +208,8 @@ def main(flg):
 
     # Bayes on GIOP
     if flg == 102:
-        #fit_one(['GIOP', 'Lee'], idx=170, MODIS=True,
-        #        use_chisq=False, show=True, scl_noise='MODIS_Aqua')
+        fit_one(['GIOP', 'Lee'], idx=170, MODIS=True,
+                use_chisq=False, show=True, scl_noise='MODIS_Aqua')
         fit_one(['GIOP', 'Lee'], idx=1032, MODIS=True,
                 use_chisq=False, show=True, scl_noise='MODIS_Aqua')
 
