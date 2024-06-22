@@ -123,6 +123,8 @@ def fit(model_names:list,
     params = np.array(params)
     varRrs = np.array(varRrs)
 
+    flags = np.zeros_like(Rrs) # Binary flags for failed fits
+
     # Build the items
     items = [(Rrs[i], varRrs[i], params[i], i) for i in idx]
 
@@ -151,6 +153,9 @@ def fit(model_names:list,
                 ans = np.zeros_like(params[0])
                 cov = np.zeros((len(params[0]), len(params[0])))
                 idx = item[3]
+                flags[idx] += 1 # Failed fit
+            if np.any(np.isnan(cov)):
+                flags[idx] += 2
             all_ans.append(ans)
             all_cov.append(cov)
             all_idx.append(idx)
@@ -161,7 +166,7 @@ def fit(model_names:list,
         #embed(header='165 of fits')
         np.savez(outfile, ans=all_ans, cov=all_cov,
               wave=model_wave, obs_Rrs=Rrs, varRrs=varRrs,
-              idx=all_idx, Chl=Chls, Y=Ys)
+              idx=all_idx, Chl=Chls, Y=Ys, flags=flags)
     else:
         embed(header='fit 116; need to deal with Chl')
         all_samples, all_idx = big_inf.fit_batch(

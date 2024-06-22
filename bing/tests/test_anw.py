@@ -5,7 +5,7 @@ import numpy as np
 
 import pytest
 
-from boring.models import anw as boring_anw
+from bing.models import anw as bing_anw
 
 from IPython import embed
 
@@ -13,7 +13,7 @@ wave = np.arange(350, 755, 5.)
 
 def test_init():
     # Wavelengths from 350 to 755 in steps of 5
-    anwExp = boring_anw.aNWExp(wave)
+    anwExp = bing_anw.aNWExp(wave)
 
     # Check that a_w is set
     assert anwExp.a_w is not None
@@ -22,7 +22,7 @@ def test_init():
     #pytest.set_trace()
 
 def test_eval():
-    anwExp = boring_anw.aNWExp(wave)
+    anwExp = bing_anw.aNWExp(wave)
 
     # Evaluatee a_nw on a flat array
     #   The code always returns a multi-dimensional array
@@ -38,7 +38,7 @@ def test_eval():
 def test_priors():
     pdicts = [{'flavor':'uniform', 'pmin':-6., 'pmax':5.}, 
               {'flavor':'uniform', 'pmin':-6., 'pmax':5.}]
-    anwExp = boring_anw.aNWExp(wave, pdicts)
+    anwExp = bing_anw.aNWExp(wave, pdicts)
 
     # Check priors
     assert anwExp.priors is not None

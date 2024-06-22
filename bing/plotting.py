@@ -12,8 +12,8 @@ from oceancolor.water import absorption
 from oceancolor.hydrolight import loisel23
 from oceancolor.utils import plotting
 
-from boring import chisq_fit
-from boring import evaluate
+from bing import chisq_fit
+from bing import evaluate
 
 # ############################################################
 def show_fit(models:list, inputs:np.ndarray,
