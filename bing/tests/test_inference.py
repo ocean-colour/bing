@@ -6,9 +6,9 @@ import numpy as np
 import pathlib
 import pytest
 
-from boring.models import anw as boring_anw
-from boring.models import bbnw as boring_bbnw
-from boring import inference as boring_inf
+from bing.models import anw as bing_anw
+from bing.models import bbnw as bing_bbnw
+from bing import inference as bing_inf
 
 from IPython import embed
 
@@ -33,17 +33,17 @@ def test_fit():
 
 
     # Load models
-    anw_model = boring_anw.init_model(model_names[0], wave)
-    bbnw_model = boring_bbnw.init_model(model_names[1], wave)
+    anw_model = bing_anw.init_model(model_names[0], wave)
+    bbnw_model = bing_bbnw.init_model(model_names[1], wave)
     models = [anw_model, bbnw_model]
 
 
     # Initialize the MCMC
     nsteps:int=1000 
     nburn:int=100
-    pdict = boring_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
+    pdict = bing_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
 
-    chains, new_idx = boring_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
+    chains, new_idx = bing_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
 
     # Test
     assert chains.shape == (nsteps, 16, 4)

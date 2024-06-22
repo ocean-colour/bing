@@ -1,7 +1,7 @@
 """ Run stats on the MCMC chains or LM fits """
 import numpy as np
 
-from boring import evaluate as boring_eval
+from bing import evaluate as bing_eval
 #from oceancolor.satellites import modis as sat_modis
 #from oceancolor.satellites import seawifs as sat_seawifs
 
@@ -61,7 +61,7 @@ def calc_ICs(gordon_Rrs:np.ndarray, models:list, params:np.ndarray,
     """
     
     if use_LM:
-        model_Rrs, _, _ = boring_eval.reconstruct_chisq_fits(
+        model_Rrs, _, _ = bing_eval.reconstruct_chisq_fits(
             models, params, Chl=Chl, bb_basis_params=bb_basis_params)
     else:
         raise ValueError("Not ready for MCMC yet")

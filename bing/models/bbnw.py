@@ -8,8 +8,8 @@ from oceancolor.hydrolight import loisel23
 
 from abc import ABCMeta
 
-from boring.models import functions
-from boring import priors as boring_priors
+from bing.models import functions
+from bing import priors as bing_priors
 
 def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
     """
@@ -54,7 +54,7 @@ class bbNWModel:
     The backscattering of water
     """
 
-    priors:boring_priors.Priors = None
+    priors:bing_priors.Priors = None
     """
     The priors for the model
     """
@@ -78,7 +78,7 @@ class bbNWModel:
 
         # Set priors
         if prior_dicts is not None:
-            self.priors = boring_priors.Priors(prior_dicts)
+            self.priors = bing_priors.Priors(prior_dicts)
 
     def init_bbw(self):
         """

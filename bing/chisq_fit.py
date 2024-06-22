@@ -5,7 +5,7 @@ from functools import partial
 
 from scipy.optimize import curve_fit
 
-from boring import rt as boring_rt
+from bing import rt as bing_rt
 
 from IPython import embed
 
@@ -56,7 +56,7 @@ def fit_func(wave:np.ndarray, *params, models:list=None,
     a = models[0].eval_a(aparams)
     bb = models[1].eval_bb(bparams)
 
-    pred = boring_rt.calc_Rrs(a, bb)
+    pred = bing_rt.calc_Rrs(a, bb)
     #embed(header='fit_func 33')
 
     if return_full:
