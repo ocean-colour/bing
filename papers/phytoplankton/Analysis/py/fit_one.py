@@ -185,6 +185,14 @@ def main(flg):
         fit_one(['GIOP', 'Lee'], idx=1032, SeaWiFS=True,
                 use_chisq=False, show=True, nburn=5000,
                 nsteps=50000)
+
+    # Degenerate fits
+    if flg == 8:
+        #fit_one(['Every', 'Every'], idx=170, use_chisq=False, show=True,
+        #        nburn=8000, nsteps=100000)
+        fit_one(['Every', 'GSM'], idx=170, use_chisq=False, show=True,
+                nburn=8000, nsteps=100000)
+
     # Debug
     if flg == 99:
         fit_one(['GSM', 'GSM'], idx=170, 

@@ -1294,6 +1294,12 @@ def main(flg):
         #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
         #           comp_ks=((2,3), (3,9)))
 
+    # Degenerate solutions
+    if flg == 17:
+        #fig_mcmc_fit(['Every', 'Every'], idx=170, full_LM=False,
+        #    use_LM=False)
+        fig_mcmc_fit(['Every', 'GSM'], idx=170, full_LM=False,
+            use_LM=False)
 
     # Fits
     if flg == 30:

@@ -30,7 +30,7 @@ def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
     """
     model_dict = {'Exp': aNWExp, 'Cst': aNWCst, 'ExpBricaud': aNWExpBricaud,
                   'GIOP': aNWGIOP, 'ExpNMF': aNWExpNMF, 'ExpFix': aNWExpFix,
-                  'GSM': aNWGSM}
+                  'GSM': aNWGSM, 'Every': aNWEvery}
     if model_name not in model_dict.keys():
         raise ValueError(f"Unknown model: {model_name}")
     else:
@@ -126,7 +126,7 @@ class aNWModel:
         if self.name == 'Cst':
             return functions.constant(self.wave, params)
         elif self.name == 'Every':
-            return 10**self.params
+            return 10**params
         elif self.name == 'Exp':
             return functions.exponential(self.wave, params, pivot=self.pivot)
         elif self.name == 'ExpFix':
