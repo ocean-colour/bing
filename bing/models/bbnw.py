@@ -119,6 +119,8 @@ class bbNWModel:
         """
         if self.name == 'Pow':
             return functions.powerlaw(self.wave, params, pivot=self.pivot)
+        elif self.name == 'Every':
+            return 10**self.params
         elif self.name == 'Cst':
             return functions.constant(self.wave, params)
         elif self.name == 'Lee':
@@ -187,6 +189,35 @@ class bbNWCst(bbNWModel):
         # Return
         assert p0_bb.size == self.nparam
         return p0_bb
+
+class bbNWEvery(bbNWModel):
+    """
+    Fully flexible model that has one parameter for every wavelength channel
+        Bnw -- one per channel
+
+    Attributes:
+
+    """
+    name = 'Every'
+    nparam = None
+
+    def __init__(self, wave:np.ndarray, prior_dicts:list):
+        bbNWModel.__init__(self, wave, prior_dicts)
+
+        # Set nparam
+        self.nparam = wave.size
+
+    def init_guess(self, bb_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            bb_nw (np.ndarray): The non-water scattering coefficient
+
+        Returns:
+            np.ndarray: The initial guess for the parameters
+        """
+        return bb_nw
         
 class bbNWPow(bbNWModel):
     """

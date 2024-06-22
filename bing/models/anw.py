@@ -125,6 +125,8 @@ class aNWModel:
         """
         if self.name == 'Cst':
             return functions.constant(self.wave, params)
+        elif self.name == 'Every':
+            return 10**self.params
         elif self.name == 'Exp':
             return functions.exponential(self.wave, params, pivot=self.pivot)
         elif self.name == 'ExpFix':
@@ -192,6 +194,36 @@ class aNWCst(aNWModel):
         p0_a = np.array([a_nw[i400]])
         # Return
         return p0_a
+
+class aNWEvery(aNWModel):
+    """
+    Fully flexible model that has one parameter for every wavelength channel
+        Anw -- one per channel
+
+    Attributes:
+
+    """
+    name = 'Every'
+    nparam = None
+    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
+        aNWModel.__init__(self, wave, prior_dicts)
+
+        # Set nparam
+        self.nparam = wave.size
+
+    def init_guess(self, a_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            a_nw (np.ndarray): The non-water absorption coefficient
+
+        Returns:
+            np.ndarray: The initial guess for the parameters
+        """
+        # Return
+        return a_nw
+
 
 class aNWExpFix(aNWModel):
     """

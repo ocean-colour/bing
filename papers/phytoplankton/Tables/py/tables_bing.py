@@ -28,7 +28,7 @@ def mktab_modis(outfile='tab_modis.tex'):
     tbfil.write('\\begin{tabular}{cc}\n')
     tbfil.write('\\hline \n')
     tbfil.write('Band & \sreflect \\\\ \n')
-    tbfil.write('(nm) & (sr$^{-1}$) \\\\ \n')
+    tbfil.write('(nm) & (sr$^{-1}$) \n')
     tbfil.write('\\hline \n')
 
     for kk, wv in enumerate(oc_modis.modis_wave):
