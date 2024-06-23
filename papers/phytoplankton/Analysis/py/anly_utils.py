@@ -33,6 +33,7 @@ kdict = {2: ['Cst', 'Cst'],
             'GIOP': ['GIOP', 'Lee'],
             'GIOP+': ['GIOP', 'Pow'],
             'GSM': ['GSM', 'GSM'],
+            'GSM+': ['GSM', 'Pow'],
 }
 
 def chain_filename(model_names:list, scl_noise, add_noise,

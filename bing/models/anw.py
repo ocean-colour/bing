@@ -9,8 +9,6 @@ from scipy.interpolate import interp1d
 from oceancolor.water import absorption as water_abs
 from oceancolor.ph import absorption as ph_absorption
 
-from ihop.iops import io as iops_io
-
 from bing import priors as bing_priors
 from bing.models import functions
 
