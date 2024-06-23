@@ -193,6 +193,25 @@ def main(flg):
         fit_one(['Every', 'GSM'], idx=170, use_chisq=False, show=True,
                 nburn=8000, nsteps=100000)
 
+    # Bayes on GSM
+    if flg == 9:
+        fit_one(['GSM', 'GSM'], idx=170, 
+                use_chisq=False, show=True, max_wave=700.,
+                nburn=5000, nsteps=50000)
+        fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True,
+                use_chisq=False, show=True, scl_noise='SeaWiFS',
+                nburn=5000, nsteps=50000)
+
+    # Bayes on GIOP
+    if flg == 10:
+        fit_one(['GIOP', 'Lee'], idx=170, MODIS=True,
+                use_chisq=False, show=True, scl_noise='MODIS_Aqua',
+                nburn=5000, nsteps=50000)
+        fit_one(['GIOP', 'Lee'], idx=1032, MODIS=True,
+                use_chisq=False, show=True, scl_noise='MODIS_Aqua',
+                nburn=5000, nsteps=50000)
+
+
     # Debug
     if flg == 99:
         fit_one(['GSM', 'GSM'], idx=170, 
@@ -206,20 +225,6 @@ def main(flg):
                 use_chisq=True, show=True, max_wave=700.,
                 SeaWiFS=True)
 
-    # Bayes development
-    if flg == 101:
-        pass
-        #fit_one(['GSM', 'GSM'], idx=170, 
-        #        use_chisq=False, show=True, max_wave=700.)
-        #fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True,
-        #        use_chisq=False, show=True, scl_noise='SeaWiFS')
-
-    # Bayes on GIOP
-    if flg == 102:
-        fit_one(['GIOP', 'Lee'], idx=170, MODIS=True,
-                use_chisq=False, show=True, scl_noise='MODIS_Aqua')
-        fit_one(['GIOP', 'Lee'], idx=1032, MODIS=True,
-                use_chisq=False, show=True, scl_noise='MODIS_Aqua')
 
 
 # Command line execution

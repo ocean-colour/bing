@@ -1325,8 +1325,8 @@ def main(flg):
 
     # Bayesian fits
     if flg == 31:
-        #fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=False,
-        #    SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS')#, full_LM=False)
+        fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=False,
+            SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS')#, full_LM=False)
         fig_mcmc_fit(['GIOP', 'Lee'], idx=170, full_LM=False,
             MODIS=True, use_LM=False, scl_noise='MODIS_Aqua')#, full_LM=False)
 
