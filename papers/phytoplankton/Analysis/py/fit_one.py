@@ -6,8 +6,6 @@ import numpy as np
 
 from matplotlib import pyplot as plt
 
-from ihop.inference import noise
-
 from bing.models import anw as bing_anw
 from bing.models import bbnw as bing_bbnw
 from bing.models import utils as model_utils
