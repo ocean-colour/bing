@@ -15,6 +15,8 @@ from oceancolor.utils import plotting
 from bing import chisq_fit
 from bing import evaluate
 
+from IPython import embed
+
 # ############################################################
 def show_fit(models:list, inputs:np.ndarray,
              ex_a_params:np.ndarray, ex_bb_params:np.ndarray,
@@ -63,6 +65,9 @@ def show_fit(models:list, inputs:np.ndarray,
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
             model_Rrs, sigRs = evaluate.reconstruct_from_chains(
             models, chains)
+        # Generate params just in case
+        params = np.median(chains, axis=[0,1])
+        embed(header='show_fit 70')
 
     # Water
     a_w = absorption.a_water(wave, data='IOCCG')
@@ -145,9 +150,14 @@ def show_fit(models:list, inputs:np.ndarray,
 
     # Show params?
     if show_params:
+        ypos = 0.05
+        ip = 0
         for model in models:
-            if model.name == 'Pow':
-                ax_R.text(0.05, 0.9, f'$B_{{nw}} = 10^{{{params[0]:.2f}}}$',
+            for ss in range(model.nparam):
+                ax_R.text(0.05, ypos, f'{model.pnames[ss]} = {10**params[ip]:.2f}',
+                    transform=ax_R.transAxes, fontsize=13.)
+                ypos += 0.07
+                ip += 1
     
     # Log scale y-axis
     if log_Rrs:
