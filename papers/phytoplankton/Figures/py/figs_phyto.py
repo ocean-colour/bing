@@ -202,6 +202,7 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                  SeaWiFS:bool=False,
                  max_wave:float=None,
                  use_LM:bool=False,
+                 show_params:bool=False,
                  scl_noise:float=0.02): 
 
     # Load the fits
@@ -248,6 +249,7 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                       var=d['varRrs']),
         anw_true=dict(wave=odict['true_wave'], spec=odict['anw']),
         bbnw_true=dict(wave=odict['true_wave'], spec=odict['bbnw']),
+        show_params=show_params,
         )
     
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
@@ -1322,7 +1324,7 @@ def main(flg):
         #fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=False,
         #    PACE=True, log_Rrs=True, use_LM=False)#, full_LM=False)
         fig_mcmc_fit(['ExpB', 'Pow'], idx=170, full_LM=False,
-            use_LM=False)#, full_LM=False)
+            use_LM=False, show_parms=True)#, full_LM=False)
 
     # Bayesian fits
     if flg == 31:

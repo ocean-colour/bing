@@ -51,6 +51,11 @@ class bbNWModel:
     The number of parameters for the model
     """
 
+    pnames:list = None
+    """
+    The names of the parameters
+    """
+
     bb_w:np.ndarray = None
     """
     The backscattering of water
@@ -81,6 +86,9 @@ class bbNWModel:
         # Set priors
         if prior_dicts is not None:
             self.priors = bing_priors.Priors(prior_dicts)
+
+        # Checks
+        assert len(self.pnames) == self.nparam
 
     def init_bbw(self):
         """
@@ -172,6 +180,7 @@ class bbNWCst(bbNWModel):
     """
     name = 'Cst'
     nparam = 1
+    pnames = ['Bnw']
 
     def __init__(self, wave:np.ndarray, prior_dicts:list):
         bbNWModel.__init__(self, wave, prior_dicts)
@@ -204,10 +213,12 @@ class bbNWEvery(bbNWModel):
     nparam = None
 
     def __init__(self, wave:np.ndarray, prior_dicts:list):
-        bbNWModel.__init__(self, wave, prior_dicts)
-
         # Set nparam
         self.nparam = wave.size
+        self.pnames = [f'Bnw_{wave[i]}' for i in range(wave.size)]
+
+        bbNWModel.__init__(self, wave, prior_dicts)
+
 
     def init_guess(self, bb_nw:np.ndarray):
         """
@@ -231,6 +242,7 @@ class bbNWPow(bbNWModel):
     """
     name = 'Pow'
     nparam = 2
+    pnames = ['Bnw', 'beta']
     pivot = 600.
 
     def __init__(self, wave:np.ndarray, prior_dicts:list):
@@ -267,6 +279,7 @@ class bbNWGSM(bbNWModel):
     """
     name = 'GSM'
     nparam = 1
+    pnames = ['Bnw']
     pivot = 443.
 
     def __init__(self, wave:np.ndarray, prior_dicts:list):
@@ -311,6 +324,7 @@ class bbNWLee(bbNWModel):
     """
     name = 'Lee'
     nparam = 1
+    pnames = ['Bnw']
     pivot = 600.
     uses_basis_params = True
 

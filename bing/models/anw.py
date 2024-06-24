@@ -55,6 +55,11 @@ class aNWModel:
     The number of parameters for the model
     """
 
+    pnames:list = None
+    """
+    The names of the parameters
+    """
+
     uses_Chl:bool = False
     """
     Does the model use chlorophyll?
@@ -93,6 +98,9 @@ class aNWModel:
         # Set priors
         if prior_dicts is not None:
             self.priors = bing_priors.Priors(prior_dicts)
+
+        # Checks
+        assert len(self.pnames) == self.nparam
 
     def init_aw(self, data:str='IOCCG'):
         """
@@ -177,6 +185,8 @@ class aNWCst(aNWModel):
     """
     name = 'Cst'
     nparam = 1
+    pnames = ['Anw']
+
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         aNWModel.__init__(self, wave, prior_dicts)
 
@@ -205,11 +215,15 @@ class aNWEvery(aNWModel):
     """
     name = 'Every'
     nparam = None
+
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
-        aNWModel.__init__(self, wave, prior_dicts)
 
         # Set nparam
         self.nparam = wave.size
+        self.pnames = [f'Anw_{wave[i]}' for i in range(wave.size)]
+        
+        aNWModel.__init__(self, wave, prior_dicts)
+
 
     def init_guess(self, a_nw:np.ndarray):
         """
@@ -236,6 +250,7 @@ class aNWExpFix(aNWModel):
     name = 'ExpFix'
     nparam = 1
     pivot = 400.
+    pnames = ['Aexp']
 
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         aNWModel.__init__(self, wave, prior_dicts)
@@ -266,6 +281,7 @@ class aNWExp(aNWModel):
     """
     name = 'Exp'
     nparam = 2
+    pnames = ['Anw', 'Snw']
     pivot = 400.
 
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
@@ -297,6 +313,7 @@ class aNWExpBricaud(aNWModel):
     """
     name = 'ExpBricaud'
     nparam = 3
+    pnames = ['Adg', 'Sdg', 'Aph']
     pivot = 400.
     uses_Chl = True
 
@@ -343,8 +360,8 @@ class aNWGIOP(aNWModel):
     """
     GIOP (Werdell+2013)
     Exponential model with Sdg fixed + Bricaud aph for non-water absorption
-        adg = Adg * exp(-Sdg*(wave-400))
-            Sdg = 0.018
+        aexp = Aexp * exp(-Sexp*(wave-400))
+            Sexp = 0.018
         aph = Aph * [A_B * chlA**E_B]
 
     Attributes:
@@ -352,6 +369,7 @@ class aNWGIOP(aNWModel):
     """
     name = 'GIOP'
     nparam = 2
+    pnames = ['Aexp', 'Aph']
     pivot = 400.
     uses_Chl = True
 
@@ -399,12 +417,13 @@ class aNWGIOP(aNWModel):
 class aNWExpNMF(aNWModel):
     """
     Exponential model + NMF aph for non-water absorption
-        adg = Adg * exp(-Sdg*(wave-400))
+        aexp = Aexp * exp(-Sexp*(wave-400))
         aph = H1*W1 + H2*W2
 
     """
     name = 'ExpNMF'
     nparam = 4
+    pname = ['Aexp', 'Sexp', 'H1', 'H2']
     pivot = 400.
 
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
@@ -459,6 +478,7 @@ class aNWGSM(aNWModel):
     """
     name = 'GSM'
     nparam = 2
+    pnames = ['Adg', 'Chl']
     pivot = 443.
     uses_Chl = True
 

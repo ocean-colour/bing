@@ -24,6 +24,7 @@ def show_fit(models:list, inputs:np.ndarray,
              anw_true:dict=None, 
              bbnw_true:dict=None,
              Rrs_true:dict=None,
+             show_params:bool=False,
              log_Rrs:bool=True):
     """
     Plots the fit results for the given models and inputs.
@@ -37,7 +38,7 @@ def show_fit(models:list, inputs:np.ndarray,
         anw_true (dict, optional): The true values for `a_nw`. Default is None.
         bbnw_true (dict, optional): The true values for `b_bnw`. Default is None.
         Rrs_true (dict, optional): The true values for `R_rs`. Default is None.
-        show_bbnw (bool, optional): Whether to show `b_bnw` in the plot. Default is True.
+        show_params (bool, optional): Whether to show the parameters. Default is False.
         log_Rrs (bool, optional): Whether to use a logarithmic scale for the y-axis of `R_rs`. Default is True.
 
     Returns:
@@ -141,6 +142,12 @@ def show_fit(models:list, inputs:np.ndarray,
             color='r', alpha=0.5, zorder=10) 
 
     ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
+
+    # Show params?
+    if show_params:
+        for model in models:
+            if model.name == 'Pow':
+                ax_R.text(0.05, 0.9, f'$B_{{nw}} = 10^{{{params[0]:.2f}}}$',
     
     # Log scale y-axis
     if log_Rrs:
