@@ -202,7 +202,6 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                  SeaWiFS:bool=False,
                  max_wave:float=None,
                  use_LM:bool=False,
-                 show_params:bool=False,
                  scl_noise:float=0.02): 
 
     # Load the fits
@@ -249,7 +248,6 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                       var=d['varRrs']),
         anw_true=dict(wave=odict['true_wave'], spec=odict['anw']),
         bbnw_true=dict(wave=odict['true_wave'], spec=odict['bbnw']),
-        show_params=show_params,
         )
     
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
@@ -533,7 +531,10 @@ def fig_chi2_model(model:str, idx:int=170, chain_file=None,
 def fig_spectra(idx:int, 
                  outroot='fig_spectra_', 
                  show_acomps:bool=False,
-                 bbscl:float=20):
+                 xmax:float=700.,
+                 use_ylog:bool=True,
+                 show_total:bool=False,
+                 bbscl:float=1):
 
     # Outfile
     outfile = outroot + f'{idx}.png'
@@ -551,22 +552,36 @@ def fig_spectra(idx:int,
     bbnw = odict['bb'] - bbw
 
     #
-    fig = plt.figure(figsize=(9,5))
+    fig = plt.figure(figsize=(7,5))
     ax = plt.gca()
-    # a
-    ax.plot(wave, a, 'k-', label=r'$a$', zorder=1)
 
-    ax.plot(wave, aw, 'b-', label=r'$a_w$', zorder=1)
-    ax.plot(wave, anw, 'r-', label=r'$a_{nw}$', zorder=1)
+    # Colors
+    ctotal ='gray'
+    cwater ='black'
+    cnw ='green'
+    #embed(header='559 of figs')
+
+    # a
+    # Total
+    if show_total:
+        ax.plot(wave, a, '-', color=ctotal, label=r'$a$', zorder=1)
+
+    ax.plot(wave, aw, '-', color=cwater, label=r'$a_w$', zorder=1)
+    ax.plot(wave, anw, '-', color=cnw, label=r'$a_{nw}$', zorder=1)
     if show_acomps:
-        ax.plot(wave, aph, 'g-', label=r'$a_{ph}$', zorder=1)
+        ax.plot(wave, aph, 'b-', label=r'$a_{ph}$', zorder=1)
         ax.plot(wave, adg, '-', color='brown', label=r'$a_{dg}$', zorder=1)
 
     # bb
-    ax.plot(wave, bb, ':', color='k', label=r'$b_{b}$', zorder=1)
+    if show_total:
+        ax.plot(wave, bb, ':', color=ctotal, label=r'$b_{b}$', zorder=1)
 
-    ax.plot(wave, bbscl*bbw, ':', color='blue', label=f'{bbscl}*'+r'$b_{b,w}$', zorder=1)
-    ax.plot(wave, bbscl*bbnw, ':', color='red', label=f'{bbscl}*'+r'$b_{b,nw}$', zorder=1)
+    if bbscl != 1.:
+        ax.plot(wave, bbscl*bbw, ':', color=cwater, label=f'{bbscl}*'+r'$b_{b,w}$', zorder=1)
+        ax.plot(wave, bbscl*bbnw, ':', color=cnw, label=f'{bbscl}*'+r'$b_{b,nw}$', zorder=1)
+    else:
+        ax.plot(wave, bbscl*bbw, ':', color=cwater, label=r'$b_{b,w}$', zorder=1)
+        ax.plot(wave, bbscl*bbnw, ':', color=cnw, label=r'$b_{b,nw}$', zorder=1)
 
     #
     # Legend filled white
@@ -575,9 +590,14 @@ def fig_spectra(idx:int,
 
     ax.set_xlabel('Wavelength (nm)')
     ax.set_ylabel(r'$a, b_b \; [{\rm m}^{-1}]$')
-    ymax = 0.08
-    ax.set_xlim(350., 750.)
-    ax.set_ylim(0., ymax)
+    ax.set_xlim(350., xmax)
+    if use_ylog:
+        ax.set_yscale('log')
+        ymax = 1.0
+        ax.set_ylim(1.e-4, ymax)
+    else:
+        ymax = 0.08
+        ax.set_ylim(0., ymax)
 
     plotting.set_fontsize(ax, 15)
 
@@ -589,16 +609,35 @@ def fig_spectra(idx:int,
     blue_idx = np.argmin(np.abs(bbw_to_bbnw - ratio))
 
     alpha=0.3
-    ax.fill_between([wave[red_idx], 750.], 0, ymax, color='red', alpha=alpha)
+    ax.fill_between([wave[red_idx], xmax], 0, ymax, color='red', alpha=alpha)
     ax.fill_between([350., wave[blue_idx]], 0, ymax, color='blue', alpha=alpha)
 
-    # Red
+    # Text
     buff = 5.
-    ax.text(wave[red_idx]+buff, 0.025, r'$a_w > '+f'{int(ratio)}'+r'a_{nw}$', fontsize=15, ha='left')
-    ax.text(wave[red_idx]+buff, 0.02, r'$b_{b,nw} \approx b_{b,w}$', fontsize=15, ha='left')
+    if not use_ylog:
+        ax.text(wave[red_idx]+buff, 0.025, r'$a_w > '+f'{int(ratio)}'+r'a_{nw}$', fontsize=15, ha='left')
+        ax.text(wave[red_idx]+buff, 0.02, r'$b_{b,nw} \approx b_{b,w}$', fontsize=15, ha='left')
 
-    ax.text(wave[blue_idx]-buff, 0.07, r'$b_{b,w} >'+f'{int(ratio)}'+r'b_{b,nw}$', fontsize=15, ha='right')
-    ax.text(wave[blue_idx]-buff, 0.075, r'$a_{nw} > a_{w}$', fontsize=15, ha='right')
+        ax.text(wave[blue_idx]-buff, 0.07, r'$b_{b,w} >'+f'{int(ratio)}'+r'b_{b,nw}$', fontsize=15, ha='right')
+        ax.text(wave[blue_idx]-buff, 0.075, r'$a_{nw} > a_{w}$', fontsize=15, ha='right')
+    else:
+        yscl = 1.5
+        tfsz = 14
+        #ax.text(wave[red_idx]+buff, 0.025, r'$a_w > '+f'{int(ratio)}'+r'a_{nw}$', fontsize=tfsz, ha='left')
+        #ax.text(wave[red_idx]+buff, 0.025*yscl, r'$b_{b,nw} \approx b_{b,w}$', fontsize=tfsz, ha='left')
+
+        #ax.text(wave[blue_idx]-buff, 0.07, r'$b_{b,w} >'+f'{int(ratio)}'+r'b_{b,nw}$', fontsize=tfsz, ha='right')
+        #ax.text(wave[blue_idx]-buff, 0.07*yscl, r'$a_{nw} > a_{w}$', fontsize=tfsz, ha='right')
+
+        yscl = 0.90
+        tfsz = 17
+        ax.text(wave[blue_idx]-buff, ymax*yscl, 
+                'Water dominates\n back-scattering\n (retrieve '+r'$a_{\rm nw}$)', fontsize=tfsz, ha='right',
+                va='top')
+        ax.text(wave[red_idx]+buff, ymax*yscl, 
+                'Water dominates absorption\n' +r'(retrieve $b_{b,nw}$)', 
+                fontsize=tfsz, ha='left',
+                va='top')
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
@@ -1226,7 +1265,7 @@ def main(flg):
 
     # Spectra
     if flg == 1:
-        fig_spectra(170, bbscl=20)
+        fig_spectra(170)#, bbscl=20)
 
     if flg == 2:
         fig_multi_fits()#[('Cst','Cst'), ('Exp','Cst'), ('Exp','Pow'), ('ExpBricaud','Pow')], 
@@ -1290,7 +1329,7 @@ def main(flg):
                    comp_ks=((2,3), (3,4)))
         fig_all_ic(SeaWiFS=True, outfile='fig_bic_SeaWiFS_GSM.png',
                    log_x=False,
-                   comp_ks=((3,'GSM'), (3,'GSM+')), xmax=5)
+                   comp_ks=((3,'GSM'), (3,'GSM')), xmax=5)
         #fig_all_ic(MODIS=True, show_AIC=True, 
         #           outfile='fig_all_aic_MODIS.png')
         #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
@@ -1325,8 +1364,7 @@ def main(flg):
         #    PACE=True, log_Rrs=True, use_LM=True)#, full_LM=False)
         #fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=False,
         #    PACE=True, log_Rrs=True, use_LM=False)#, full_LM=False)
-        fig_mcmc_fit(['ExpB', 'Pow'], idx=170, full_LM=False,
-            use_LM=False, show_params=True)#, full_LM=False)
+        pass
 
     # Bayesian fits
     if flg == 31:
