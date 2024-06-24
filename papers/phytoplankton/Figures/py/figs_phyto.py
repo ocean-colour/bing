@@ -1303,6 +1303,8 @@ def main(flg):
         fig_mcmc_fit(['Every', 'GSM'], idx=170, full_LM=False,
             use_LM=False)
 
+    # GSM aph
+
     # Fits
     if flg == 30:
         #fig_mcmc_fit(['Exp', 'Pow'], idx=170, log_Rrs=True)
