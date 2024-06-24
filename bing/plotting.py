@@ -15,6 +15,8 @@ from oceancolor.utils import plotting
 from bing import chisq_fit
 from bing import evaluate
 
+from IPython import embed
+
 # ############################################################
 def show_fit(models:list, inputs:np.ndarray,
              ex_a_params:np.ndarray, ex_bb_params:np.ndarray,
@@ -24,6 +26,7 @@ def show_fit(models:list, inputs:np.ndarray,
              anw_true:dict=None, 
              bbnw_true:dict=None,
              Rrs_true:dict=None,
+             show_params:bool=False,
              log_Rrs:bool=True):
     """
     Plots the fit results for the given models and inputs.
@@ -37,7 +40,7 @@ def show_fit(models:list, inputs:np.ndarray,
         anw_true (dict, optional): The true values for `a_nw`. Default is None.
         bbnw_true (dict, optional): The true values for `b_bnw`. Default is None.
         Rrs_true (dict, optional): The true values for `R_rs`. Default is None.
-        show_bbnw (bool, optional): Whether to show `b_bnw` in the plot. Default is True.
+        show_params (bool, optional): Whether to show the parameters. Default is False.
         log_Rrs (bool, optional): Whether to use a logarithmic scale for the y-axis of `R_rs`. Default is True.
 
     Returns:
@@ -62,6 +65,9 @@ def show_fit(models:list, inputs:np.ndarray,
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
             model_Rrs, sigRs = evaluate.reconstruct_from_chains(
             models, chains)
+        # Generate params just in case
+        params = np.median(chains, axis=[0,1])
+        embed(header='show_fit 70')
 
     # Water
     a_w = absorption.a_water(wave, data='IOCCG')
@@ -141,6 +147,17 @@ def show_fit(models:list, inputs:np.ndarray,
             color='r', alpha=0.5, zorder=10) 
 
     ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
+
+    # Show params?
+    if show_params:
+        ypos = 0.05
+        ip = 0
+        for model in models:
+            for ss in range(model.nparam):
+                ax_R.text(0.05, ypos, f'{model.pnames[ss]} = {10**params[ip]:.2f}',
+                    transform=ax_R.transAxes, fontsize=13.)
+                ypos += 0.07
+                ip += 1
     
     # Log scale y-axis
     if log_Rrs:

@@ -202,6 +202,7 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                  SeaWiFS:bool=False,
                  max_wave:float=None,
                  use_LM:bool=False,
+                 show_params:bool=False,
                  scl_noise:float=0.02): 
 
     # Load the fits
@@ -248,6 +249,7 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
                       var=d['varRrs']),
         anw_true=dict(wave=odict['true_wave'], spec=odict['anw']),
         bbnw_true=dict(wave=odict['true_wave'], spec=odict['bbnw']),
+        show_params=show_params,
         )
     
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
@@ -1288,7 +1290,7 @@ def main(flg):
                    comp_ks=((2,3), (3,4)))
         fig_all_ic(SeaWiFS=True, outfile='fig_bic_SeaWiFS_GSM.png',
                    log_x=False,
-                   comp_ks=((3,'GSM'), (3,'GSM')), xmax=5)
+                   comp_ks=((3,'GSM'), (3,'GSM+')), xmax=5)
         #fig_all_ic(MODIS=True, show_AIC=True, 
         #           outfile='fig_all_aic_MODIS.png')
         #fig_all_ic(MODIS=True, outfile='fig_all_bic_MODIS_GIOP.png',
@@ -1321,7 +1323,8 @@ def main(flg):
         #    PACE=True, log_Rrs=True, use_LM=True)#, full_LM=False)
         #fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=False,
         #    PACE=True, log_Rrs=True, use_LM=False)#, full_LM=False)
-        pass
+        fig_mcmc_fit(['ExpB', 'Pow'], idx=170, full_LM=False,
+            use_LM=False, show_params=True)#, full_LM=False)
 
     # Bayesian fits
     if flg == 31:

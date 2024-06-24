@@ -6,8 +6,6 @@ import numpy as np
 
 from matplotlib import pyplot as plt
 
-from ihop.inference import noise
-
 from bing.models import anw as bing_anw
 from bing.models import bbnw as bing_bbnw
 from bing.models import utils as model_utils
@@ -53,9 +51,27 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     else:
         model_wave = wave
 
+    # Priors
+    if model_names[0] == 'ExpB':
+        use_model_names = ['Exp', model_names[1]]
+    else:
+        use_model_names = model_names.copy()
+
     # Models
-    models = model_utils.init(model_names, model_wave)
-    
+    models = model_utils.init(use_model_names, model_wave)
+
+    # Set priors
+    if not use_chisq:
+        prior_dict = dict(flavor='uniform', pmin=-6, pmax=5)
+        for jj in range(2):
+            prior_dicts = [prior_dict]*models[jj].nparam
+            # Special cases
+            if jj == 0 and model_names[0] == 'ExpB':
+                prior_dicts[1] = dict(flavor='uniform', 
+                                      pmin=np.log10(0.007), 
+                                      pmax=np.log10(0.02))
+            models[jj].priors = bing_priors.Priors(prior_dicts)
+                    
     # Initialize the MCMC
     pdict = bing_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
     
@@ -193,6 +209,25 @@ def main(flg):
         fit_one(['Every', 'GSM'], idx=170, use_chisq=False, show=True,
                 nburn=8000, nsteps=100000)
 
+    # Bayes on GSM
+    if flg == 9:
+        fit_one(['GSM', 'GSM'], idx=170, 
+                use_chisq=False, show=True, max_wave=700.,
+                nburn=5000, nsteps=50000)
+        fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True,
+                use_chisq=False, show=True, scl_noise='SeaWiFS',
+                nburn=5000, nsteps=50000)
+
+    # Bayes on GIOP
+    if flg == 10:
+        fit_one(['GIOP', 'Lee'], idx=170, MODIS=True,
+                use_chisq=False, show=True, scl_noise='MODIS_Aqua',
+                nburn=5000, nsteps=50000)
+        fit_one(['GIOP', 'Lee'], idx=1032, MODIS=True,
+                use_chisq=False, show=True, scl_noise='MODIS_Aqua',
+                nburn=5000, nsteps=50000)
+
+
     # Debug
     if flg == 99:
         fit_one(['GSM', 'GSM'], idx=170, 
@@ -206,20 +241,10 @@ def main(flg):
                 use_chisq=True, show=True, max_wave=700.,
                 SeaWiFS=True)
 
-    # Bayes development
+    # Develop BoundedS
     if flg == 101:
-        pass
-        #fit_one(['GSM', 'GSM'], idx=170, 
-        #        use_chisq=False, show=True, max_wave=700.)
-        #fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True,
-        #        use_chisq=False, show=True, scl_noise='SeaWiFS')
-
-    # Bayes on GIOP
-    if flg == 102:
-        fit_one(['GIOP', 'Lee'], idx=170, MODIS=True,
-                use_chisq=False, show=True, scl_noise='MODIS_Aqua')
-        fit_one(['GIOP', 'Lee'], idx=1032, MODIS=True,
-                use_chisq=False, show=True, scl_noise='MODIS_Aqua')
+        fit_one(['ExpB', 'Pow'], idx=170, 
+                use_chisq=False, show=True, max_wave=700.)
 
 
 # Command line execution

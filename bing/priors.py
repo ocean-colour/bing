@@ -29,6 +29,9 @@ class Prior:
             pdict (dict): The dictionary containing the prior information
         """
 
+    def __repr__(self):
+        return f"<Prior: {self.flavor}>"
+
 class UniformPrior(Prior):
     """
     Class for a uniform prior
@@ -78,6 +81,9 @@ class UniformPrior(Prior):
         else:
             return 0
 
+    def __repr__(self):
+        return f"<Prior: {self.flavor}, pmin={self.pmin:0.3f}, pmax={self.pmax:0.3f} >"
+
 class Priors:
 
     nparam:int = None
@@ -119,4 +125,8 @@ class Priors:
         return prior_sum
 
     def __repr__(self):
-        return f"<Priors: {self.priors}>"
+        rstr =  "<Priors: \n"
+        for prior in self.priors:
+            rstr += f"  {prior}\n"
+        rstr += ">"
+        return rstr

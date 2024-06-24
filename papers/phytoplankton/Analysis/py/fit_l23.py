@@ -221,7 +221,7 @@ def main(flg):
         elif SeaWiFS:
             scl_noise = 'SeaWiFS'
         elif PACE:
-            scl_noise = 'SPACEeaWiFS'
+            scl_noise = 'PACE'
 
     #embed(header='main 168')
     if flg in [4,5,6,7,8,9]:
@@ -233,6 +233,7 @@ def main(flg):
         fit(['GIOP', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
         fit(['GIOP', 'Lee'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
         fit(['GSM', 'GSM'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
+        fit(['GSM', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
 
     
 
