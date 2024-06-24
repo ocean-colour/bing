@@ -14,7 +14,8 @@ from bing.models import functions
 
 from IPython import embed
 
-def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
+def init_model(model_name:str, wave:np.ndarray, 
+               prior_dicts:list=None):
     """
     Initialize a model for non-water absorption
 
@@ -28,7 +29,8 @@ def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
     """
     model_dict = {'Exp': aNWExp, 'Cst': aNWCst, 'ExpBricaud': aNWExpBricaud,
                   'GIOP': aNWGIOP, 'ExpNMF': aNWExpNMF, 'ExpFix': aNWExpFix,
-                  'GSM': aNWGSM, 'Every': aNWEvery}
+                  'GSM': aNWGSM, 'Every': aNWEvery,
+                  'ExpB': aNWExp}
     if model_name not in model_dict.keys():
         raise ValueError(f"Unknown model: {model_name}")
     else:

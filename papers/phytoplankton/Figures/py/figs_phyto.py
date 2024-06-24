@@ -1321,7 +1321,8 @@ def main(flg):
         #    PACE=True, log_Rrs=True, use_LM=True)#, full_LM=False)
         #fig_mcmc_fit(['GSM', 'GSM'], idx=170, full_LM=False,
         #    PACE=True, log_Rrs=True, use_LM=False)#, full_LM=False)
-        pass
+        fig_mcmc_fit(['ExpB', 'Pow'], idx=170, full_LM=False,
+            use_LM=False)#, full_LM=False)
 
     # Bayesian fits
     if flg == 31:

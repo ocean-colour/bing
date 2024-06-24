@@ -51,9 +51,27 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     else:
         model_wave = wave
 
+    # Priors
+    if model_names[0] == 'ExpB':
+        use_model_names = ['Exp', model_names[1]]
+    else:
+        use_model_names = model_names.copy()
+
     # Models
-    models = model_utils.init(model_names, model_wave)
-    
+    models = model_utils.init(use_model_names, model_wave)
+
+    # Set priors
+    if not use_chisq:
+        prior_dict = dict(flavor='uniform', pmin=-6, pmax=5)
+        for jj in range(2):
+            prior_dicts = [prior_dict]*models[jj].nparam
+            # Special cases
+            if jj == 0 and model_names[0] == 'ExpB':
+                prior_dicts[1] = dict(flavor='uniform', 
+                                      pmin=np.log10(0.007), 
+                                      pmax=np.log10(0.02))
+            models[jj].priors = bing_priors.Priors(prior_dicts)
+                    
     # Initialize the MCMC
     pdict = bing_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
     
@@ -223,6 +241,10 @@ def main(flg):
                 use_chisq=True, show=True, max_wave=700.,
                 SeaWiFS=True)
 
+    # Develop BoundedS
+    if flg == 101:
+        fit_one(['ExpB', 'Pow'], idx=170, 
+                use_chisq=False, show=True, max_wave=700.)
 
 
 # Command line execution
