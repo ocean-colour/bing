@@ -1157,6 +1157,8 @@ def fig_Sexp(outfile='fig_Sexp.png', kmodel:int=4):
     print(f"Saved: {outfile}")
 
 def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
+    xmin, xmax = 1e-3, 1
+
     # Outfile
     outfile = outroot + f'_{model}.png'
 
@@ -1164,91 +1166,83 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
     SeaWiFS = False
 
     # Init
+    add_noises = [False, True, True]
+    error_lbls = ['No RT error\n No data error']*3
+    #
     if model == 'GIOP':
         clr = 'b'
         model_names = ['GIOP', 'Lee']
         MODIS = True
-        scl_noise = 'MODIS_Aqua'
+        scl_noises = [0.02, 'MODIS_Aqua', 'MODIS_Aqua']
     elif model == 'GSM':
         clr = 'g'
         model_names = ['GSM', 'GSM']
         SeaWiFS = True
-        scl_noise = 'SeaWiFS'
+        scl_noises = [0.02, 'SeaWiFS', 'SeaWiFS']
     else:
         raise ValueError("Not ready for this model")
 
     # Load
     ds = loisel23.load_ds(4,0)
-
     l23_wave = ds.Lambda.data
     aph = ds.aph.data
-
-    pdict = {}
-    k_g = model
-    pdict[k_g] = {}
-
-    
-    chain_file = anly_utils.chain_filename(
-        model_names, scl_noise, False, 
-        MODIS=MODIS, SeaWiFS=SeaWiFS)
-    chain_file = chain_file.replace('BING', 'BING_LM')
-    # Load up
-    print(f'Loading {chain_file}')
-    d = np.load(chain_file)
-    # Parse
-    pdict[k_g]['params'] = d['ans']
-    pdict[k_g]['Chl'] = d['Chl']
-    pdict[k_g]['Y'] = d['Y']
-    pdict['Rrs'] = d['obs_Rrs']
-    pdict['idx'] = d['idx']
-    pdict['wave'] = d['wave']
-
     i440_l23 = np.argmin(np.abs(l23_wave-440.))
-    i440_g = np.argmin(np.abs(pdict['wave']-440.))
     l23_a440 = aph[:,i440_l23]
 
-    models = model_utils.init(model_names, pdict['wave'])
+    k_g = model
 
-    def calc_aph440(idict:dict, aph_idx):
-        aph_fits = []
-        for ss in range(aph.shape[0]):
-            models[0].set_aph(idict['Chl'][ss])
-            #
-            iaph = functions.gen_basis(idict['params'][ss,aph_idx:aph_idx+1], [models[0].a_ph])
-            aph_fits.append(iaph.flatten())
+    all_ga440 = []
+    for ss, scl_noise in enumerate(scl_noises):
+        # Load
+        chain_file = anly_utils.chain_filename(
+            model_names, scl_noise, add_noises[ss], 
+            MODIS=MODIS, SeaWiFS=SeaWiFS)
+        chain_file = chain_file.replace('BING', 'BING_LM')
+        # Load up
+        print(f'Loading {chain_file}')
+        d = np.load(chain_file)
+
+        # Load models
+        models = model_utils.init(model_names, d['wave'])
+
+        # Calculate
+        g_a440 = anly_utils.calc_aph440(models, d['Chl'], d['ans'], 1)
+        # Save
+        all_ga440.append(g_a440)
+
+    fig = plt.figure(figsize=(7,10))
+    gs = gridspec.GridSpec(3,1)
+
+    axes = []
+
+    for ss in range(2):
+        ax = plt.subplot(gs[ss])
+
+        ax.scatter(l23_a440, all_ga440[ss], s=1, 
+                   color=clr, label=model)
         #
-        aph_fits = np.array(aph_fits)
-        aph_fits.shape
+        ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
+        ax.plot([xmin, xmax], [2*xmin, 2*xmax], 'k:', label='2 to 2')
+        ax.plot([xmin, xmax], [xmin/2, xmax/2], 'k-.', label='0.5 to 0.5')
+        # Log
         #
-        #import pdb; pdb.set_trace()
-        g_a440 = aph_fits[:, i440_g]
-        return g_a440
+        ax.legend(fontsize=15.)
+        ax.set_ylim(1e-3, 1)
 
-    # Calculate
-    #giopm_a440 = calc_aph440(pdict[k_giopm], 1)
-    g_a440 = calc_aph440(pdict[k_g], 1)
+        # Errors
+        efsz = 17.
+        ax.text(0.95, 0.1, error_lbls[ss], fontsize=efsz, 
+                transform=ax.transAxes, ha='right')
 
-    fig = plt.figure(figsize=(10,7))
-    ax = plt.gca()
-    #
-    #ax.scatter(l23_a440, giopm_a440, s=1, color='b', label='GIOP+Pow')
-    ax.scatter(l23_a440, g_a440, s=1, color=clr, label=model)
-    #
-    xmin, xmax = 1e-3, 1
-    ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
-    ax.plot([xmin, xmax], [2*xmin, 2*xmax], 'k:', label='2 to 2')
-    ax.plot([xmin, xmax], [xmin/2, xmax/2], 'k-.', label='0.5 to 0.5')
-    # Log
-    ax.set_xscale('log')
-    ax.set_yscale('log')
-    #
-    ax.set_xlabel(r'$a_{\rm ph}^{\rm L23} (440)$')
-    ax.set_ylabel(r'$a_{\rm ph}^{\rm '+f'{model}'+r'} (440)$')
-    #
-    plotting.set_fontsize(ax, 17)
-    ax.legend(fontsize=16.)
-
-    ax.set_ylim(1e-3, 1)
+        plotting.set_fontsize(ax, 17)
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        #
+        if ss == len(axes)-1:
+            ax.set_xlabel(r'$a_{\rm ph}^{\rm L23} (440)$')
+        else:
+            ax.tick_params(labelbottom=False)  # Hide x-axis labels
+        ax.set_ylabel(r'$a_{\rm ph}^{\rm '+f'{model}'+r'} (440)$')
 
     # Write
     plt.tight_layout()
@@ -1342,7 +1336,6 @@ def main(flg):
         fig_mcmc_fit(['Every', 'GSM'], idx=170, full_LM=False,
             use_LM=False)
 
-    # GSM aph
 
     # Fits
     if flg == 30:

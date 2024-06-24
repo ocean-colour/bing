@@ -16,6 +16,7 @@ else:
 from bing import rt as bing_rt
 from bing.models import anw as bing_anw
 from bing.models import bbnw as bing_bbnw
+from bing.models import functions
 from bing.models import utils as model_utils
 from bing import stats as bing_stats
 from bing import chisq_fit
@@ -58,17 +59,20 @@ def chain_filename(model_names:list, scl_noise, add_noise,
             outfile += '_S23'
         else:
             outfile += '_L23'
+    # Added?
     if add_noise:
-        outfile += f'_N{int(100*scl_noise):02d}'
+        outfile += '_N'
     else:
-        if scl_noise == 'SeaWiFS':
-            outfile += '_nS'
-        elif scl_noise == 'MODIS_Aqua':
-            outfile += '_nM'
-        elif scl_noise == 'PACE':
-            outfile += '_nP'
-        else:
-            outfile += f'_n{int(100*scl_noise):02d}'
+        outfile += '_n'
+    # Value
+    if scl_noise == 'SeaWiFS':
+        outfile += 'S'
+    elif scl_noise == 'MODIS_Aqua':
+        outfile += 'M'
+    elif scl_noise == 'PACE':
+        outfile += 'P'
+    else:
+        outfile += f'{int(100*scl_noise):02d}'
     # LM
     if use_LM:
         outfile = outfile.replace('BING', 'BING_LM')
@@ -336,3 +340,88 @@ def scale_noise(scl_noise, model_Rrs, model_wave):
 
     # Return
     return model_varRrs
+
+def calc_aph440(models, Chl, params, aph_idx):
+    i440_g = np.argmin(np.abs(models[0].wave-440))
+
+    aph_fits = []
+    for ss in range(Chl.size):
+        models[0].set_aph(Chl[ss])
+        #
+        iaph = functions.gen_basis(params[ss,aph_idx:aph_idx+1], 
+                                   [models[0].a_ph])
+        aph_fits.append(iaph.flatten())
+    #
+    aph_fits = np.array(aph_fits)
+    g_a440 = aph_fits[:, i440_g]
+
+    return g_a440
+
+def add_noise(Rs, perc:int=None, abs_sig:float=None,
+              wave:np.ndarray=None, correlate:bool=False):
+    """
+    Add random noise to the input array Rs.
+
+    Parameters:
+        Rs (np.ndarray): Input array.
+        perc (int, optional): Percentage of noise to be added as a fraction of Rs. Default is None.
+        abs_sig (float, str, optional): Absolute value of noise to be added. Default is None.
+        correlate (bool, optional): Whether to correlate the noise. Default is False.
+
+    Returns:
+        ndarray: Array with noise added.
+    """
+    use_Rs = Rs.copy()
+
+    # Random draws
+    if correlate:
+        npix = Rs.shape[1]
+        # Genearte the covariance matrix
+        vals = {0: 1., 1: 0.5, 2: 0.3, 3: 0.1}
+        cov_m = np.zeros((npix,npix))
+        for jj in range(npix):
+            i0 = max(0, jj-3)
+            i1 = min(jj+4, npix)
+            for ii in range(i0, i1):
+                diff = int(np.abs(ii-jj))
+                cov_m[jj,ii] = vals[diff] 
+        # Generate the noise
+        r_sig = np.random.multivariate_normal(
+            np.zeros(npix), cov_m, size=use_Rs.shape[0])
+    else:
+        r_sig = np.random.normal(size=Rs.shape)
+
+    # Truncate to 3 sigma
+    r_sig = np.minimum(r_sig, 3.)
+    r_sig = np.maximum(r_sig, -3.)
+
+    if perc is not None:
+        use_Rs += (perc/100.) * use_Rs * r_sig
+    elif abs_sig  == 'PACE':
+        if wave is None:
+            raise ValueError("Need wavelength array for PACE noise.")
+        # Add it in
+        pace_sig = calc_pace_sig(wave)
+        use_Rs += r_sig * pace_sig
+    elif abs_sig  == 'PACE_CORR':
+        if wave is None:
+            raise ValueError("Need wavelength array for PACE noise.")
+        # Add it in
+        pace_sig = calc_pace_sig(wave)
+        use_Rs += r_sig * pace_sig
+    elif abs_sig  == 'PACE_TRUNC':
+        if wave is None:
+            raise ValueError("Need wavelength array for PACE noise.")
+        pace_sig = calc_pace_sig(wave)
+        # Boost the noise at the edges
+        ok_wv = (wave > 380.) & (wave < 700.)
+        pace_sig[~ok_wv] *= 100.   
+        # Add it in
+        use_Rs += r_sig * pace_sig
+    elif isinstance(abs_sig, (float,int,np.ndarray)):
+        use_Rs += r_sig * abs_sig
+    else:
+        raise ValueError("Bad abs_sig")
+    
+    # Return
+    return use_Rs

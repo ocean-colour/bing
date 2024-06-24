@@ -106,7 +106,12 @@ def fit(model_names:list,
         model_anw = anly_utils.convert_to_satwave(l23_wave, odict['anw'], model_wave)
         model_bbnw = anly_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
 
+        # Noise
         model_varRrs = anly_utils.scale_noise(scl_noise, model_Rrs, model_wave)
+
+        # Add noise?
+        if add_noise:
+            model_Rrs = anly_utils.add_noise(model_Rrs, np.sqrt(model_varRrs))
 
         p0_a = models[0].init_guess(model_anw)
         p0_b = models[1].init_guess(model_bbnw)
@@ -184,6 +189,7 @@ def main(flg):
     PACE = False
     SeaWiFS = False
     scl_noise = 0.02
+    add_noise = False
 
     # Testing
     if flg == 1:
@@ -205,15 +211,18 @@ def main(flg):
 
 
     # MODIS
-    if flg in [4,7]:
+    if flg in [4,7,10]:
         MODIS = True
 
     # All models
-    if flg in [5,8]:
+    if flg in [5,8,11]:
         PACE = True
 
-    if flg in [6,9]:
+    if flg in [6,9,12]:
         SeaWiFS = True
+
+    if flg in [10,11,12]:
+        add_noise = True
 
     if flg in [7,8,9]:
         if MODIS:
@@ -225,15 +234,15 @@ def main(flg):
 
     #embed(header='main 168')
     if flg in [4,5,6,7,8,9]:
-        fit(['Cst', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
-        fit(['Exp', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
-        fit(['Exp', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
-        fit(['ExpBricaud', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
-        fit(['ExpNMF', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
-        fit(['GIOP', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
-        fit(['GIOP', 'Lee'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
-        fit(['GSM', 'GSM'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
-        fit(['GSM', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise)
+        fit(['Cst', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['Exp', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['Exp', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['ExpBricaud', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['ExpNMF', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['GIOP', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['GIOP', 'Lee'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['GSM', 'GSM'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['GSM', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
 
     
 
