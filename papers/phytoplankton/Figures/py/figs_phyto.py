@@ -369,7 +369,6 @@ def compare_models(models:list, idx:int, axes:list,
             ax.tick_params(labelbottom=False)  # Hide x-axis labels
 
 
-
 def fig_corner(model_names:list, outroot:str='fig_corner_', idx:int=170,
                  full_LM:bool=True, scl_noise:float=None,
                  MODIS:bool=False, PACE:bool=False,
@@ -383,13 +382,21 @@ def fig_corner(model_names:list, outroot:str='fig_corner_', idx:int=170,
     print(f'Loading: {chain_file}')
     d_chains = np.load(chain_file)
 
+    # Init the models
+    models = model_utils.init(model_names, d_chains['wave'])
+
     # Right answer
     ds = loisel23.load_ds(4,0)
     i440 = np.argmin(np.abs(ds.Lambda.data-440.))
+    i443 = np.argmin(np.abs(ds.Lambda.data-443.))
     i600 = np.argmin(np.abs(ds.Lambda.data-600.))
 
     aph_440 = ds.aph.data[idx,i440]
+    true_Chl = aph_440 / 0.05582
+    aph_443 = ds.aph.data[idx,i443]
     adg_440 = ds.ag.data[idx,i440] + ds.ad.data[idx,i440]
+    adg_443 = ds.ag.data[idx,i443] + ds.ad.data[idx,i443]
+    bbnw_443 = ds.bbnw.data[idx,i443]
     bbnw_600 = ds.bbnw.data[idx,i600]
 
     # Outfile
@@ -405,16 +412,19 @@ def fig_corner(model_names:list, outroot:str='fig_corner_', idx:int=170,
     
 
     if model_names[0] == 'GIOP':
-        clbls = ['Aexp', 'Aph']
         truths = [adg_440, aph_440]
-    else:
-        clbls = None
+    elif model_names[0] == 'GSM':
+        truths = [adg_443, true_Chl]
 
     if model_names[1] == 'Lee':
-        clbls += ['Bnw']
         truths += [bbnw_600]
-    else:
-        clbls = None
+    elif model_names[1] == 'GSM':
+        truths += [bbnw_443]
+
+    # Labels
+    clbls = models[0].pnames + models[1].pnames
+    # Add log 10
+    clbls = [r'$\log_{10}('+f'{clbl}'+r'$)' for clbl in clbls]
     #embed(header='figs 407')
 
     if show_log and truths is not None:
@@ -429,6 +439,18 @@ def fig_corner(model_names:list, outroot:str='fig_corner_', idx:int=170,
         show_titles=True,
         title_kwargs={"fontsize": 12},
         )
+
+    # Add 95%
+    ss = 0
+    for ax in fig.get_axes():
+        if len(ax.get_title()) > 0:
+            # Calculate the percntile
+            p_5, p_95 = np.percentile(coeff[:,ss], [5, 95], axis=0)
+            # Plot a vertical line
+            ax.axvline(p_5, color='b', linestyle=':')
+            ax.axvline(p_95, color='b', linestyle=':')
+            ss += 1
+
 
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
@@ -1167,7 +1189,9 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
 
     # Init
     add_noises = [False, True, True]
-    error_lbls = ['No RT error\n No data error']*3
+    error_lbls = ['No RT error\n No data error', 
+                  'No RT error\n Data with error',
+                  'No RT error\n No data error']
     #
     if model == 'GIOP':
         clr = 'b'
@@ -1202,6 +1226,9 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
         print(f'Loading {chain_file}')
         d = np.load(chain_file)
 
+        # Flags
+        #embed(header='fig_aph_vs_aph 1206')
+
         # Load models
         models = model_utils.init(model_names, d['wave'])
 
@@ -1213,9 +1240,9 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
     fig = plt.figure(figsize=(7,10))
     gs = gridspec.GridSpec(3,1)
 
-    axes = []
 
-    for ss in range(2):
+    naxes = 2
+    for ss in range(naxes):
         ax = plt.subplot(gs[ss])
 
         ax.scatter(l23_a440, all_ga440[ss], s=1, 
@@ -1226,7 +1253,6 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
         ax.plot([xmin, xmax], [xmin/2, xmax/2], 'k-.', label='0.5 to 0.5')
         # Log
         #
-        ax.legend(fontsize=15.)
         ax.set_ylim(1e-3, 1)
 
         # Errors
@@ -1238,11 +1264,14 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
         ax.set_xscale('log')
         ax.set_yscale('log')
         #
-        if ss == len(axes)-1:
+        if ss == naxes-1:
             ax.set_xlabel(r'$a_{\rm ph}^{\rm L23} (440)$')
         else:
             ax.tick_params(labelbottom=False)  # Hide x-axis labels
         ax.set_ylabel(r'$a_{\rm ph}^{\rm '+f'{model}'+r'} (440)$')
+
+        if ss == 0:
+            ax.legend(fontsize=15.)
 
     # Write
     plt.tight_layout()
@@ -1368,15 +1397,18 @@ def main(flg):
 
     # Corner
     if flg == 32:
+        fig_corner(['GSM', 'GSM'], idx=170, full_LM=False,
+            SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS',
+            show_log=True, add_noise=True)
         #fig_corner(['GSM', 'GSM'], idx=170, full_LM=False,
         #    SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS',
         #    show_log=True)
-        fig_corner(['GIOP', 'Lee'], idx=170, full_LM=False,
-            MODIS=True, use_LM=False, scl_noise='MODIS_Aqua',
-            show_log=True)
-        fig_corner(['GIOP', 'Lee'], idx=1032, full_LM=False,
-            MODIS=True, use_LM=False, scl_noise='MODIS_Aqua',
-            show_log=True)
+        #fig_corner(['GIOP', 'Lee'], idx=170, full_LM=False,
+        #    MODIS=True, use_LM=False, scl_noise='MODIS_Aqua',
+        #    show_log=True)
+        #fig_corner(['GIOP', 'Lee'], idx=1032, full_LM=False,
+        #    MODIS=True, use_LM=False, scl_noise='MODIS_Aqua',
+        #    show_log=True)
 
 
 # Command line execution

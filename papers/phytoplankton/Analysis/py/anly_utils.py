@@ -397,6 +397,8 @@ def add_noise(Rs, perc:int=None, abs_sig:float=None,
 
     if perc is not None:
         use_Rs += (perc/100.) * use_Rs * r_sig
+    elif isinstance(abs_sig, (float,int,np.ndarray)):
+        use_Rs += r_sig * abs_sig
     elif abs_sig  == 'PACE':
         if wave is None:
             raise ValueError("Need wavelength array for PACE noise.")
@@ -418,8 +420,6 @@ def add_noise(Rs, perc:int=None, abs_sig:float=None,
         pace_sig[~ok_wv] *= 100.   
         # Add it in
         use_Rs += r_sig * pace_sig
-    elif isinstance(abs_sig, (float,int,np.ndarray)):
-        use_Rs += r_sig * abs_sig
     else:
         raise ValueError("Bad abs_sig")
     

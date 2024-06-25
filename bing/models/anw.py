@@ -423,7 +423,7 @@ class aNWExpNMF(aNWModel):
     """
     name = 'ExpNMF'
     nparam = 4
-    pname = ['Aexp', 'Sexp', 'H1', 'H2']
+    pnames = ['Aexp', 'Sexp', 'H1', 'H2']
     pivot = 400.
 
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
@@ -478,7 +478,7 @@ class aNWGSM(aNWModel):
     """
     name = 'GSM'
     nparam = 2
-    pnames = ['Adg', 'Chl']
+    pnames = ['Aexp', 'Chl']
     pivot = 443.
     uses_Chl = True
 
