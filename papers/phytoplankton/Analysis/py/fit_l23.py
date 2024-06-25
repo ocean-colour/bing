@@ -235,15 +235,15 @@ def main(flg):
 
     #embed(header='main 168')
     if flg in [4,5,6,7,8,9,10,11,12]:
-        #fit(['Cst', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
-        #fit(['Exp', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
-        #fit(['Exp', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
-        #fit(['ExpBricaud', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['Cst', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['Exp', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['Exp', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['ExpBricaud', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
         #fit(['ExpNMF', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
-        #fit(['GIOP', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
-        #fit(['GIOP', 'Lee'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['GIOP', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['GIOP', 'Lee'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
         fit(['GSM', 'GSM'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
-        #fit(['GSM', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['GSM', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
 
     
 

@@ -1293,6 +1293,124 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph',
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
+# ############################################################
+def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
+                scl_noise:float=0.02, add_noise:bool=False, 
+                SeaWiFS:bool=False, MODIS:bool=False,
+                no_errorbars:bool=True, outfile:str=None):
+
+
+    # Outfile
+    if outfile is None:
+        outfile = outroot + f'_{model_names[0]}{model_names[1]}.png'
+
+    # Load
+    ds = loisel23.load_ds(4,0)
+    l23_wave = ds.Lambda.data
+    aph = ds.aph.data
+    i440_l23 = np.argmin(np.abs(l23_wave-440.))
+    l23_a440 = aph[:,i440_l23]
+    l23_bbnw = ds.bbnw.data
+
+    if add_noise:
+        error_text = 'Observational error'
+        scl = 10.
+    else:
+        error_text = 'No observational error'
+        scl = 2.
+
+    if MODIS:
+        sat = 'MODIS'
+    elif SeaWiFS:
+        sat = 'SeaWiFS'
+    else:
+        raise IOError("Bad satellite")
+        
+
+
+    # Load
+    chain_file = anly_utils.chain_filename(
+        model_names, scl_noise, add_noise,
+        MODIS=MODIS, SeaWiFS=SeaWiFS)
+    chain_file = chain_file.replace('BING', 'BING_LM')
+    # Load up
+    print(f'Loading {chain_file}')
+    d = np.load(chain_file)
+
+    models = model_utils.init(model_names, d['wave'])
+
+    # More
+    ibbnw = np.argmin(np.abs(d['wave']-models[1].pivot))
+    l23_bbnw = l23_bbnw[:,ibbnw]
+
+    # Specifics
+    if model_names[1] == 'Lee':
+        Y = d['Y']
+    else:
+        Y = None
+
+    # aph
+    perrs = [np.sqrt(np.diag(item)) for item in d['cov']]
+    perrs = np.array(perrs)
+
+    g_a440, sig_a440 = anly_utils.calc_aph440(
+        models, d['Chl'], d['ans'], perrs, 1)
+
+    # bbnw
+    bbnw_idx = d['ans'].shape[1]-1
+    bbnw = anly_utils.calc_bbnw(
+        models, d['ans'], perrs, bbnw_idx, models[1].pivot, Y=Y)
+
+    def plot_lines(ax, xmin, xmax, scl):
+        ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
+        ax.plot([xmin, xmax], [scl*xmin, scl*xmax], 'k:', label=f'{scl} to {scl}')
+        ax.plot([xmin, xmax], [xmin/scl, xmax/scl], 'k-.', label=f'{1./scl:0.1f} to {1./scl:0.1f}')
+
+    # Figures
+    fig = plt.figure(figsize=(12,6))
+    gs = gridspec.GridSpec(1,2)
+
+    # aph
+    ax_ph = plt.subplot(gs[0])
+
+    ax_ph.scatter(l23_a440, g_a440, s=1, color='b')#, label=model)
+    xmin_aph, xmax_aph = 1e-4, 1
+    plot_lines(ax_ph, xmin_aph, xmax_aph, scl)
+    ax_ph.set_ylim(xmin_aph, xmax_aph)
+    ax_ph.grid()
+
+    ax_ph.set_xlabel(r'$a_{\rm ph}^{\rm L23} (440)$')
+    ax_ph.set_ylabel(r'$a_{\rm ph}^{\rm '+f'{model_names[0]}'+r'} (440)$')
+
+    # Text
+    ax_ph.text(0.95, 0.05, f'{model_names[0]}/{sat}\n {error_text}', fontsize=19,
+               transform=ax_ph.transAxes, ha='right')
+
+    # bbnw
+    ax_bb = plt.subplot(gs[1])
+
+    ax_bb.scatter(l23_bbnw, bbnw, s=1, color='r')#, label=model)
+    xmin_bb, xmax_bb = 1e-5, 3e-2
+    plot_lines(ax_bb, xmin_bb, xmax_bb, scl)
+    ax_bb.set_ylim(xmin_bb, xmax_bb)
+    ax_bb.grid()
+
+    ax_bb.set_xlabel(r'$b_{\rm b,nw}^{\rm L23} '+f'({int(models[1].pivot)})'+r'$')
+    ax_bb.set_ylabel(r'$b_{\rm b,nw}^{\rm '+f'{model_names[0]}'+r'}'+f' ({int(models[1].pivot)})'+r'$')
+
+    
+    for ss, ax in enumerate([ax_ph, ax_bb]):
+        plotting.set_fontsize(ax, 17)
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        #
+        if ss == 0:
+            ax.legend(fontsize=15.)
+
+    # Write
+    plt.tight_layout()
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
 
 
 def main(flg):
@@ -1346,7 +1464,16 @@ def main(flg):
     # Aph vs aph
     if flg == 14:
         #fig_aph_vs_aph('GIOP')
-        fig_aph_vs_aph('GSM')
+        #fig_aph_vs_aph('GSM')
+        fig_aph_and_bbnw(['GIOP', 'Lee'], MODIS=True)
+        fig_aph_and_bbnw(['GIOP', 'Lee'], MODIS=True, add_noise=True,
+                         scl_noise='MODIS_Aqua',
+                         outfile='fig_aph_and_bbnw_GIOP_noise.png')
+        #
+        fig_aph_and_bbnw(['GSM', 'GSM'], SeaWiFS=True)
+        fig_aph_and_bbnw(['GSM', 'GSM'], SeaWiFS=True, add_noise=True,
+                         scl_noise='SeaWiFS', 
+                         outfile='fig_aph_and_bbnw_GSM_noise.png')
 
 
     # BIC/AIC for MODIS+L23

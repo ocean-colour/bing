@@ -374,6 +374,44 @@ def calc_aph440(models, Chl, params, sig_params, aph_idx):
 
     return g_a440, sig_a440
 
+def calc_bbnw(models, params, sig_params, bbnw_idx, pwave,
+              Y:np.ndarray=None):
+
+    ipiv = np.argmin(np.abs(models[0].wave-pwave))
+
+    bbnw_fits = []
+    #aphlow_fits = []
+    #aphhi_fits = []
+    for ss in range(params.shape[0]):
+        if Y is not None:
+            models[1].set_basis_func(Y[ss])
+        #
+        #embed(header='calc_bbnw')
+        bbnw = models[1].eval_bbnw(params[ss,bbnw_idx:bbnw_idx+1])
+        '''
+        # Brute for cme
+        iaph_lo = functions.gen_basis(
+            params[ss,aph_idx:aph_idx+1]-sig_params[ss,aph_idx:aph_idx+1], 
+            [models[0].a_ph])
+        iaph_hi = functions.gen_basis(
+            params[ss,aph_idx:aph_idx+1]+sig_params[ss,aph_idx:aph_idx+1], 
+            [models[0].a_ph])
+        '''
+        #
+        bbnw_fits.append(bbnw.flatten())
+        #aphlow_fits.append(iaph_lo.flatten())
+        #aphhi_fits.append(iaph_hi.flatten())
+    #
+    bbnw_fits = np.array(bbnw_fits)
+    #aphlow_fits = np.array(aphlow_fits)
+    #aphhi_fits = np.array(aphhi_fits)
+    #
+    bbnw_i = bbnw_fits[:, ipiv]
+    # Error
+    #sig_a440 = (aphhi_fits[:, i440_g] - aphlow_fits[:, i440_g])/2.
+
+    return bbnw_i
+
 def add_noise(Rs, perc:int=None, abs_sig:float=None,
               wave:np.ndarray=None, correlate:bool=False):
     """
