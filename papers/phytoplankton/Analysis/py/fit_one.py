@@ -77,8 +77,6 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     
     # Gordon Rrs
     gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'])
-    if add_noise:
-        gordon_Rrs = noise.add_noise(gordon_Rrs, perc=scl_noise*100)
 
     # Internals
     if models[0].uses_Chl:
@@ -93,6 +91,10 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     model_bbnw = anly_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
 
     model_varRrs = anly_utils.scale_noise(scl_noise, model_Rrs, model_wave)
+
+    if add_noise:
+        model_Rrs = anly_utils.add_noise(
+                model_Rrs, abs_sig=np.sqrt(model_varRrs))
 
     # Initial guess
     p0_a = models[0].init_guess(model_anw)
@@ -109,11 +111,14 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     
 
     # Set the items
+    p0 -= 1
     items = [(model_Rrs, model_varRrs, p0, idx)]
 
     outfile = anly_utils.chain_filename(
         model_names, scl_noise, add_noise, idx=idx,
         MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
+
+    # Bayes
     if not use_chisq:
         prior_dict = dict(flavor='uniform', pmin=-6, pmax=5)
 
@@ -131,7 +136,7 @@ def fit_one(model_names:list, idx:int, n_cores=20,
                                          varRrs=model_varRrs, 
                                          Chl=odict['Chl'], 
                                          Y=odict['Y']))
-    else:
+    else: # chi^2
         # Fit
         ans, cov, idx = chisq_fit.fit(items[0], models)
         # Show?
@@ -149,8 +154,10 @@ def fit_one(model_names:list, idx:int, n_cores=20,
               wave=wave, obs_Rrs=gordon_Rrs, varRrs=model_varRrs,
               Chl=odict['Chl'], Y=odict['Y'])
         print(f"Saved: {outfile}")
+        embed(header='fit_one 155')
         #
         return ans, cov
+
 
 
 def main(flg):
@@ -211,10 +218,16 @@ def main(flg):
 
     # Bayes on GSM
     if flg == 9:
+        '''
         fit_one(['GSM', 'GSM'], idx=170, 
                 use_chisq=False, show=True, max_wave=700.,
                 nburn=5000, nsteps=50000)
         fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True,
+                use_chisq=False, show=True, scl_noise='SeaWiFS',
+                nburn=5000, nsteps=50000)
+        '''
+        # Add noise too
+        fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True, add_noise=True,
                 use_chisq=False, show=True, scl_noise='SeaWiFS',
                 nburn=5000, nsteps=50000)
 
@@ -230,7 +243,8 @@ def main(flg):
 
     # Debug
     if flg == 99:
-        fit_one(['GSM', 'GSM'], idx=170, 
+        fit_one(['GSM', 'GSM'], idx=170,  SeaWiFS=True,
+                scl_noise='SeaWiFS', 
                 use_chisq=True, show=True, max_wave=700.)
         #fit_one(['ExpNMF', 'Pow'], idx=1067, 
         #        use_chisq=True, show=True, max_wave=700.)
