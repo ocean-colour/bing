@@ -1195,10 +1195,12 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
     #
     if model == 'GIOP':
         clr = 'b'
+        mlbl = 'GIOP/MODIS'
         model_names = ['GIOP', 'Lee']
         MODIS = True
         scl_noises = [0.02, 'MODIS_Aqua', 'MODIS_Aqua']
     elif model == 'GSM':
+        mlbl = 'GSM/SeaWiFS'
         clr = 'g'
         model_names = ['GSM', 'GSM']
         SeaWiFS = True
@@ -1238,7 +1240,7 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
         all_ga440.append(g_a440)
 
     fig = plt.figure(figsize=(7,10))
-    gs = gridspec.GridSpec(3,1)
+    gs = gridspec.GridSpec(2,1)
 
 
     naxes = 2
@@ -1246,18 +1248,20 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
         ax = plt.subplot(gs[ss])
 
         ax.scatter(l23_a440, all_ga440[ss], s=1, 
-                   color=clr, label=model)
+                   color=clr)#, label=model)
         #
         ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
-        ax.plot([xmin, xmax], [2*xmin, 2*xmax], 'k:', label='2 to 2')
-        ax.plot([xmin, xmax], [xmin/2, xmax/2], 'k-.', label='0.5 to 0.5')
+        if ss == 0:
+            ax.plot([xmin, xmax], [2*xmin, 2*xmax], 'k:', label='2 to 2')
+            ax.plot([xmin, xmax], [xmin/2, xmax/2], 'k-.', label='0.5 to 0.5')
         # Log
         #
-        ax.set_ylim(1e-3, 1)
+        ax.set_ylim(1e-3, 0.99)
+        ax.grid()
 
         # Errors
-        efsz = 17.
-        ax.text(0.95, 0.1, error_lbls[ss], fontsize=efsz, 
+        efsz = 19.
+        ax.text(0.95, 0.05, mlbl+'\n\n'+error_lbls[ss], fontsize=efsz, 
                 transform=ax.transAxes, ha='right')
 
         plotting.set_fontsize(ax, 17)
