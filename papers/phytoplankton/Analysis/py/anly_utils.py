@@ -341,21 +341,38 @@ def scale_noise(scl_noise, model_Rrs, model_wave):
     # Return
     return model_varRrs
 
-def calc_aph440(models, Chl, params, aph_idx):
+def calc_aph440(models, Chl, params, sig_params, aph_idx):
     i440_g = np.argmin(np.abs(models[0].wave-440))
 
     aph_fits = []
+    aphlow_fits = []
+    aphhi_fits = []
     for ss in range(Chl.size):
         models[0].set_aph(Chl[ss])
         #
         iaph = functions.gen_basis(params[ss,aph_idx:aph_idx+1], 
                                    [models[0].a_ph])
+        # Brute for cme
+        iaph_lo = functions.gen_basis(
+            params[ss,aph_idx:aph_idx+1]-sig_params[ss,aph_idx:aph_idx+1], 
+            [models[0].a_ph])
+        iaph_hi = functions.gen_basis(
+            params[ss,aph_idx:aph_idx+1]+sig_params[ss,aph_idx:aph_idx+1], 
+            [models[0].a_ph])
+        #
         aph_fits.append(iaph.flatten())
+        aphlow_fits.append(iaph_lo.flatten())
+        aphhi_fits.append(iaph_hi.flatten())
     #
     aph_fits = np.array(aph_fits)
+    aphlow_fits = np.array(aphlow_fits)
+    aphhi_fits = np.array(aphhi_fits)
+    #
     g_a440 = aph_fits[:, i440_g]
+    # Error
+    sig_a440 = (aphhi_fits[:, i440_g] - aphlow_fits[:, i440_g])/2.
 
-    return g_a440
+    return g_a440, sig_a440
 
 def add_noise(Rs, perc:int=None, abs_sig:float=None,
               wave:np.ndarray=None, correlate:bool=False):

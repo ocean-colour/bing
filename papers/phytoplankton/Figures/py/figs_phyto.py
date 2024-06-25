@@ -1178,7 +1178,8 @@ def fig_Sexp(outfile='fig_Sexp.png', kmodel:int=4):
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
-def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
+def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph',
+                   no_errorbars:bool=True):
     xmin, xmax = 1e-3, 1
 
     # Outfile
@@ -1218,6 +1219,7 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
     k_g = model
 
     all_ga440 = []
+    all_sig_ga440 = []
     for ss, scl_noise in enumerate(scl_noises):
         # Load
         chain_file = anly_utils.chain_filename(
@@ -1235,9 +1237,14 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
         models = model_utils.init(model_names, d['wave'])
 
         # Calculate
-        g_a440 = anly_utils.calc_aph440(models, d['Chl'], d['ans'], 1)
+        perrs = [np.sqrt(np.diag(item)) for item in d['cov']]
+        perrs = np.array(perrs)
+
+        g_a440, sig_a440 = anly_utils.calc_aph440(
+            models, d['Chl'], d['ans'], perrs, 1)
         # Save
         all_ga440.append(g_a440)
+        all_sig_ga440.append(sig_a440)
 
     fig = plt.figure(figsize=(7,10))
     gs = gridspec.GridSpec(2,1)
@@ -1247,8 +1254,12 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph'):
     for ss in range(naxes):
         ax = plt.subplot(gs[ss])
 
-        ax.scatter(l23_a440, all_ga440[ss], s=1, 
+        if ss == 0 or no_errorbars:
+            ax.scatter(l23_a440, all_ga440[ss], s=1, 
                    color=clr)#, label=model)
+        else:
+            ax.errorbar(l23_a440, all_ga440[ss], yerr=all_sig_ga440[ss], 
+                color=clr, fmt='o', markersize=1)
         #
         ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
         if ss == 0:
