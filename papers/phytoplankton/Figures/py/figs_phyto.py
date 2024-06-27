@@ -1471,17 +1471,22 @@ def main(flg):
 
     # Aph vs aph
     if flg == 14:
-        #fig_aph_vs_aph('GIOP')
-        #fig_aph_vs_aph('GSM')
+        # GIOP
+        '''
         fig_aph_and_bbnw(['GIOP', 'Lee'], MODIS=True)
         fig_aph_and_bbnw(['GIOP', 'Lee'], MODIS=True, add_noise=True,
                          scl_noise='MODIS_Aqua',
                          outfile='fig_aph_and_bbnw_GIOP_noise.png')
-        #
+        # GSM
         fig_aph_and_bbnw(['GSM', 'GSM'], SeaWiFS=True)
         fig_aph_and_bbnw(['GSM', 'GSM'], SeaWiFS=True, add_noise=True,
                          scl_noise='SeaWiFS', 
                          outfile='fig_aph_and_bbnw_GSM_noise.png')
+        '''
+        # PACE
+        fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, add_noise=True,
+                         scl_noise='PACE',
+                         outfile='fig_aph_and_bbnw_GIOP_PACE_noise.png')
 
 
     # BIC/AIC for MODIS+L23
