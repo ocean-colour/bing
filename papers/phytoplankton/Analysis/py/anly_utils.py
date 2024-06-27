@@ -71,6 +71,8 @@ def chain_filename(model_names:list, scl_noise, add_noise,
         outfile += 'M'
     elif scl_noise == 'PACE':
         outfile += 'P'
+    elif scl_noise is None:
+        outfile += f'{int(100*0.02):02d}'
     else:
         outfile += f'{int(100*scl_noise):02d}'
     # LM
@@ -251,9 +253,9 @@ def recon_one(model_names:list, idx:int,
               limit_wave_to_fit:bool=True):
 
     # Load up the chains or parameters
-    chain_file, noises, noise_lbl = get_chain_file(
-        model_names, scl_noise, add_noise, idx, use_LM=use_LM,
-        full_LM=full_LM, MODIS=MODIS)
+    chain_file = chain_filename(
+        model_names, scl_noise, add_noise, idx=None, use_LM=use_LM,
+        MODIS=MODIS)
     print(f'Loading: {chain_file}')
     d_chains = np.load(chain_file)
 
@@ -261,7 +263,6 @@ def recon_one(model_names:list, idx:int,
     odict = prep_l23_data(idx, min_wave=min_wave, max_wave=max_wave)
     model_wave = odict['wave']
     Rrs = odict['Rrs']
-    varRrs = odict['varRrs']
     a_true = odict['a']
     bb_true = odict['bb']
     aw = odict['aw']
@@ -275,6 +276,7 @@ def recon_one(model_names:list, idx:int,
     gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'])
 
     # MODIS?
+    model_Rrs = None
     if MODIS:
         model_wave = bing_modis.modis_wave
         model_Rrs = bing_modis.convert_to_modis(wave_true, gordon_Rrs)
@@ -283,8 +285,16 @@ def recon_one(model_names:list, idx:int,
     else:
         model_wave = wave_true
 
+    if model_Rrs is None:
+        model_Rrs = gordon_Rrs
+
     # Init the models
     models = model_utils.init(model_names, model_wave)
+
+    # Noise
+    if scl_noise is None:
+        scl_noise = 0.02
+    model_varRrs = scale_noise(scl_noise, model_Rrs, model_wave)
 
     # Extras?
     if models[0].uses_Chl:
@@ -312,8 +322,8 @@ def recon_one(model_names:list, idx:int,
         #    models, d_chains['chains']) 
 
     # Return as a dict
-    rdict = dict(wave=model_wave, Rrs=Rrs, varRrs=varRrs, noise_lbl=noise_lbl,
-                 noises=noises, idx=idx,
+    rdict = dict(wave=model_wave, Rrs=Rrs, varRrs=model_varRrs, 
+                 idx=idx,
                  a_true=a_true, bb_true=bb_true,
                  aw=aw, adg=adg, aph=aph,
                  anw_model=models[0], bbnw_model=models[1],

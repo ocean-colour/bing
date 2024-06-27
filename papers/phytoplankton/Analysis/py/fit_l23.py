@@ -206,7 +206,7 @@ def main(flg):
         fit(['Exp', 'Cst'], use_chisq=True, max_wave=700., min_wave=400.)
         fit(['Exp', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
         fit(['ExpBricaud', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
-        fit(['ExpNMF', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
+        #fit(['ExpNMF', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
         fit(['GIOP', 'Lee'], use_chisq=True, max_wave=700., min_wave=400.)
         fit(['GSM', 'GSM'], use_chisq=True, max_wave=700., min_wave=400.)
 
