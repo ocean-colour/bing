@@ -67,7 +67,7 @@ def show_fit(models:list, inputs:np.ndarray,
             models, chains)
         # Generate params just in case
         params = np.median(chains, axis=[0,1])
-        embed(header='show_fit 70')
+        #embed(header='show_fit 70')
 
     # Water
     a_w = absorption.a_water(wave, data='IOCCG')
