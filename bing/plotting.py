@@ -144,7 +144,7 @@ def show_fit(models:list, inputs:np.ndarray,
     ax_R.plot(wave, model_Rrs, 'b-', label='Fit', zorder=10)
     if not use_LM:
         ax_R.fill_between(wave, model_Rrs-sigRs, model_Rrs+sigRs, 
-            color='r', alpha=0.5, zorder=10) 
+            color='b', alpha=0.5, zorder=10) 
 
     ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
 
