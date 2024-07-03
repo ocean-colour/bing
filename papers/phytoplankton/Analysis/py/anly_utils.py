@@ -339,9 +339,11 @@ def recon_one(model_names:list, idx:int,
 def scale_noise(scl_noise, model_Rrs, model_wave):
 
     if scl_noise == 'SeaWiFS':
-        model_varRrs = sat_seawifs.seawifs_error**2
+        err_dict = sat_seawifs.calc_errors()
+        model_varRrs = np.array([err_dict[wv][0] for wv in sat_seawifs.seawifs_wave])**2
     elif scl_noise == 'MODIS_Aqua':
-        model_varRrs = sat_modis.modis_aqua_error**2
+        err_dict = sat_modis.calc_errors()
+        model_varRrs = np.array([err_dict[wv][0] for wv in sat_modis.modis_wave])**2
     elif scl_noise == 'PACE':
         PACE_error = sat_pace.gen_noise_vector(model_wave)
         model_varRrs = PACE_error**2
