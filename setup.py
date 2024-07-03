@@ -19,9 +19,9 @@ if os.path.exists('README.md'):
     with open('README.md') as readme:
         setup_keywords['long_description'] = readme.read()
 setup_keywords['provides'] = [setup_keywords['name']]
-setup_keywords['requires'] = ['Python (>=3.9.0)']
+setup_keywords['requires'] = ['Python (>=3.11.0)']
 setup_keywords['install_requires'] = [
-    'seaborn', 'smart-open[s3]', 'pyarrow',
+    'seaborn', 'smart-open[s3]', 
     'scikit-learn', 'scikit-image', 'tqdm', 'astropy', 'astropy-healpix',
     'healpy', 'cftime', 'bokeh', 'umap-learn', 'llvmlite', 'boto3',
     'xarray', 'h5netcdf', 'emcee', 'corner',
