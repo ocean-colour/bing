@@ -7,8 +7,8 @@ import os, sys
 #sys.path.append(os.path.abspath("../Analysis/py"))
 #import ssl_paper_analy
 
-from oceancolor.satellites import modis as oc_modis
-from oceancolor.satellites import seawifs as oc_seawifs
+from ocpy.satellites import modis as oc_modis
+from ocpy.satellites import seawifs as oc_seawifs
 
 from cnmf import io as cnmf_io
 

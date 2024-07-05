@@ -6,8 +6,8 @@ from abc import ABCMeta
 
 from scipy.interpolate import interp1d
 
-from oceancolor.water import absorption as water_abs
-from oceancolor.ph import absorption as ph_absorption
+from ocpy.water import absorption as water_abs
+from ocpy.ph import absorption as ph_absorption
 
 from bing import priors as bing_priors
 from bing.models import functions

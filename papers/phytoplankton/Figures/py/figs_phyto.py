@@ -18,11 +18,11 @@ import seaborn as sns
 
 import corner
 
-from oceancolor.utils import plotting 
-from oceancolor.hydrolight import loisel23
-from oceancolor.satellites import pace as sat_pace
-from oceancolor.satellites import seawifs as sat_seawifs
-from oceancolor.satellites import modis as sat_modis
+from ocpy.utils import plotting 
+from ocpy.hydrolight import loisel23
+from ocpy.satellites import pace as sat_pace
+from ocpy.satellites import seawifs as sat_seawifs
+from ocpy.satellites import modis as sat_modis
 
 from bing import plotting as bing_plot
 from bing.models import utils as model_utils
@@ -676,7 +676,7 @@ def fig_satellite_noise(satellite:str, wave:int, min_Rrs:float=-0.03):
         #sat_file = files('boring').joinpath(os.path.join('data', 'MODIS', 'MODIS_matchups_rrs.csv'))
         sat_key = 'aqua_rrs'
         insitu_key = 'insitu_rrs'
-        matchups = modis.load_matchups()
+        matchups = sat_modis.load_matchups()
     elif satellite == 'SeaWiFS':
         sat_key = 'seawifs_rrs'
         insitu_key = 'insitu_rrs'
@@ -1461,8 +1461,9 @@ def main(flg):
     # Satellite Noise
     if flg == 12:
         #fig_satellite_noise('SeaWiFS', 443)
-        fig_satellite_noise('SeaWiFS', 670)
+        #fig_satellite_noise('SeaWiFS', 670)
         #fig_satellite_noise('MODIS_Aqua', 443)
+        fig_satellite_noise('MODIS_Aqua', 667)
         #fig_pace_noise()
 
 

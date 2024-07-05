@@ -4,14 +4,10 @@ import os
 import numpy as np
 from scipy.interpolate import interp1d
 
-from oceancolor.hydrolight import loisel23
-try:
-    from oceancolor.satellites import pace as sat_pace
-except:
-    pass
-else:
-    from oceancolor.satellites import modis as sat_modis
-    from oceancolor.satellites import seawifs as sat_seawifs
+from ocpy.hydrolight import loisel23
+from ocpy.satellites import pace as sat_pace
+from ocpy.satellites import modis as sat_modis
+from ocpy.satellites import seawifs as sat_seawifs
 
 from bing import rt as bing_rt
 from bing.models import anw as bing_anw

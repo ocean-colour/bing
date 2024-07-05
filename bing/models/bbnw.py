@@ -3,8 +3,8 @@ import numpy as np
 
 from scipy.interpolate import interp1d
 
-from oceancolor.water import scattering as water_bb
-from oceancolor.hydrolight import loisel23
+from ocpy.water import scattering as water_bb
+from ocpy.hydrolight import loisel23
 
 from abc import ABCMeta
 

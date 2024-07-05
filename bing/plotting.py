@@ -8,9 +8,9 @@ import matplotlib as mpl
 import matplotlib.gridspec as gridspec
 mpl.rcParams['font.family'] = 'stixgeneral'
 
-from oceancolor.water import absorption
-from oceancolor.hydrolight import loisel23
-from oceancolor.utils import plotting
+from ocpy.water import absorption
+from ocpy.hydrolight import loisel23
+from ocpy.utils import plotting
 
 from bing import chisq_fit
 from bing import evaluate
