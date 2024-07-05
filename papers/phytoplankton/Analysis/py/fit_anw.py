@@ -1,4 +1,4 @@
-""" Run BIG one one spectrum """
+""" Run BING on anw data """
 
 import os
 
@@ -23,15 +23,15 @@ from IPython import embed
 
 import anly_utils 
 
-def fit_one(model_names:list, idx:int, n_cores=20, 
-            nsteps:int=10000, nburn:int=1000, 
-            scl_noise:float=0.02, use_chisq:bool=False,
-            add_noise:bool=False,
-            max_wave:float=None,
-            show:bool=False,
-            MODIS:bool=False,
-            SeaWiFS:bool=False,
-            PACE:bool=False):
+def fit(model_name:str, idx:int, n_cores=20, 
+        nsteps:int=10000, nburn:int=1000, 
+        scl_noise:float=0.02, use_chisq:bool=False,
+        add_noise:bool=False,
+        max_wave:float=None,
+        show:bool=False,
+        MODIS:bool=False,
+        SeaWiFS:bool=False,
+        PACE:bool=False):
 
     odict = anly_utils.prep_l23_data(idx, scl_noise=scl_noise,
                                      max_wave=max_wave)
@@ -51,26 +51,19 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     else:
         model_wave = wave
 
-    # Priors
-    if model_names[0] == 'ExpB':
-        use_model_names = ['Exp', model_names[1]]
-    else:
-        use_model_names = model_names.copy()
-
-    # Models
-    models = model_utils.init(use_model_names, model_wave)
+    # Model
+    model = bing_anw.init_model(model_name, model_wave)
 
     # Set priors
     if not use_chisq:
         prior_dict = dict(flavor='uniform', pmin=-6, pmax=5)
-        for jj in range(2):
-            prior_dicts = [prior_dict]*models[jj].nparam
-            # Special cases
-            if jj == 0 and model_names[0] == 'ExpB':
-                prior_dicts[1] = dict(flavor='uniform', 
-                                      pmin=np.log10(0.007), 
-                                      pmax=np.log10(0.02))
-            models[jj].priors = bing_priors.Priors(prior_dicts)
+        prior_dicts = [prior_dict]*model.nparam
+        # Special cases
+        if model_name == 'ExpB':
+            prior_dicts[1] = dict(flavor='uniform', 
+                                    pmin=np.log10(0.007), 
+                                    pmax=np.log10(0.02))
+        model.priors = bing_priors.Priors(prior_dicts)
                     
     # Initialize the MCMC
     pdict = bing_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)

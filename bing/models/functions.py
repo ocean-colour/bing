@@ -36,6 +36,22 @@ def exponential(wave:np.ndarray, params:np.ndarray, pivot:float=400., S:float=No
     else:
         return Amp * np.exp(-S*(wave-pivot))
 
+def gaussian(wave:np.ndarray, params:np.ndarray, pivot:float=400.):
+    """
+    Calculate the Gaussian function for a given wave array and parameters.
+
+    Parameters:
+    wave (np.ndarray): Array of wave values.
+    params (np.ndarray): Array of parameters.
+    pivot (float, optional): Pivot value for the Gaussian function. Default is 400.
+
+    Returns:
+    np.ndarray: Result of the Gaussian function calculation.
+    """
+    Amp = np.outer(10**params[...,0], np.ones_like(wave))
+    return Amp * np.exp(-0.5 * (np.outer((wave-pivot), 10**params[...,1]))**2)
+
+
 def powerlaw(wave:np.ndarray, params:np.ndarray, pivot:float=600.):
     """
     Calculate the power law function for a given wavelength.

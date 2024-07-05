@@ -524,3 +524,117 @@ class aNWGSM(aNWModel):
         assert p0_a.size == self.nparam
         # Return
         return p0_a
+
+class aNWChase(aNWModel):
+    """
+    Chase+2017 
+
+    Exponential model with Sdg fixed + Bricaud aph for non-water absorption
+        aNAP = CNAP * exp(-SNAP*(wave-400))
+        aCDOM = CCDOM * exp(-SCDOM*(wave-400))
+
+        aph = Sum aph_i * exp((wave-wave_i)**2/2/sigma_i**2)
+            8 Gaussians
+
+    Attributes:
+
+    """
+    name = 'Chase2017'
+    nparam = 28
+    pnames = ['CNAP', 'SNAP', 'CCDOM', 'SCDOM', 
+              'aph384', 'aph413', 'aph435', 'aph461', 
+              'aph464', 'aph490', 'aph532', 'aph583', 
+              'sig384', 'sig413', 'sig435', 'sig461',
+              'sig464', 'sig490', 'sig532', 'sig583',
+              'cen384', 'cen413', 'cen435', 'cen461',
+              'cen464', 'cen490', 'cen532', 'cen583']
+    pivot = 400.
+
+    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
+        aNWModel.__init__(self, wave, prior_dicts)
+
+        # Gaussian centroids
+
+    def init_priors(self):
+
+        # NAP and CDOM
+        prior_dicts = [
+            dict(flavor='uniform', pmin=-6, pmax=np.log10(0.05)), # CNAP
+            dict(flavor='uniform', pmin=np.log10(0.005), pmax=np.log10(0.016)), # SNAP
+            dict(flavor='uniform', pmin=np.log10(0.01), pmax=np.log10(0.8)), # CCDOM
+            dict(flavor='uniform', pmin=np.log10(0.005), pmax=np.log10(0.002)), # SCDOM
+        ]
+
+        # APH
+        prior_dicts += [dict(flavor='uniform', pmin=-6, pmax=np.log10(0.5))]*8
+
+        # SIGMA
+        prior_dicts += [
+            dict(flavor='uniform', pmin=np.log10(22.), pmax=np.log10(24.)), # 384
+            dict(flavor='uniform', pmin=np.log10(8.), pmax=np.log10(10.)), # 
+            dict(flavor='uniform', pmin=np.log10(13.), pmax=np.log10(15.)), # 
+            dict(flavor='uniform', pmin=np.log10(10.), pmax=np.log10(12.)), # 
+            dict(flavor='uniform', pmin=np.log10(18.), pmax=np.log10(20.)), # 
+            dict(flavor='uniform', pmin=np.log10(18.), pmax=np.log10(20.)), # 
+            dict(flavor='uniform', pmin=np.log10(19.), pmax=np.log10(21.)), # 
+            dict(flavor='uniform', pmin=np.log10(19.), pmax=np.log10(21.)), # 
+        ]
+
+        # CEN
+        prior_dicts += [
+            dict(flavor='uniform', pmin=np.log10(383), pmax=np.log10(385)), # 384
+            dict(flavor='uniform', pmin=np.log10(412), pmax=np.log10(414)), # 
+            dict(flavor='uniform', pmin=np.log10(434), pmax=np.log10(436)), # 
+            dict(flavor='uniform', pmin=np.log10(460), pmax=np.log10(462)), # 
+            dict(flavor='uniform', pmin=np.log10(463), pmax=np.log10(465)), # 
+            dict(flavor='uniform', pmin=np.log10(489), pmax=np.log10(491)), # 
+            dict(flavor='uniform', pmin=np.log10(531), pmax=np.log10(533)), # 
+            dict(flavor='uniform', pmin=np.log10(582), pmax=np.log10(584)), # 
+        ]
+
+    def eval_anw(self, params:np.ndarray):
+        """
+        Evaluate the non-water absorption coefficient
+
+        Parameters:
+            params (np.ndarray): The parameters for the model
+
+        Returns:
+            np.ndarray: The non-water absorption coefficient
+                This is always a multi-dimensional array
+        """
+        # NAP
+        aNAP = functions.exponential(self.wave, params[...,:2], pivot=self.pivot)
+        # CDOM
+        aCDOM = functions.exponential(self.wave, params[...,2:4], pivot=self.pivot)
+
+        # 
+        atot = aNAP + aCDOM
+
+        # Aph
+        aphs = params[...,4:12]
+        sigs = params[...,12:20]
+        cens = params[...,20:]
+
+        for aph, sig, cen in zip(aphs, sigs, cens):
+            # Repackage
+            params = np.array([aph, sig, cen])
+            atot += functions.gaussian(self.wave, params, pivot=self.pivot)
+
+        return atot
+
+    def init_guess(self, a_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            a_nw (np.ndarray): The non-water absorption coefficient
+
+        Returns:
+            np.ndarray: The initial guess for the parameters
+        """
+        ipivot = np.argmin(np.abs(self.wave-self.pivot))
+        p0_a = np.array([a_nw[ipivot]/2., self.Chla])
+        assert p0_a.size == self.nparam
+        # Return
+        return p0_a
