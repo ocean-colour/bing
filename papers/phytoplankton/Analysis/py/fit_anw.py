@@ -177,8 +177,11 @@ def run_emcee(model, anw, var, ndim, nwalkers:int=32,
 
 def fit(model_name:str, idx:int, outfile:str,
         nsteps:int=10000, nburn:int=1000, 
-        scl_noise:float=0.02, use_chisq:bool=False,
+        scl_noise:float=0.02, 
+        abs_noise:float=None,
+        use_chisq:bool=False,
         add_noise:bool=False,
+        min_wave:float=None,
         max_wave:float=None,
         chk_guess:bool=False,
         show:bool=False,
@@ -186,8 +189,8 @@ def fit(model_name:str, idx:int, outfile:str,
         SeaWiFS:bool=False,
         PACE:bool=False):
 
-    odict = anly_utils.prep_l23_data(idx, scl_noise=scl_noise,
-                                     max_wave=max_wave)
+    odict = anly_utils.prep_l23_data(
+        idx, scl_noise=scl_noise, max_wave=max_wave, min_wave=min_wave)
 
     # Unpack
     wave = odict['wave']
@@ -233,7 +236,10 @@ def fit(model_name:str, idx:int, outfile:str,
     # Bricaud?
     # Interpolate
     model_anw = anly_utils.convert_to_satwave(l23_wave, odict['anw'], model_wave)
-    model_var = anly_utils.scale_noise(scl_noise, model_anw, model_wave)
+    if abs_noise is None:
+        model_var = anly_utils.scale_noise(scl_noise, model_anw, model_wave)
+    else:
+        model_var = np.ones_like(model_wave) * abs_noise**2
 
     if add_noise:
         model_Rrs = anly_utils.add_noise(
@@ -244,19 +250,25 @@ def fit(model_name:str, idx:int, outfile:str,
     p0 = p0_a
 
 
-    def show_fit(anw, errs:list=None):
+    def show_fit(anw, errs:list=None, model_var=None):
         fig = plt.figure()
         ax = plt.gca()
         ax.plot(model_wave, anw, 'r-', label='Guess')
         if errs is not None:
             ax.fill_between(model_wave, errs[0], errs[1], color='r', alpha=0.5)
+        # True
         ax.plot(model_wave, model_anw, 'k-', label='True')
+        if model_var is not None:
+            ax.errorbar(model_wave, model_anw, yerr=np.sqrt(model_var), fmt='o', color='k')
         ax.legend()
+        # Finish
         plt.show()
         
     # Check
     if chk_guess:
-        show_fit(p0)
+        anw = model.eval_anw(p0).flatten()
+        show_fit(anw, model_var=model_var)
+        embed(header='show_fit 290')
 
     # Set the items
     items = [(model_anw, model_var, p0, idx)]
@@ -272,24 +284,31 @@ def fit(model_name:str, idx:int, outfile:str,
         # Save
         anly_utils.save_fits(chains, idx, outfile, 
                              extras=dict(wave=model_wave, 
-                                         obs_Rrs=model_anw, 
+                                         obs_anw=model_anw, 
                                          var=model_var, 
                                          Chl=odict['Chl'], 
                                          Y=odict['Y']))
-        embed(header='show_fit 290')
 
         # Show
-        if show and False:
+        if show:
             burn=7000 
             thin=1
             chains = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+            
             anw = model.eval_anw(chains)
             # Calculate the mean and standard deviation
             a_mean = np.median(anw, axis=0)
             a_5, a_95 = np.percentile(anw, [5, 95], axis=0)
+            errs = [a_5, a_95]
             #
-            show_fit(a_mean, errs=[a_5, a_95])
-            embed(header='show_fit 280')
+
+            fig = plt.figure()
+            ax = plt.gca()
+            ax.plot(model_wave, a_mean, 'r-', label='Fit')
+            ax.fill_between(model_wave, errs[0], errs[1], color='r', alpha=0.5)
+            ax.plot(model_wave, model_anw, 'k-', label='True')
+            ax.legend()
+            plt.show()
 
     else: # chi^2
 
@@ -320,24 +339,30 @@ def fit(model_name:str, idx:int, outfile:str,
 
 
 def quick_plt():
+    # Unpack
     d = np.load('fitanw_170_MCMC_Chase2017.npz')
     chains = d['chains']
+    model_wave = d['wave']
+    model_anw = d['obs_anw']
+
+    embed(header='quick_plt 334')
     burn=7000 
     thin=1
     chains = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+    
     model = bing_anw.init_model('Chase2017', d['wave'])
     anw = model.eval_anw(chains)
     # Calculate the mean and standard deviation
     a_mean = np.median(anw, axis=0)
     a_5, a_95 = np.percentile(anw, [5, 95], axis=0)
+    errs = [a_5, a_95]
     #
 
     embed(header='quick_plt 334')
     fig = plt.figure()
     ax = plt.gca()
-    ax.plot(model_wave, anw, 'r-', label='Guess')
-    if errs is not None:
-        ax.fill_between(model_wave, errs[0], errs[1], color='r', alpha=0.5)
+    ax.plot(model_wave, a_mean, 'r-', label='Guess')
+    ax.fill_between(model_wave, errs[0], errs[1], color='r', alpha=0.5)
     ax.plot(model_wave, model_anw, 'k-', label='True')
     ax.legend()
     plt.show()
@@ -347,12 +372,15 @@ def main(flg):
 
     # Testing
     if flg == 1:
-        #odict = fit('Chase2017', 170, 'fitanw_170_Chase2017.npz',
-        #            show=True, use_chisq=True)
-        odict = fit('Chase2017', 170, 'fitanw_170_MCMC_Chase2017.npz', 
-                    show=True, use_chisq=False, nsteps=20000)
+        odict = fit('Chase2017', 170, 'fitanw_170_Chase2017.npz',
+                    show=True, use_chisq=True, chk_guess=True)
 
     if flg == 2:
+        odict = fit('Chase2017', 170, 'fitanw_170_MCMC_Chase2017.npz', 
+                    show=True, use_chisq=False, nsteps=20000, max_wave=600.,
+                    abs_noise=0.005, chk_guess=True, min_wave=400.)
+
+    if flg == 3:
         quick_plt()
 
 # Command line execution

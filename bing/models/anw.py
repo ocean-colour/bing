@@ -553,7 +553,8 @@ class aNWChase(aNWModel):
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         aNWModel.__init__(self, wave, prior_dicts)
 
-        # Gaussian centroids
+        # Priors
+        self.ngauss = 8
         self.init_priors()
 
     def init_priors(self):
@@ -567,7 +568,7 @@ class aNWChase(aNWModel):
         ]
 
         # APH
-        prior_dicts += [dict(flavor='uniform', pmin=-6, pmax=np.log10(0.5))]*8
+        prior_dicts += [dict(flavor='uniform', pmin=-6, pmax=np.log10(0.5))]*self.ngauss
 
         # SIGMA
         prior_dicts += [
@@ -619,11 +620,10 @@ class aNWChase(aNWModel):
         sigs = params[...,12:20]
         cens = params[...,20:]
 
-        ngauss = cens.shape[1]
-        for igaus in range(ngauss):
+        for igaus in range(self.ngauss):
             # Repackage
             params = np.array([aphs[...,igaus], sigs[...,igaus], cens[...,igaus]]).T
-            embed(header='625 of eval')
+            #embed(header='gaus 626 anw')
             atot += functions.gaussian(self.wave, params)
 
         return atot

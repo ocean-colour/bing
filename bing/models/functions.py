@@ -48,9 +48,12 @@ def gaussian(wave:np.ndarray, params:np.ndarray):
     Returns:
     np.ndarray: Result of the Gaussian function calculation.
     """
-    embed(header='gaussia 51')
+    #embed(header='gaussia 51')
     Amp = np.outer(10**params[...,0], np.ones_like(wave))
-    return Amp * np.exp(-0.5 * np.outer(1./(10**params[...,1]**2), (wave-10**params[...,2])**2))
+    numer = np.outer(np.ones(params[...,1].size), wave) - np.outer(10**params[...,2], np.ones_like(wave))
+    denom = np.outer(10**params[...,1]**2, np.ones_like(wave))
+    # Finish
+    return Amp * np.exp(-0.5 * numer**2 / denom)
 
 def powerlaw(wave:np.ndarray, params:np.ndarray, pivot:float=600.):
     """
