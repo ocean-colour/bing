@@ -11,7 +11,7 @@ import emcee
 
 from IPython import embed
 
-def log_prob(params, models:list, Rrs:np.ndarray, varRrs):
+def log_prob(params, models:list, Rrs:np.ndarray, varRrs:np.ndarray):
     """
     Calculate the logarithm of the probability of the given parameters.
 
@@ -19,6 +19,7 @@ def log_prob(params, models:list, Rrs:np.ndarray, varRrs):
         params (array-like): The parameters to be used in the model prediction.
         model (str): The model name
         Rs (array-like): The observed values.
+        var (array-like): The variance of the observed values.
 
     Returns:
         float: The logarithm of the probability.
@@ -103,8 +104,7 @@ def fit_one(items:list, models:list=None, pdict:dict=None, chains_only:bool=Fals
         nburn=pdict['nburn'],
         skip_check=True,
         p0=params,
-        save_file=pdict['save_file'],
-        pdict=pdict)
+        save_file=pdict['save_file'])
 
     # Return
     if chains_only:
@@ -115,8 +115,7 @@ def fit_one(items:list, models:list=None, pdict:dict=None, chains_only:bool=Fals
 def run_emcee(models:list, Rrs, varRrs, nwalkers:int=32, 
               nburn:int=1000,
               nsteps:int=20000, save_file:str=None, 
-              p0=None, skip_check:bool=False, ndim:int=None,
-              pdict:dict=None):
+              p0=None, skip_check:bool=False, ndim:int=None):
     """
     Run the emcee sampler for Bayesian inference.
 

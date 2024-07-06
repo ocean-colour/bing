@@ -8,14 +8,9 @@ from matplotlib import pyplot as plt
 
 from functools import partial
 from scipy.optimize import curve_fit
+import emcee
 
 from bing.models import anw as bing_anw
-from bing.models import bbnw as bing_bbnw
-from bing.models import utils as model_utils
-from bing import inference as bing_inf
-from bing import rt as bing_rt
-from bing import chisq_fit
-from bing import plotting as bing_plot
 from bing import priors as bing_priors
 
 from ocpy.satellites import modis as sat_modis
@@ -25,6 +20,160 @@ from ocpy.satellites import seawifs as sat_seawifs
 from IPython import embed
 
 import anly_utils 
+
+def fit_one(items:list, model=None, pdict:dict=None, chains_only:bool=False):
+    """
+    Fits a model to a set of input data using the MCMC algorithm.
+
+    Args:
+        models (list): The list of model objects, a_nw, bb_nw
+        items (list): A list containing the 
+            Rrs (numpy.ndarray): The reflectance data.
+            varRrs (numpy.ndarray): The variance of the reflectance data.
+            params (numpy.ndarray): The initial guess for the parameters.
+            idx (int): The index of the item.
+        pdict (dict, optional): A dictionary containing the model and fitting parameters. Defaults to None.
+        chains_only (bool, optional): If True, only the chains are returned. Defaults to False.
+
+    Returns:
+        tuple: A tuple containing the MCMC sampler object and the index.
+    """
+    # Unpack
+    anw, var, params, idx = items
+
+    # Run
+    print(f"idx={idx}")
+    sampler = run_emcee(
+        model, anw, var, pdict['ndim'],
+        nwalkers=pdict['nwalkers'],
+        nsteps=pdict['nsteps'],
+        nburn=pdict['nburn'],
+        skip_check=True,
+        p0=params,
+        save_file=pdict['save_file'])
+
+    # Return
+    if chains_only:
+        return sampler.get_chain().astype(np.float32), idx
+    else:
+        return sampler, idx
+
+def init_mcmc(model, nsteps:int=10000, nburn:int=1000):
+    """
+    Initializes the MCMC parameters.
+
+    Args:
+        emulator: The emulator model.
+        ndim (int): The number of dimensions.
+        nsteps (int, optional): The number of steps to run the sampler. Defaults to 10000.
+        nburn (int, optional): The number of steps to run the burn-in. Defaults to 1000.
+
+    Returns:
+        dict: A dictionary containing the MCMC parameters.
+    """
+    pdict = {}
+    ndim = model.nparam 
+    pdict['nwalkers'] = max(16,ndim*2)
+    pdict['ndim'] = ndim
+    pdict['nsteps'] = nsteps
+    pdict['nburn'] = nburn
+    pdict['save_file'] = None
+    #
+    return pdict
+
+
+def log_prob(params, model, anw:np.ndarray, var:np.ndarray):
+    """
+    Calculate the logarithm of the probability of the given parameters.
+
+    Args:
+        params (array-like): The parameters to be used in the model prediction.
+        model (str): The model name
+        Rs (array-like): The observed values.
+
+    Returns:
+        float: The logarithm of the probability.
+    """
+    # Unpack for convenience
+    aparams = params[:model.nparam]
+
+    # Priors
+    a_prior = model.priors.calc(aparams)
+
+    if np.any(np.isneginf(a_prior)):
+        return -np.inf
+
+    # Proceed
+    fit_anw = model.eval_anw(aparams).flatten()
+
+    # Evaluate
+    eeval = (fit_anw-anw)**2 / var
+    # Finish
+    prob = -0.5 * np.sum(eeval)
+    if np.isnan(prob):
+        return -np.inf
+    else:
+        return prob + a_prior 
+
+def run_emcee(model, anw, var, ndim, nwalkers:int=32, 
+              nburn:int=1000,
+              nsteps:int=20000, save_file:str=None, 
+              p0=None, skip_check:bool=False):
+    """
+    Run the emcee sampler for Bayesian inference.
+
+    Args:
+        models (list): The list of model objects, a_nw, bb_nw
+        Rrs (numpy.ndarray): The input data.
+        varRrs (numpy.ndarray): The error data.
+        nwalkers (int, optional): The number of walkers in the ensemble. Defaults to 32.
+        nsteps (int, optional): The number of steps to run the sampler. Defaults to 20000.
+        save_file (str, optional): The file path to save the backend. Defaults to None.
+        p0 (numpy.ndarray, optional): The initial positions of the walkers. Defaults to None.
+        skip_check (bool, optional): Whether to skip the initial state check. Defaults to False.
+
+    Returns:
+        emcee.EnsembleSampler: The emcee sampler object.
+    """
+
+    # Initialize
+    if p0 is None:
+        raise ValueError("Must provide p0")
+    p0 = np.tile(p0, (nwalkers, 1))
+
+    # Set up the backend
+    # Don't forget to clear it in case the file already exists
+    if save_file is not None:
+        backend = emcee.backends.HDFBackend(save_file)
+        backend.reset(nwalkers, ndim)
+    else:
+        backend = None
+
+    # Init
+    sampler = emcee.EnsembleSampler(
+        nwalkers, ndim, log_prob,
+        args=[model, anw, var],
+        backend=backend)#, pool=pool)
+
+    # Burn in
+    print("Running burn-in")
+    #embed(header='159 of fit')
+    state = sampler.run_mcmc(p0, nburn,
+        skip_initial_state_check=skip_check,
+        progress=True)
+    sampler.reset()
+
+    # Run
+    print("Running full model")
+    sampler.run_mcmc(state, nsteps,
+        skip_initial_state_check=skip_check,
+        progress=True)
+
+    if save_file is not None:
+        print(f"All done: Wrote {save_file}")
+
+    # Return
+    return sampler
 
 def fit(model_name:str, idx:int, outfile:str,
         nsteps:int=10000, nburn:int=1000, 
@@ -61,38 +210,34 @@ def fit(model_name:str, idx:int, outfile:str,
 
     # Set priors
     if not use_chisq:
-        prior_dict = dict(flavor='uniform', pmin=-6, pmax=5)
-        prior_dicts = [prior_dict]*model.nparam
-        # Special cases
-        if model_name == 'ExpB':
-            prior_dicts[1] = dict(flavor='uniform', 
-                                    pmin=np.log10(0.007), 
-                                    pmax=np.log10(0.02))
-        model.priors = bing_priors.Priors(prior_dicts)
+        if model_name == 'Chase2017':
+            pass
+        else:
+            prior_dict = dict(flavor='uniform', pmin=-6, pmax=5)
+            prior_dicts = [prior_dict]*model.nparam
+            # Special cases
+            if model_name == 'ExpB':
+                prior_dicts[1] = dict(flavor='uniform', 
+                                        pmin=np.log10(0.007), 
+                                        pmax=np.log10(0.02))
+            model.priors = bing_priors.Priors(prior_dicts)
                     
     # Initialize the MCMC
     if not use_chisq:
-        raise ValueError("Not ready for this")
-        pdict = bing_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
+        pdict = init_mcmc(model, nsteps=nsteps, nburn=nburn)
     
-    # Gordon Rrs
-    gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'])
-
     # Internals
     if model.uses_Chl:
         model.set_aph(odict['Chl'])
 
     # Bricaud?
     # Interpolate
-    model_Rrs = anly_utils.convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
     model_anw = anly_utils.convert_to_satwave(l23_wave, odict['anw'], model_wave)
-    model_bbnw = anly_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
-
-    model_varRrs = anly_utils.scale_noise(scl_noise, model_Rrs, model_wave)
+    model_var = anly_utils.scale_noise(scl_noise, model_anw, model_wave)
 
     if add_noise:
         model_Rrs = anly_utils.add_noise(
-                model_Rrs, abs_sig=np.sqrt(model_varRrs))
+                model_Rrs, abs_sig=np.sqrt(model_var))
 
     # Initial guess
     p0_a = model.init_guess(model_anw)
@@ -112,19 +257,16 @@ def fit(model_name:str, idx:int, outfile:str,
         show_fit(p0)
 
     # Set the items
-    items = [(model_anw, model_varRrs, p0, idx)]
+    items = [(model_anw, model_var, p0, idx)]
 
     # Bayes
     if not use_chisq:
-        raise ValueError("Not ready for this")
-        prior_dict = dict(flavor='uniform', pmin=-6, pmax=5)
-
-        for jj in range(2):
-            models[jj].priors = bing_priors.Priors(
-                [prior_dict]*models[jj].nparam)
-
         # Fit
-        chains, idx = bing_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
+        chains, idx = fit_one(items[0], model=model, 
+                              pdict=pdict, chains_only=True)
+
+        # Show
+        embed(header='show_fit 280')
 
         # Save
         anly_utils.save_fits(chains, idx, outfile, 
@@ -166,8 +308,9 @@ def main(flg):
 
     # Testing
     if flg == 1:
-        odict = fit('Chase2017', 170, 'fitanw_170_Chase2017.npz',
-                    show=True, use_chisq=True)
+        #odict = fit('Chase2017', 170, 'fitanw_170_Chase2017.npz',
+        #            show=True, use_chisq=True)
+        odict = fit('Chase2017', 170, None, show=True, use_chisq=False)
 
 
 # Command line execution
