@@ -6,6 +6,9 @@ import numpy as np
 
 from matplotlib import pyplot as plt
 
+from functools import partial
+from scipy.optimize import curve_fit
+
 from bing.models import anw as bing_anw
 from bing.models import bbnw as bing_bbnw
 from bing.models import utils as model_utils
@@ -23,11 +26,12 @@ from IPython import embed
 
 import anly_utils 
 
-def fit(model_name:str, idx:int, n_cores=20, 
+def fit(model_name:str, idx:int, outfile:str,
         nsteps:int=10000, nburn:int=1000, 
         scl_noise:float=0.02, use_chisq:bool=False,
         add_noise:bool=False,
         max_wave:float=None,
+        chk_guess:bool=False,
         show:bool=False,
         MODIS:bool=False,
         SeaWiFS:bool=False,
@@ -39,6 +43,7 @@ def fit(model_name:str, idx:int, n_cores=20,
     # Unpack
     wave = odict['wave']
     l23_wave = odict['true_wave']
+    anw_true = odict['anw']
 
     # Wavelenegths
     if MODIS:
@@ -66,16 +71,16 @@ def fit(model_name:str, idx:int, n_cores=20,
         model.priors = bing_priors.Priors(prior_dicts)
                     
     # Initialize the MCMC
-    pdict = bing_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
+    if not use_chisq:
+        raise ValueError("Not ready for this")
+        pdict = bing_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
     
     # Gordon Rrs
     gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'])
 
     # Internals
-    if models[0].uses_Chl:
-        models[0].set_aph(odict['Chl'])
-    if models[1].uses_basis_params:  # Lee
-        models[1].set_basis_func(odict['Y'])
+    if model.uses_Chl:
+        model.set_aph(odict['Chl'])
 
     # Bricaud?
     # Interpolate
@@ -90,29 +95,28 @@ def fit(model_name:str, idx:int, n_cores=20,
                 model_Rrs, abs_sig=np.sqrt(model_varRrs))
 
     # Initial guess
-    p0_a = models[0].init_guess(model_anw)
-    p0_b = models[1].init_guess(model_bbnw)
-    p0 = np.concatenate((np.log10(np.atleast_1d(p0_a)), 
-                         np.log10(np.atleast_1d(p0_b))))
+    p0_a = model.init_guess(model_anw)
+    p0 = p0_a
 
-    # Chk initial guess
-    ca = models[0].eval_a(p0[0:models[0].nparam])
-    cbb = models[1].eval_bb(p0[models[0].nparam:])
-    pRrs = bing_rt.calc_Rrs(ca, cbb)
-    print(f'Initial Rrs guess: {np.mean((model_Rrs-pRrs)/model_Rrs)}')
-    #embed(header='95 of fit one')
-    
+
+    def show_fit(p0):
+        fig = plt.figure()
+        ax = plt.gca()
+        ax.plot(model_wave, model.eval_anw(p0).flatten(), 'b-', label='Guess')
+        ax.plot(model_wave, model_anw, 'k-', label='True')
+        ax.legend()
+        plt.show()
+        
+    # Check
+    if chk_guess:
+        show_fit(p0)
 
     # Set the items
-    p0 -= 1
-    items = [(model_Rrs, model_varRrs, p0, idx)]
-
-    outfile = anly_utils.chain_filename(
-        model_names, scl_noise, add_noise, idx=idx,
-        MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
+    items = [(model_anw, model_varRrs, p0, idx)]
 
     # Bayes
     if not use_chisq:
+        raise ValueError("Not ready for this")
         prior_dict = dict(flavor='uniform', pmin=-6, pmax=5)
 
         for jj in range(2):
@@ -130,27 +134,30 @@ def fit(model_name:str, idx:int, n_cores=20,
                                          Chl=odict['Chl'], 
                                          Y=odict['Y']))
     else: # chi^2
+
+        def fit_func(wave, *params, model=None):
+            anw = model.eval_anw(np.array(params))
+            return anw.flatten()
+        partial_func = partial(fit_func, model=model)
+
         # Fit
-        embed(header='ADD BOUNDS FROM PRIORS: fit_one 153')
-        ans, cov, idx = chisq_fit.fit(items[0], models)
+        bounds = model.priors.gen_bounds()
+        ans, cov =  curve_fit(partial_func, None, 
+                          model_anw, p0=p0, #sigma=0.05,
+                          full_output=False, bounds=bounds,
+                          maxfev=10000)
         # Show?
         if show:
-            bing_plot.show_fit(models, ans, odict['Chl'], odict['Y'],
-                                 Rrs_true=dict(wave=model_wave, spec=model_Rrs),
-                                 anw_true=dict(wave=l23_wave, spec=odict['anw']),
-                                 bbnw_true=dict(wave=l23_wave, spec=odict['bbnw'])
-                                 )
-            plt.show()
-            
+            show_fit(ans)
+
         # Save
-        outfile = outfile.replace('BING', 'BING_LM')
-        np.savez(outfile, ans=ans, cov=cov,
-              wave=wave, obs_Rrs=gordon_Rrs, varRrs=model_varRrs,
-              Chl=odict['Chl'], Y=odict['Y'])
-        print(f"Saved: {outfile}")
-        embed(header='fit_one 155')
+        if outfile is not None:
+            np.savez(outfile, ans=ans, cov=cov,
+                wave=wave, obs_anw=model_anw,
+                Chl=odict['Chl'], Y=odict['Y'])
+            print(f"Saved: {outfile}")
         #
-        return ans, cov
+        return model, model_anw, p0, ans, cov
 
 
 
@@ -159,100 +166,8 @@ def main(flg):
 
     # Testing
     if flg == 1:
-        odict = anly_utils.prep_l23_data(170)
-
-    # First one
-    if flg == 2:
-        fit_one(['Exp', 'Pow'], idx=170, nsteps=10000, nburn=1000) 
-
-    # Fit 170
-    if flg == 3:
-        idx = 170
-        #fit_one(['Cst', 'Cst'], idx=idx, nsteps=80000, nburn=8000) 
-        #fit_one(['Exp', 'Cst'], idx=idx, nsteps=80000, nburn=8000) 
-        #fit_one(['Exp', 'Pow'], idx=idx, nsteps=10000, nburn=1000) 
-        fit_one(['ExpBricaud', 'Pow'], idx=idx, nsteps=10000, nburn=1000) 
-
-    # chisq fits
-    if flg == 4:
-        #fit_one(['Cst', 'Cst'], idx=170, use_chisq=True)
-        #fit_one(['Exp', 'Cst'], idx=170, use_chisq=True)
-        #fit_one(['Exp', 'Pow'], idx=170, use_chisq=True)
-        #fit_one(['ExpBricaud', 'Pow'], idx=170, use_chisq=True)
-        fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True)
-
-    # GIOP
-    if flg == 5:
-        fit_one(['GIOP', 'Lee'], idx=0, use_chisq=True, show=True)
-
-    # Bayes on GSM with SeaWiFS noise
-    if flg == 6:
-        fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True,
-                use_chisq=False, show=True, nburn=5000,
-                nsteps=50000, scl_noise='SeaWiFS')
-        fit_one(['GSM', 'GSM'], idx=1032, SeaWiFS=True,
-                use_chisq=False, show=True, nburn=5000,
-                nsteps=50000, scl_noise='SeaWiFS')
-
-    # Bayes on GIOP with MODIS noise
-    if flg == 7:
-        fit_one(['GIOP', 'Lee'], idx=170, SeaWiFS=True,
-                use_chisq=False, show=True, nburn=5000,
-                nsteps=50000)
-        fit_one(['GIOP', 'Lee'], idx=1032, SeaWiFS=True,
-                use_chisq=False, show=True, nburn=5000,
-                nsteps=50000)
-
-    # Degenerate fits
-    if flg == 8:
-        #fit_one(['Every', 'Every'], idx=170, use_chisq=False, show=True,
-        #        nburn=8000, nsteps=100000)
-        fit_one(['Every', 'GSM'], idx=170, use_chisq=False, show=True,
-                nburn=8000, nsteps=100000)
-
-    # Bayes on GSM
-    if flg == 9:
-        '''
-        fit_one(['GSM', 'GSM'], idx=170, 
-                use_chisq=False, show=True, max_wave=700.,
-                nburn=5000, nsteps=50000)
-        fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True,
-                use_chisq=False, show=True, scl_noise='SeaWiFS',
-                nburn=5000, nsteps=50000)
-        '''
-        # Add noise too
-        fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True, add_noise=True,
-                use_chisq=False, show=True, scl_noise='SeaWiFS',
-                nburn=5000, nsteps=50000)
-
-    # Bayes on GIOP
-    if flg == 10:
-        fit_one(['GIOP', 'Lee'], idx=170, MODIS=True,
-                use_chisq=False, show=True, scl_noise='MODIS_Aqua',
-                nburn=5000, nsteps=50000)
-        fit_one(['GIOP', 'Lee'], idx=1032, MODIS=True,
-                use_chisq=False, show=True, scl_noise='MODIS_Aqua',
-                nburn=5000, nsteps=50000)
-
-
-    # Debug
-    if flg == 99:
-        fit_one(['GSM', 'GSM'], idx=170,  SeaWiFS=True,
-                scl_noise='SeaWiFS', 
-                use_chisq=True, show=True, max_wave=700.)
-        #fit_one(['ExpNMF', 'Pow'], idx=1067, 
-        #        use_chisq=True, show=True, max_wave=700.)
-
-    # Develop SeaWiFS
-    if flg == 100:
-        fit_one(['Exp', 'Cst'], idx=170, 
-                use_chisq=True, show=True, max_wave=700.,
-                SeaWiFS=True)
-
-    # Develop BoundedS
-    if flg == 101:
-        fit_one(['ExpB', 'Pow'], idx=170, 
-                use_chisq=False, show=True, max_wave=700.)
+        odict = fit('Chase2017', 170, 'fitanw_170_Chase2017.npz',
+                    show=True, use_chisq=True)
 
 
 # Command line execution

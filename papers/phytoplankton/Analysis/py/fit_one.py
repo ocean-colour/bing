@@ -111,7 +111,7 @@ def fit_one(model_names:list, idx:int, n_cores=20,
     
 
     # Set the items
-    p0 -= 1
+    #p0 -= 1
     items = [(model_Rrs, model_varRrs, p0, idx)]
 
     outfile = anly_utils.chain_filename(

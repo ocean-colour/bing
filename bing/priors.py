@@ -32,6 +32,7 @@ class Prior:
     def __repr__(self):
         return f"<Prior: {self.flavor}>"
 
+
 class UniformPrior(Prior):
     """
     Class for a uniform prior
@@ -81,8 +82,10 @@ class UniformPrior(Prior):
         else:
             return 0
 
+
     def __repr__(self):
         return f"<Prior: {self.flavor}, pmin={self.pmin:0.3f}, pmax={self.pmax:0.3f} >"
+
 
 class Priors:
 
@@ -123,6 +126,25 @@ class Priors:
             prior_sum += prior.calc(params[kk])
         #
         return prior_sum
+
+    def gen_bounds(self):
+        """
+        Generate the bounds for the prior
+
+        Returns:
+            tuple: A tuple containing the minimum and maximum values for the prior
+        """
+        pmins = []
+        pmaxs = []
+        for kk,prior in enumerate(self.priors):
+            if prior.flavor == 'uniform':
+                pmins.append(prior.pmin)
+                pmaxs.append(prior.pmax)
+            else:
+                raise ValueError(f"Unknown prior flavor: {prior.flavor}")
+        # Return
+        return np.array(pmins), np.array(pmaxs)
+
 
     def __repr__(self):
         rstr =  "<Priors: \n"

@@ -30,7 +30,7 @@ def init_model(model_name:str, wave:np.ndarray,
     model_dict = {'Exp': aNWExp, 'Cst': aNWCst, 'ExpBricaud': aNWExpBricaud,
                   'GIOP': aNWGIOP, 'ExpNMF': aNWExpNMF, 'ExpFix': aNWExpFix,
                   'GSM': aNWGSM, 'Every': aNWEvery,
-                  'ExpB': aNWExp}
+                  'ExpB': aNWExp, 'Chase2017': aNWChase}
     if model_name not in model_dict.keys():
         raise ValueError(f"Unknown model: {model_name}")
     else:
@@ -554,6 +554,7 @@ class aNWChase(aNWModel):
         aNWModel.__init__(self, wave, prior_dicts)
 
         # Gaussian centroids
+        self.init_priors()
 
     def init_priors(self):
 
@@ -562,7 +563,7 @@ class aNWChase(aNWModel):
             dict(flavor='uniform', pmin=-6, pmax=np.log10(0.05)), # CNAP
             dict(flavor='uniform', pmin=np.log10(0.005), pmax=np.log10(0.016)), # SNAP
             dict(flavor='uniform', pmin=np.log10(0.01), pmax=np.log10(0.8)), # CCDOM
-            dict(flavor='uniform', pmin=np.log10(0.005), pmax=np.log10(0.002)), # SCDOM
+            dict(flavor='uniform', pmin=np.log10(0.005), pmax=np.log10(0.02)), # SCDOM
         ]
 
         # APH
@@ -591,6 +592,8 @@ class aNWChase(aNWModel):
             dict(flavor='uniform', pmin=np.log10(531), pmax=np.log10(533)), # 
             dict(flavor='uniform', pmin=np.log10(582), pmax=np.log10(584)), # 
         ]
+        # Set
+        self.priors = bing_priors.Priors(prior_dicts)
 
     def eval_anw(self, params:np.ndarray):
         """
@@ -619,7 +622,7 @@ class aNWChase(aNWModel):
         for aph, sig, cen in zip(aphs, sigs, cens):
             # Repackage
             params = np.array([aph, sig, cen])
-            atot += functions.gaussian(self.wave, params, pivot=self.pivot)
+            atot += functions.gaussian(self.wave, params)
 
         return atot
 
@@ -633,8 +636,20 @@ class aNWChase(aNWModel):
         Returns:
             np.ndarray: The initial guess for the parameters
         """
-        ipivot = np.argmin(np.abs(self.wave-self.pivot))
-        p0_a = np.array([a_nw[ipivot]/2., self.Chla])
+        bounds = self.priors.gen_bounds()
+        p0_a = (bounds[0] + bounds[1])/2
+
+        # Amplitudes
+        i400 = np.argmin(np.abs(self.wave-400))
+        p0_a[0] = np.log10(a_nw[i400]/3.)
+        p0_a[2] = np.log10(a_nw[i400]/3.)
+
+        p0_a[4:12] = np.log10(a_nw[i400]/3.)
+
+        # Insist everything is in bounds
+        p0_a = np.clip(p0_a, bounds[0], bounds[1])
+
+        # Check
         assert p0_a.size == self.nparam
         # Return
         return p0_a
