@@ -619,9 +619,11 @@ class aNWChase(aNWModel):
         sigs = params[...,12:20]
         cens = params[...,20:]
 
-        for aph, sig, cen in zip(aphs, sigs, cens):
+        ngauss = cens.shape[1]
+        for igaus in range(ngauss):
             # Repackage
-            params = np.array([aph, sig, cen])
+            params = np.array([aphs[...,igaus], sigs[...,igaus], cens[...,igaus]]).T
+            embed(header='625 of eval')
             atot += functions.gaussian(self.wave, params)
 
         return atot

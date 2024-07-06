@@ -244,10 +244,12 @@ def fit(model_name:str, idx:int, outfile:str,
     p0 = p0_a
 
 
-    def show_fit(p0):
+    def show_fit(anw, errs:list=None):
         fig = plt.figure()
         ax = plt.gca()
-        ax.plot(model_wave, model.eval_anw(p0).flatten(), 'b-', label='Guess')
+        ax.plot(model_wave, anw, 'r-', label='Guess')
+        if errs is not None:
+            ax.fill_between(model_wave, errs[0], errs[1], color='r', alpha=0.5)
         ax.plot(model_wave, model_anw, 'k-', label='True')
         ax.legend()
         plt.show()
@@ -265,16 +267,30 @@ def fit(model_name:str, idx:int, outfile:str,
         chains, idx = fit_one(items[0], model=model, 
                               pdict=pdict, chains_only=True)
 
-        # Show
-        embed(header='show_fit 280')
+
 
         # Save
         anly_utils.save_fits(chains, idx, outfile, 
                              extras=dict(wave=model_wave, 
-                                         obs_Rrs=model_Rrs, 
-                                         varRrs=model_varRrs, 
+                                         obs_Rrs=model_anw, 
+                                         var=model_var, 
                                          Chl=odict['Chl'], 
                                          Y=odict['Y']))
+        embed(header='show_fit 290')
+
+        # Show
+        if show and False:
+            burn=7000 
+            thin=1
+            chains = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+            anw = model.eval_anw(chains)
+            # Calculate the mean and standard deviation
+            a_mean = np.median(anw, axis=0)
+            a_5, a_95 = np.percentile(anw, [5, 95], axis=0)
+            #
+            show_fit(a_mean, errs=[a_5, a_95])
+            embed(header='show_fit 280')
+
     else: # chi^2
 
         def fit_func(wave, *params, model=None):
@@ -290,7 +306,8 @@ def fit(model_name:str, idx:int, outfile:str,
                           maxfev=10000)
         # Show?
         if show:
-            show_fit(ans)
+            anw = model.eval_anw(p0).flatten()
+            show_fit(anw)
 
         # Save
         if outfile is not None:
@@ -302,6 +319,28 @@ def fit(model_name:str, idx:int, outfile:str,
         return model, model_anw, p0, ans, cov
 
 
+def quick_plt():
+    d = np.load('fitanw_170_MCMC_Chase2017.npz')
+    chains = d['chains']
+    burn=7000 
+    thin=1
+    chains = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+    model = bing_anw.init_model('Chase2017', d['wave'])
+    anw = model.eval_anw(chains)
+    # Calculate the mean and standard deviation
+    a_mean = np.median(anw, axis=0)
+    a_5, a_95 = np.percentile(anw, [5, 95], axis=0)
+    #
+
+    embed(header='quick_plt 334')
+    fig = plt.figure()
+    ax = plt.gca()
+    ax.plot(model_wave, anw, 'r-', label='Guess')
+    if errs is not None:
+        ax.fill_between(model_wave, errs[0], errs[1], color='r', alpha=0.5)
+    ax.plot(model_wave, model_anw, 'k-', label='True')
+    ax.legend()
+    plt.show()
 
 def main(flg):
     flg = int(flg)
@@ -310,8 +349,11 @@ def main(flg):
     if flg == 1:
         #odict = fit('Chase2017', 170, 'fitanw_170_Chase2017.npz',
         #            show=True, use_chisq=True)
-        odict = fit('Chase2017', 170, None, show=True, use_chisq=False)
+        odict = fit('Chase2017', 170, 'fitanw_170_MCMC_Chase2017.npz', 
+                    show=True, use_chisq=False, nsteps=20000)
 
+    if flg == 2:
+        quick_plt()
 
 # Command line execution
 if __name__ == '__main__':

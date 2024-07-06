@@ -48,6 +48,7 @@ def gaussian(wave:np.ndarray, params:np.ndarray):
     Returns:
     np.ndarray: Result of the Gaussian function calculation.
     """
+    embed(header='gaussia 51')
     Amp = np.outer(10**params[...,0], np.ones_like(wave))
     return Amp * np.exp(-0.5 * np.outer(1./(10**params[...,1]**2), (wave-10**params[...,2])**2))
 
