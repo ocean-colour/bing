@@ -290,7 +290,8 @@ def fit(model_name:str, idx:int, outfile:str,
 
 
         # Save
-        anly_utils.save_fits(chains, idx, outfile, 
+        if outfile is not None:
+            anly_utils.save_fits(chains, idx, outfile, 
                              extras=dict(wave=model_wave, 
                                          obs_anw=model_anw, 
                                          var=model_var, 
@@ -317,6 +318,8 @@ def fit(model_name:str, idx:int, outfile:str,
             ax.plot(model_wave, model_anw, 'k-', label='True')
             ax.legend()
             plt.show()
+
+        return chains
 
     # #######################################################
     else: # chi^2
