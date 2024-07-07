@@ -30,7 +30,7 @@ def init_model(model_name:str, wave:np.ndarray,
     model_dict = {'Exp': aNWExp, 'Cst': aNWCst, 'ExpBricaud': aNWExpBricaud,
                   'GIOP': aNWGIOP, 'ExpNMF': aNWExpNMF, 'ExpFix': aNWExpFix,
                   'GSM': aNWGSM, 'Every': aNWEvery,
-                  'ExpB': aNWExp, 'Chase2017': aNWChase}
+                  'ExpB': aNWExp, 'Chase2017': aNWChase, 'Chase2017Mini': aNWChaseMini}
     if model_name not in model_dict.keys():
         raise ValueError(f"Unknown model: {model_name}")
     else:
@@ -550,6 +550,41 @@ class aNWChase(aNWModel):
               'cen464', 'cen490', 'cen532', 'cen583']
     pivot = 400.
 
+    # NAP and CDOM
+    prior_dicts = [
+        dict(flavor='uniform', pmin=-6, pmax=np.log10(0.05)), # CNAP
+        dict(flavor='uniform', pmin=np.log10(0.005), pmax=np.log10(0.016)), # SNAP
+        dict(flavor='uniform', pmin=np.log10(0.01), pmax=np.log10(0.8)), # CCDOM
+        dict(flavor='uniform', pmin=np.log10(0.005), pmax=np.log10(0.02)), # SCDOM
+    ]
+
+    # APH
+    prior_dicts += [dict(flavor='uniform', pmin=-6, pmax=np.log10(0.5))]*8
+
+    # SIGMA
+    prior_dicts += [
+        dict(flavor='uniform', pmin=np.log10(22.), pmax=np.log10(24.)), # 384
+        dict(flavor='uniform', pmin=np.log10(8.), pmax=np.log10(10.)), # 
+        dict(flavor='uniform', pmin=np.log10(13.), pmax=np.log10(15.)), # 
+        dict(flavor='uniform', pmin=np.log10(10.), pmax=np.log10(12.)), # 
+        dict(flavor='uniform', pmin=np.log10(18.), pmax=np.log10(20.)), # 
+        dict(flavor='uniform', pmin=np.log10(18.), pmax=np.log10(20.)), # 
+        dict(flavor='uniform', pmin=np.log10(19.), pmax=np.log10(21.)), # 
+        dict(flavor='uniform', pmin=np.log10(19.), pmax=np.log10(21.)), # 
+    ]
+
+    # CEN
+    prior_dicts += [
+        dict(flavor='uniform', pmin=np.log10(383), pmax=np.log10(385)), # 384
+        dict(flavor='uniform', pmin=np.log10(412), pmax=np.log10(414)), # 
+        dict(flavor='uniform', pmin=np.log10(434), pmax=np.log10(436)), # 
+        dict(flavor='uniform', pmin=np.log10(460), pmax=np.log10(462)), # 
+        dict(flavor='uniform', pmin=np.log10(463), pmax=np.log10(465)), # 
+        dict(flavor='uniform', pmin=np.log10(489), pmax=np.log10(491)), # 
+        dict(flavor='uniform', pmin=np.log10(531), pmax=np.log10(533)), # 
+        dict(flavor='uniform', pmin=np.log10(582), pmax=np.log10(584)), # 
+    ]
+
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         aNWModel.__init__(self, wave, prior_dicts)
 
@@ -557,48 +592,15 @@ class aNWChase(aNWModel):
         self.ngauss = 8
         self.init_priors()
 
-    def init_priors(self):
-
-        # NAP and CDOM
-        prior_dicts = [
-            dict(flavor='uniform', pmin=-6, pmax=np.log10(0.05)), # CNAP
-            dict(flavor='uniform', pmin=np.log10(0.005), pmax=np.log10(0.016)), # SNAP
-            dict(flavor='uniform', pmin=np.log10(0.01), pmax=np.log10(0.8)), # CCDOM
-            dict(flavor='uniform', pmin=np.log10(0.005), pmax=np.log10(0.02)), # SCDOM
-        ]
-
-        # APH
-        prior_dicts += [dict(flavor='uniform', pmin=-6, pmax=np.log10(0.5))]*self.ngauss
-
-        # SIGMA
-        prior_dicts += [
-            dict(flavor='uniform', pmin=np.log10(22.), pmax=np.log10(24.)), # 384
-            dict(flavor='uniform', pmin=np.log10(8.), pmax=np.log10(10.)), # 
-            dict(flavor='uniform', pmin=np.log10(13.), pmax=np.log10(15.)), # 
-            dict(flavor='uniform', pmin=np.log10(10.), pmax=np.log10(12.)), # 
-            dict(flavor='uniform', pmin=np.log10(18.), pmax=np.log10(20.)), # 
-            dict(flavor='uniform', pmin=np.log10(18.), pmax=np.log10(20.)), # 
-            dict(flavor='uniform', pmin=np.log10(19.), pmax=np.log10(21.)), # 
-            dict(flavor='uniform', pmin=np.log10(19.), pmax=np.log10(21.)), # 
-        ]
-
-        # CEN
-        prior_dicts += [
-            dict(flavor='uniform', pmin=np.log10(383), pmax=np.log10(385)), # 384
-            dict(flavor='uniform', pmin=np.log10(412), pmax=np.log10(414)), # 
-            dict(flavor='uniform', pmin=np.log10(434), pmax=np.log10(436)), # 
-            dict(flavor='uniform', pmin=np.log10(460), pmax=np.log10(462)), # 
-            dict(flavor='uniform', pmin=np.log10(463), pmax=np.log10(465)), # 
-            dict(flavor='uniform', pmin=np.log10(489), pmax=np.log10(491)), # 
-            dict(flavor='uniform', pmin=np.log10(531), pmax=np.log10(533)), # 
-            dict(flavor='uniform', pmin=np.log10(582), pmax=np.log10(584)), # 
-        ]
         # Set
-        self.priors = bing_priors.Priors(prior_dicts)
+        self.prior_dicts = prior_dicts
 
-    def eval_anw(self, params:np.ndarray):
+    def init_priors(self):
+        self.priors = bing_priors.Priors(self.prior_dicts)
+
+    def eval_adg(self, params:np.ndarray):
         """
-        Evaluate the non-water absorption coefficient
+        Evaluate the CDOM and NAP components
 
         Parameters:
             params (np.ndarray): The parameters for the model
@@ -613,13 +615,128 @@ class aNWChase(aNWModel):
         aCDOM = functions.exponential(self.wave, params[...,2:4], pivot=self.pivot)
 
         # 
-        atot = aNAP + aCDOM
+        return aNAP + aCDOM
+
+    def eval_anw(self, params:np.ndarray):
+        """
+        Evaluate the non-water absorption coefficient
+
+        Parameters:
+            params (np.ndarray): The parameters for the model
+
+        Returns:
+            np.ndarray: The non-water absorption coefficient
+                This is always a multi-dimensional array
+        """
+        # adg
+        atot = self.eval_adg(params)
 
         # Aph
         aphs = params[...,4:12]
         sigs = params[...,12:20]
         cens = params[...,20:]
 
+        for igaus in range(self.ngauss):
+            # Repackage
+            params = np.array([aphs[...,igaus], sigs[...,igaus], cens[...,igaus]]).T
+            #embed(header='gaus 626 anw')
+            atot += functions.gaussian(self.wave, params)
+
+        return atot
+
+    def init_guess(self, a_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            a_nw (np.ndarray): The non-water absorption coefficient
+
+        Returns:
+            np.ndarray: The initial guess for the parameters
+        """
+        bounds = self.priors.gen_bounds()
+        p0_a = (bounds[0] + bounds[1])/2
+
+        # Amplitudes
+        i400 = np.argmin(np.abs(self.wave-400))
+        p0_a[0] = np.log10(a_nw[i400]/3.)
+        p0_a[2] = np.log10(a_nw[i400]/3.)
+
+        p0_a[4:12] = np.log10(a_nw[i400]/3.)
+
+        # Insist everything is in bounds
+        p0_a = np.clip(p0_a, bounds[0], bounds[1])
+
+        # Check
+        assert p0_a.size == self.nparam
+        # Return
+        return p0_a
+
+class aNWChaseMini(aNWChase):
+    """
+    Chase+2017 with fixed cen and sigma 
+
+    Exponential model with Sdg fixed + Bricaud aph for non-water absorption
+        aNAP = CNAP * exp(-SNAP*(wave-400))
+        aCDOM = CCDOM * exp(-SCDOM*(wave-400))
+
+        aph = Sum aph_i * exp((wave-wave_i)**2/2/sigma_i**2)
+            8 Gaussians
+                wave_i, sigma_i fixed
+
+    Attributes:
+
+    """
+    name = 'Chase2017Mini'
+    nparam = 12
+    pnames = ['CNAP', 'SNAP', 'CCDOM', 'SCDOM', 
+              'aph384', 'aph413', 'aph435', 'aph461', 
+              'aph464', 'aph490', 'aph532', 'aph583'] 
+    pivot = 400.
+
+    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
+        aNWChase.__init__(self, wave, prior_dicts)
+
+        # Priors
+        self.ngauss = 8
+        self.init_priors()
+
+    def init_priors(self):
+        prior_dicts = super().prior_dicts
+        # Subset
+        self.prior_dicts = prior_dicts[0:self.nparam]
+        # Set
+        self.priors = bing_priors.Priors(self.prior_dicts)
+
+    def eval_anw(self, params:np.ndarray):
+        """
+        Evaluate the non-water absorption coefficient
+
+        Parameters:
+            params (np.ndarray): The parameters for the model
+
+        Returns:
+            np.ndarray: The non-water absorption coefficient
+                This is always a multi-dimensional array
+        """
+        # adg
+        atot = self.eval_adg(params)
+
+        # Aph
+        aphs = params[...,4:12]
+
+        # Set the fixed values
+        prior_dicts = super().prior_dicts
+        def calc_mid(pdict):
+            return (pdict['pmin'] + pdict['pmax'])/2.
+        if params.ndim == 1:
+            # Set using the midpoints of the priors
+            sigs = np.array([calc_mid(prior_dicts[12+ii]) for ii in range(8)])
+            cens = np.array([calc_mid(prior_dicts[20+ii]) for ii in range(8)])
+        else:
+            raise ValueError("Not ready for this")
+
+        # Do it
         for igaus in range(self.ngauss):
             # Repackage
             params = np.array([aphs[...,igaus], sigs[...,igaus], cens[...,igaus]]).T

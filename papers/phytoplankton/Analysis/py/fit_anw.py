@@ -380,7 +380,13 @@ def main(flg):
                     show=True, use_chisq=False, nsteps=20000, max_wave=600.,
                     abs_noise=0.005, chk_guess=True, min_wave=400.)
 
+    # Mini Chase
     if flg == 3:
+        odict = fit('Chase2017Mini', 170, 'fitanw_170_MCMC_Chase2017Mini.npz', 
+                    show=True, use_chisq=True, nsteps=20000, max_wave=600.,
+                    abs_noise=0.005, chk_guess=True, min_wave=400.)
+
+    if flg == 10:
         quick_plt()
 
 # Command line execution
