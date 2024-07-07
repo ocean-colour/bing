@@ -33,6 +33,8 @@ kdict = {2: ['Cst', 'Cst'],
             'GSM+': ['GSM', 'Pow'],
 }
 
+MODIS_reduce = np.sqrt(2)
+
 def chain_filename(model_names:list, scl_noise, add_noise,
                        idx:int=None, MODIS:bool=False, use_LM:bool=False,
                        PACE:bool=False, SeaWiFS:bool=False): 
@@ -80,7 +82,22 @@ def chain_filename(model_names:list, scl_noise, add_noise,
 
 def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
              MODIS:bool=False, PACE:bool=False, SeaWiFS:bool=False):
+    """
+    Calculate the AIC and BIC values for different models and signal-to-noise ratios.
 
+    Parameters:
+    - ks (list): List of model indices.
+    - s2ns (list): List of signal-to-noise ratios.
+    - use_LM (bool): Flag indicating whether to use Levenberg-Marquardt optimization.
+    - MODIS (bool): Flag indicating whether to use MODIS data.
+    - PACE (bool): Flag indicating whether to use PACE data.
+    - SeaWiFS (bool): Flag indicating whether to use SeaWiFS data.
+
+    Returns:
+        tuple
+            - Adict (dict): Dictionary containing the AIC values for each model.
+            - Bdict (dict): Dictionary containing the BIC values for each model.
+    """
     Bdict = dict()
     Adict = dict()
     for k in ks:
@@ -109,7 +126,8 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
                 noise_vector = sat_pace.gen_noise_vector(
                     models[0].wave)
             elif MODIS and (s2n == 'MODIS_Aqua'):
-                noise_vector = sat_modis.modis_aqua_error
+                err_dict = sat_modis.calc_errors(reduce_by_in_situ=MODIS_reduce)
+                noise_vector = np.array([err_dict[wv][0] for wv in sat_modis.modis_wave])
             elif SeaWiFS and (s2n == 'SeaWiFS'):
                 noise_vector = sat_seawifs.seawifs_error
             else:
@@ -332,13 +350,25 @@ def recon_one(model_names:list, idx:int,
     return rdict
 
 
-def scale_noise(scl_noise, model_Rrs, model_wave):
+def scale_noise(scl_noise, model_Rrs:np.ndarray, model_wave:np.ndarray,
+                reduce_by_in_situ:float=None):
+    """
+    Calculate the scaled noise for the given model Rrs and wave.
 
+    Parameters:
+    scl_noise (str or float): The type of noise scaling to be applied. Can be one of 'SeaWiFS', 'MODIS_Aqua', 'PACE', or a float value.
+    model_Rrs (np.ndarray): The model Rrs values.
+    model_wave (np.ndarray): The wave values corresponding to the model Rrs.
+
+    Returns:
+    np.ndarray: The scaled noise values.
+
+    """
     if scl_noise == 'SeaWiFS':
         err_dict = sat_seawifs.calc_errors()
         model_varRrs = np.array([err_dict[wv][0] for wv in sat_seawifs.seawifs_wave])**2
     elif scl_noise == 'MODIS_Aqua':
-        err_dict = sat_modis.calc_errors()
+        err_dict = sat_modis.calc_errors(reduce_by_in_situ=reduce_by_in_situ)
         model_varRrs = np.array([err_dict[wv][0] for wv in sat_modis.modis_wave])**2
     elif scl_noise == 'PACE':
         PACE_error = sat_pace.gen_noise_vector(model_wave)

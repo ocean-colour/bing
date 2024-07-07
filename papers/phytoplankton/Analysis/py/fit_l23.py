@@ -3,7 +3,10 @@ import os
 import numpy as np
 
 
-from oceancolor.hydrolight import loisel23
+from ocpy.hydrolight import loisel23
+from ocpy.satellites import modis as sat_modis
+from ocpy.satellites import pace as sat_pace
+from ocpy.satellites import seawifs as sat_seawifs
 
 from bing.models import anw as bing_anw
 from bing.models import bbnw as bing_bbnw
@@ -12,9 +15,6 @@ from bing import inference as bing_inf
 from bing import rt as bing_rt
 from bing import chisq_fit
 
-from oceancolor.satellites import modis as sat_modis
-from oceancolor.satellites import pace as sat_pace
-from oceancolor.satellites import seawifs as sat_seawifs
 
 import anly_utils 
 
@@ -27,6 +27,7 @@ def fit(model_names:list,
         use_chisq:bool=False,
         min_wave:float=None,
         max_wave:float=None,
+        reduce_by_in_situ:float=None,
         MODIS:bool=False, PACE:bool=False, SeaWiFS:bool=False,
         scl_noise:float=0.02, add_noise:bool=False,
         n_cores:int=20, debug:bool=False): 
@@ -107,7 +108,8 @@ def fit(model_names:list,
         model_bbnw = anly_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
 
         # Noise
-        model_varRrs = anly_utils.scale_noise(scl_noise, model_Rrs, model_wave)
+        model_varRrs = anly_utils.scale_noise(scl_noise, model_Rrs, model_wave,
+                                              reduce_by_in_situ=reduce_by_in_situ)
 
         # Add noise?
         if add_noise:
@@ -191,6 +193,7 @@ def main(flg):
     SeaWiFS = False
     scl_noise = 0.02
     add_noise = False
+    reduce_by_in_situ = None
 
     # Testing
     if flg == 1:
@@ -214,6 +217,7 @@ def main(flg):
     # MODIS
     if flg in [4,7,10]:
         MODIS = True
+        reduce_by_in_situ = anly_utils.MODIS_reduce
 
     # All models
     if flg in [5,8,11]:
@@ -235,15 +239,17 @@ def main(flg):
 
     #embed(header='main 168')
     if flg in [4,5,6,7,8,9,10,11,12]:
-        fit(['Cst', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
-        fit(['Exp', 'Cst'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
-        fit(['Exp', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
-        fit(['ExpBricaud', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        param = dict(use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise,
+                     reduce_by_in_situ=reduce_by_in_situ)
+        fit(['Cst', 'Cst'], **param)
+        fit(['Exp', 'Cst'], **param)
+        fit(['Exp', 'Pow'], **param)
+        fit(['ExpBricaud', 'Pow'], **param)
         #fit(['ExpNMF', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
-        fit(['GIOP', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
-        fit(['GIOP', 'Lee'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
-        fit(['GSM', 'GSM'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
-        fit(['GSM', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
+        fit(['GIOP', 'Pow'], **param)
+        fit(['GIOP', 'Lee'], **param)
+        fit(['GSM', 'GSM'], **param)
+        fit(['GSM', 'Pow'], **param)
 
     
 
