@@ -141,6 +141,8 @@ def run_emcee(model, anw, var, ndim, nwalkers:int=32,
     if p0 is None:
         raise ValueError("Must provide p0")
     p0 = np.tile(p0, (nwalkers, 1))
+    # Perturb them
+    p0 += p0*np.random.uniform(-1e-1, 1e-1, size=p0.shape)
 
     # Set up the backend
     # Don't forget to clear it in case the file already exists
@@ -397,7 +399,7 @@ def main(flg):
     if flg == 4:
         odict = fit('Chase2017Mini', 170, 'fitanw_170_MCMC_Chase2017Mini.npz', 
                     show=True, use_chisq=False, nsteps=20000, max_wave=600.,
-                    abs_noise=0.005, chk_guess=False, min_wave=400., skip_check=True,
+                    abs_noise=0.002, chk_guess=True, min_wave=400., skip_check=False,
                     init_from_chi2='fitanw_170_LM_Chase2017Mini.npz')
 
     if flg == 10:
