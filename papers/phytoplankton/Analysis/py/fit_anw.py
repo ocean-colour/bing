@@ -48,7 +48,7 @@ def fit_one(items:list, model=None, pdict:dict=None, chains_only:bool=False):
         nwalkers=pdict['nwalkers'],
         nsteps=pdict['nsteps'],
         nburn=pdict['nburn'],
-        skip_check=True,
+        skip_check=pdict['skip_check'],
         p0=params,
         save_file=pdict['save_file'])
 
@@ -58,7 +58,7 @@ def fit_one(items:list, model=None, pdict:dict=None, chains_only:bool=False):
     else:
         return sampler, idx
 
-def init_mcmc(model, nsteps:int=10000, nburn:int=1000):
+def init_mcmc(model, nsteps:int=10000, nburn:int=1000, skip_check:bool=False):
     """
     Initializes the MCMC parameters.
 
@@ -76,6 +76,7 @@ def init_mcmc(model, nsteps:int=10000, nburn:int=1000):
     pdict['nwalkers'] = max(16,ndim*2)
     pdict['ndim'] = ndim
     pdict['nsteps'] = nsteps
+    pdict['skip_check'] = skip_check
     pdict['nburn'] = nburn
     pdict['save_file'] = None
     #
@@ -184,6 +185,8 @@ def fit(model_name:str, idx:int, outfile:str,
         min_wave:float=None,
         max_wave:float=None,
         chk_guess:bool=False,
+        init_from_chi2:bool=False,
+        skip_check:bool=False,
         show:bool=False,
         MODIS:bool=False,
         SeaWiFS:bool=False,
@@ -227,7 +230,7 @@ def fit(model_name:str, idx:int, outfile:str,
                     
     # Initialize the MCMC
     if not use_chisq:
-        pdict = init_mcmc(model, nsteps=nsteps, nburn=nburn)
+        pdict = init_mcmc(model, nsteps=nsteps, nburn=nburn, skip_check=skip_check)
     
     # Internals
     if model.uses_Chl:
@@ -246,8 +249,10 @@ def fit(model_name:str, idx:int, outfile:str,
                 model_Rrs, abs_sig=np.sqrt(model_var))
 
     # Initial guess
-    p0_a = model.init_guess(model_anw)
-    p0 = p0_a
+    if init_from_chi2 is not None:
+        p0 = np.load(init_from_chi2)['ans']
+    else:
+        p0 = model.init_guess(model_anw)
 
 
     def show_fit(anw, errs:list=None, model_var=None):
@@ -268,11 +273,12 @@ def fit(model_name:str, idx:int, outfile:str,
     if chk_guess:
         anw = model.eval_anw(p0).flatten()
         show_fit(anw, model_var=model_var)
-        embed(header='show_fit 290')
+        embed(header='chk_guess 276')
 
     # Set the items
     items = [(model_anw, model_var, p0, idx)]
 
+    # #######################################################
     # Bayes
     if not use_chisq:
         # Fit
@@ -310,6 +316,7 @@ def fit(model_name:str, idx:int, outfile:str,
             ax.legend()
             plt.show()
 
+    # #######################################################
     else: # chi^2
 
         def fit_func(wave, *params, model=None):
@@ -320,13 +327,14 @@ def fit(model_name:str, idx:int, outfile:str,
         # Fit
         bounds = model.priors.gen_bounds()
         ans, cov =  curve_fit(partial_func, None, 
-                          model_anw, p0=p0, #sigma=0.05,
+                          model_anw, p0=p0, sigma=np.ones_like(model_anw)*abs_noise,
                           full_output=False, bounds=bounds,
                           maxfev=10000)
         # Show?
         if show:
-            anw = model.eval_anw(p0).flatten()
+            anw = model.eval_anw(ans).flatten()
             show_fit(anw)
+            embed(header='show_fit 330')
 
         # Save
         if outfile is not None:
@@ -340,17 +348,16 @@ def fit(model_name:str, idx:int, outfile:str,
 
 def quick_plt():
     # Unpack
-    d = np.load('fitanw_170_MCMC_Chase2017.npz')
+    d = np.load('fitanw_170_MCMC_Chase2017Mini.npz')
     chains = d['chains']
     model_wave = d['wave']
     model_anw = d['obs_anw']
 
-    embed(header='quick_plt 334')
     burn=7000 
     thin=1
     chains = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
     
-    model = bing_anw.init_model('Chase2017', d['wave'])
+    model = bing_anw.init_model('Chase2017Mini', d['wave'])
     anw = model.eval_anw(chains)
     # Calculate the mean and standard deviation
     a_mean = np.median(anw, axis=0)
@@ -380,11 +387,18 @@ def main(flg):
                     show=True, use_chisq=False, nsteps=20000, max_wave=600.,
                     abs_noise=0.005, chk_guess=True, min_wave=400.)
 
-    # Mini Chase
+    # Mini Chase chi^2
     if flg == 3:
-        odict = fit('Chase2017Mini', 170, 'fitanw_170_MCMC_Chase2017Mini.npz', 
+        odict = fit('Chase2017Mini', 170, 'fitanw_170_LM_Chase2017Mini.npz', 
                     show=True, use_chisq=True, nsteps=20000, max_wave=600.,
-                    abs_noise=0.005, chk_guess=True, min_wave=400.)
+                    abs_noise=0.005, chk_guess=False, min_wave=400.)
+
+    # Mini Chase MCMC
+    if flg == 4:
+        odict = fit('Chase2017Mini', 170, 'fitanw_170_MCMC_Chase2017Mini.npz', 
+                    show=True, use_chisq=False, nsteps=20000, max_wave=600.,
+                    abs_noise=0.005, chk_guess=False, min_wave=400., skip_check=True,
+                    init_from_chi2='fitanw_170_LM_Chase2017Mini.npz')
 
     if flg == 10:
         quick_plt()

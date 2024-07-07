@@ -729,12 +729,13 @@ class aNWChaseMini(aNWChase):
         prior_dicts = super().prior_dicts
         def calc_mid(pdict):
             return (pdict['pmin'] + pdict['pmax'])/2.
+        sigs = np.array([calc_mid(prior_dicts[12+ii]) for ii in range(8)])
+        cens = np.array([calc_mid(prior_dicts[20+ii]) for ii in range(8)])
         if params.ndim == 1:
-            # Set using the midpoints of the priors
-            sigs = np.array([calc_mid(prior_dicts[12+ii]) for ii in range(8)])
-            cens = np.array([calc_mid(prior_dicts[20+ii]) for ii in range(8)])
-        else:
-            raise ValueError("Not ready for this")
+            pass
+        else: # Chains
+            sigs = np.outer(np.ones(params.shape[0]), sigs)
+            cens = np.outer(np.ones(params.shape[0]), cens)
 
         # Do it
         for igaus in range(self.ngauss):
