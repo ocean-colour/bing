@@ -915,7 +915,6 @@ def fig_bic_modis_pace(use_LM:bool=True,
 
 
     r_s2ns = [0.05, 0.10, 0.2]
-    ks = [3,5]
 
     fig = plt.figure(figsize=(14,6))
     plt.clf()
@@ -929,11 +928,13 @@ def fig_bic_modis_pace(use_LM:bool=True,
             MODIS = True
             PACE = False
             dataset = '(a) Multi-spectral'
+            ks = [3,5]
         else:
             s2ns = r_s2ns + ['PACE']
             MODIS = False
             PACE = True
             dataset = '(b) Hyperspectral'
+            ks = [4,5]
 
         #embed(header='fig_all_ic 571')
         Adict, Bdict = anly_utils.calc_ICs(
@@ -967,6 +968,9 @@ def fig_bic_modis_pace(use_LM:bool=True,
                 ls = '-'
                 lw = 3
             ax.plot(srt, yvals, label=f'S/N={fs2n}', color=color, linewidth=lw, ls=ls)
+            # Stats
+            print(f'{subset}, {fs2n} -------------')
+            print(f'% with BIC > 0: {100*np.sum(srt > 0)/srt.size}')
         if log_x:
             ax.set_xlabel(r'$\log_{10}(\Delta \, \rm '+xlbl+'_{'+f'{subset}'+r'} + 6)$')
         else:
@@ -1433,6 +1437,7 @@ def main(flg):
         fig_multi_fits()#[('Cst','Cst'), ('Exp','Cst'), ('Exp','Pow'), ('ExpBricaud','Pow')], 
                        #[170, 1032])
 
+    # Figure 3
     if flg == 3:
         fig_bic_modis_pace()
 
