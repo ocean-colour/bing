@@ -44,7 +44,7 @@ def gen_cb(img, lbl, csz = 17.):
     cbaxes.set_label(lbl, fontsize=csz)
     cbaxes.ax.tick_params(labelsize=csz)
 
-def fig_u(outfile='fig_u.png'):
+def fig_u(outfile='fig_u.png', log_log:bool=False):
     """
     Generate a figure showing the relationship between u (backscattering ratio) and rrs (remote sensing reflectance).
 
@@ -87,6 +87,7 @@ def fig_u(outfile='fig_u.png'):
     for ii in [i370, i440, i500, i600]:
         ans, cov = curve_fit(rrs_func, u[:,ii], rrs[:,ii], p0=[0.1, 0.1], sigma=np.ones_like(u[:,ii])*0.0003)
         save_ans.append(ans)
+        #embed(header='figs 167')
 
     #
     fig = plt.figure(figsize=(8,5))
@@ -121,6 +122,13 @@ def fig_u(outfile='fig_u.png'):
     ax.set_ylabel(r'$r_{\rm rs} (\lambda)$')
     ax.legend(fontsize=10)
     plotting.set_fontsize(ax, 15.)
+
+    if log_log:
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        #
+        ax.set_xlim(2e-3,None)
+        ax.set_ylim(1e-4,None)
     
     #
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
@@ -1579,8 +1587,12 @@ if __name__ == '__main__':
     if len(sys.argv) == 1:
         flg = 0
 
-        #flg = 1
+        # flg = 1 :: Figure 1; Spectra of water and non-water
+        # flg = 2 :: Figure 2; Fits to example Rrs
+        # flg = 3 :: Figure 3; BIC
         
+        # flg = 10 :: Supp 1; fig_u
+
     else:
         flg = sys.argv[1]
 
