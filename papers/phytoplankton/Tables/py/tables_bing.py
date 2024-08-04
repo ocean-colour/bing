@@ -40,7 +40,7 @@ def mktab_error(dataset:str):
     tbfil.write('\\begin{tabular}{cc}\n')
     tbfil.write('\\hline \n')
     tbfil.write('Band & \sreflect \\\\ \n')
-    tbfil.write('(nm) & (sr$^{-1}$) & \n')
+    tbfil.write('(nm) & (sr$^{-1}$) \n')
     tbfil.write('\\hline \n')
 
     for kk, wv in enumerate(waves):
