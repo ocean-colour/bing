@@ -215,7 +215,8 @@ def main(flg):
         #fit_one(['Every', 'Every'], idx=170, use_chisq=False, show=True,
         #        nburn=8000, nsteps=100000)
         fit_one(['Every', 'GSM'], idx=170, use_chisq=False, show=True,
-                nburn=8000, nsteps=100000)
+                nburn=8000, nsteps=500000)
+                #nburn=8000, nsteps=100000)
 
     # Bayes on GSM
     if flg == 9:

@@ -1557,8 +1557,8 @@ def main(flg):
 
     # Degenerate solutions
     if flg == 17:
-        fig_mcmc_fit(['Every', 'Every'], idx=170, full_LM=False,
-            use_LM=False)
+        #fig_mcmc_fit(['Every', 'Every'], idx=170, full_LM=False,
+        #    use_LM=False)
         fig_mcmc_fit(['Every', 'GSM'], idx=170, full_LM=False,
             use_LM=False)
 
