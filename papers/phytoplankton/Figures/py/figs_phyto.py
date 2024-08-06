@@ -698,7 +698,6 @@ def fig_satellite_noise(satellite:str, wave:int, min_Rrs:float=-0.03):
 
     matchups = matchups[cut].copy()
 
-    #embed(header='fig_all_bic 660')
 
     fig = plt.figure(figsize=(14,6))
     plt.clf()
@@ -1315,6 +1314,9 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph',
 def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
                 scl_noise:float=0.02, add_noise:bool=False, 
                 SeaWiFS:bool=False, MODIS:bool=False,
+                bb_wv:int=443, # Wave for bbnw
+                aph_wv:int=443, # Wave for bbnw
+                PACE:bool=False,
                 no_errorbars:bool=True, outfile:str=None):
 
 
@@ -1326,8 +1328,8 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     ds = loisel23.load_ds(4,0)
     l23_wave = ds.Lambda.data
     aph = ds.aph.data
-    i440_l23 = np.argmin(np.abs(l23_wave-440.))
-    l23_a440 = aph[:,i440_l23]
+    iawv_l23 = np.argmin(np.abs(l23_wave-aph_wv))
+    l23_aph = aph[:,iawv_l23]
     l23_bbnw = ds.bbnw.data
 
     if add_noise:
@@ -1341,6 +1343,8 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
         sat = 'MODIS'
     elif SeaWiFS:
         sat = 'SeaWiFS'
+    elif PACE:
+        sat = 'PACE'
     else:
         raise IOError("Bad satellite")
         
@@ -1349,7 +1353,7 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     # Load
     chain_file = anly_utils.chain_filename(
         model_names, scl_noise, add_noise,
-        MODIS=MODIS, SeaWiFS=SeaWiFS)
+        MODIS=MODIS, SeaWiFS=SeaWiFS, PACE=PACE)
     chain_file = chain_file.replace('BING', 'BING_LM')
     # Load up
     print(f'Loading {chain_file}')
@@ -1371,13 +1375,14 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     perrs = [np.sqrt(np.diag(item)) for item in d['cov']]
     perrs = np.array(perrs)
 
-    g_a440, sig_a440 = anly_utils.calc_aph440(
-        models, d['Chl'], d['ans'], perrs, 1)
+    g_aph, sig_aph = anly_utils.calc_aph(
+        models, d['Chl'], d['ans'], perrs, 1,
+        wave=aph_wv)
 
     # bbnw
     bbnw_idx = d['ans'].shape[1]-1
     bbnw = anly_utils.calc_bbnw(
-        models, d['ans'], perrs, bbnw_idx, models[1].pivot, Y=Y)
+        models, d['ans'], perrs, bbnw_idx, bb_wv, Y=Y)
 
     def plot_lines(ax, xmin, xmax, scl):
         ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
@@ -1391,19 +1396,34 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     # aph
     ax_ph = plt.subplot(gs[0])
 
-    ax_ph.scatter(l23_a440, g_a440, s=1, color='b')#, label=model)
+    ax_ph.scatter(l23_aph, g_aph, s=1, color='b')#, label=model)
     xmin_aph, xmax_aph = 1e-4, 1
     plot_lines(ax_ph, xmin_aph, xmax_aph, scl)
     ax_ph.set_ylim(xmin_aph, xmax_aph)
     ax_ph.grid()
 
-    ax_ph.set_xlabel(r'$a_{\rm ph}^{\rm L23} (440)$')
-    ax_ph.set_ylabel(r'$a_{\rm ph}^{\rm '+f'{model_names[0]}'+r'} (440)$')
+    ax_ph.set_xlabel(r'$a_{\rm ph}^{\rm L23}$'+f'({int(aph_wv)})')
+    ax_ph.set_ylabel(r'$a_{\rm ph}^{\rm '+f'{model_names[0]}'+r'}'+f'({int(aph_wv)})'+r'$')
+
+    def calc_stats(x, y, sigy):
+        bias = np.median(y/x)
+        diff = x - y
+        std = np.std(diff/x)
+        mae = np.mean(np.abs(diff)/x)
+        #
+        return std, bias, np.median(sigy/y), mae
+    # Stats
+    std, bias, err, mae = calc_stats(l23_aph, g_aph, sig_aph)
+    print(f'aph stats: bias={bias:0.2f}, std={std:0.2f}')
 
     # Text
-    ax_ph.text(0.95, 0.05, f'{model_names[0]}/{sat}\n {error_text}', fontsize=19,
+    ax_ph.text(0.95, 0.10, 
+               f'{model_names[0]}/{sat}\n {error_text}\n  bias={int(100*bias)-100}%, MAE={int(100*mae)}%',
+               fontsize=17,
                transform=ax_ph.transAxes, ha='right')
 
+    
+    # #####################################################################
     # bbnw
     ax_bb = plt.subplot(gs[1])
 
@@ -1413,8 +1433,16 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     ax_bb.set_ylim(xmin_bb, xmax_bb)
     ax_bb.grid()
 
-    ax_bb.set_xlabel(r'$b_{\rm b,nw}^{\rm L23} '+f'({int(models[1].pivot)})'+r'$')
-    ax_bb.set_ylabel(r'$b_{\rm b,nw}^{\rm '+f'{model_names[0]}'+r'}'+f' ({int(models[1].pivot)})'+r'$')
+    ax_bb.set_xlabel(r'$b_{\rm b,nw}^{\rm L23} '+f'({int(bb_wv)})'+r'$')
+    ax_bb.set_ylabel(r'$b_{\rm b,nw}^{\rm '+f'{model_names[0]}'+r'}'+f' ({int(bb_wv)})'+r'$')
+
+    std, bias, err, mae = calc_stats(l23_bbnw, bbnw, sig_aph)
+    print(f'bb stats: bias={bias:0.2f}, std={std:0.2f}')
+
+    ax_bb.text(0.95, 0.10, 
+               f'\n\nbias={int(100*bias)-100}%, MAE={int(100*mae)}%',
+               fontsize=17,
+               transform=ax_bb.transAxes, ha='right')
 
     
     for ss, ax in enumerate([ax_ph, ax_bb]):
@@ -1483,7 +1511,7 @@ def main(flg):
     if flg == 13:
         fig_Sexp()
 
-    # Aph vs aph
+    # aph and bbnw
     if flg == 14:
         # GIOP
         '''

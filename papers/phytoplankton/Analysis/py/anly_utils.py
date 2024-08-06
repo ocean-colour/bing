@@ -201,7 +201,7 @@ def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
     adg = ds.ag.data[idx,iwave] + ds.ad.data[idx,iwave]
     aph = ds.aph.data[idx,iwave]
 
-    # For bp
+    # For bp: Lee+2002 prescription
     rrs = Rrs / (bing_rt.A_Rrs + bing_rt.B_Rrs*Rrs)
     i440 = np.argmin(np.abs(true_wave-440))
     i555 = np.argmin(np.abs(true_wave-555))
@@ -379,8 +379,8 @@ def scale_noise(scl_noise, model_Rrs:np.ndarray, model_wave:np.ndarray,
     # Return
     return model_varRrs
 
-def calc_aph440(models, Chl, params, sig_params, aph_idx):
-    i440_g = np.argmin(np.abs(models[0].wave-440))
+def calc_aph(models, Chl, params, sig_params, aph_idx, wave:float=443.):
+    iwv_g = np.argmin(np.abs(models[0].wave-wave))
 
     aph_fits = []
     aphlow_fits = []
@@ -406,11 +406,11 @@ def calc_aph440(models, Chl, params, sig_params, aph_idx):
     aphlow_fits = np.array(aphlow_fits)
     aphhi_fits = np.array(aphhi_fits)
     #
-    g_a440 = aph_fits[:, i440_g]
+    g_awv = aph_fits[:, iwv_g]
     # Error
-    sig_a440 = (aphhi_fits[:, i440_g] - aphlow_fits[:, i440_g])/2.
+    sig_awv = (aphhi_fits[:, iwv_g] - aphlow_fits[:, iwv_g])/2.
 
-    return g_a440, sig_a440
+    return g_awv, sig_awv
 
 def calc_bbnw(models, params, sig_params, bbnw_idx, pwave,
               Y:np.ndarray=None):
