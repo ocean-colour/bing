@@ -193,6 +193,7 @@ def main(flg):
         fit_one(['GIOP', 'Lee'], idx=0, use_chisq=True, show=True)
 
     # Bayes on GSM with SeaWiFS noise
+    #   No added noise
     if flg == 6:
         fit_one(['GSM', 'GSM'], idx=170, SeaWiFS=True,
                 use_chisq=False, show=True, nburn=5000,
@@ -202,11 +203,12 @@ def main(flg):
                 nsteps=50000, scl_noise='SeaWiFS')
 
     # Bayes on GIOP with MODIS noise
+    #   No added noise
     if flg == 7:
-        fit_one(['GIOP', 'Lee'], idx=170, SeaWiFS=True,
+        fit_one(['GIOP', 'Lee'], idx=170, MODIS=True,
                 use_chisq=False, show=True, nburn=5000,
                 nsteps=50000)
-        fit_one(['GIOP', 'Lee'], idx=1032, SeaWiFS=True,
+        fit_one(['GIOP', 'Lee'], idx=1032, MODIS=True,
                 use_chisq=False, show=True, nburn=5000,
                 nsteps=50000)
 
