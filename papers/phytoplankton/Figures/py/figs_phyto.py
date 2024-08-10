@@ -932,13 +932,13 @@ def fig_bic_modis_pace(use_LM:bool=True,
     for ss in range(2):
 
         if ss==0:
-            s2ns = r_s2ns + ['MODIS_Aqua']
+            s2ns = r_s2ns + ['MODIS/Aqua']
             MODIS = True
             PACE = False
             dataset = '(a) Multi-spectral'
             ks = [3,5]
         else:
-            s2ns = r_s2ns + ['PACE']
+            s2ns = r_s2ns + ['OCI/PACE']
             MODIS = False
             PACE = True
             dataset = '(b) Hyperspectral'

@@ -122,10 +122,10 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
             sv_s2n = []
             sv_idx = []
         for s2n in s2ns:
-            if PACE and (s2n == 'PACE'):
+            if PACE and (s2n == 'OCI/PACE'):
                 noise_vector = sat_pace.gen_noise_vector(
                     models[0].wave)
-            elif MODIS and (s2n == 'MODIS_Aqua'):
+            elif MODIS and (s2n == 'MODIS/Aqua'):
                 err_dict = sat_modis.calc_errors(reduce_by_in_situ=MODIS_reduce)
                 noise_vector = np.array([err_dict[wv][0] for wv in sat_modis.modis_wave])
             elif SeaWiFS and (s2n == 'SeaWiFS'):
