@@ -11,3 +11,7 @@
 * Patrick Gray (University of Maine) 
 * Paul Mattern (UC Santa Cruz)
 * Members of the Ocean Optics Lab at SIO
+
+# DOI
+
+[![DOI](https://zenodo.org/badge/810422881.svg)](https://zenodo.org/doi/10.5281/zenodo.13292700)
