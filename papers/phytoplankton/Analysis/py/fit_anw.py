@@ -187,12 +187,36 @@ def fit(model_name:str, idx:int, outfile:str,
         min_wave:float=None,
         max_wave:float=None,
         chk_guess:bool=False,
-        init_from_chi2:bool=False,
+        init_from_chi2:str=None,
         skip_check:bool=False,
         show:bool=False,
         MODIS:bool=False,
         SeaWiFS:bool=False,
         PACE:bool=False):
+    """
+    Fits a model to the given data.
+    Parameters:
+    - model_name (str): The name of the model to fit.
+    - idx (int): The index of the data.
+    - outfile (str): The output file to save the results.
+    - nsteps (int, optional): The number of MCMC steps. Default is 10000.
+    - nburn (int, optional): The number of burn-in steps. Default is 1000.
+    - scl_noise (float, optional): The scale of the noise. Default is 0.02.
+    - abs_noise (float, optional): The absolute noise. Default is None.
+    - use_chisq (bool, optional): Whether to use chi-squared fitting. Default is False.
+    - add_noise (bool, optional): Whether to add noise to the data. Default is False.
+    - min_wave (float, optional): The minimum wavelength. Default is None.
+    - max_wave (float, optional): The maximum wavelength. Default is None.
+    - chk_guess (bool, optional): Whether to check the initial guess. Default is False.
+    - init_from_chi2 (bool, optional): Whether to initialize from chi-squared fitting. Default is False.
+    - skip_check (bool, optional): Whether to skip the check. Default is False.
+    - show (bool, optional): Whether to show the fit. Default is False.
+    - MODIS (bool, optional): Whether to use MODIS data. Default is False.
+    - SeaWiFS (bool, optional): Whether to use SeaWiFS data. Default is False.
+    - PACE (bool, optional): Whether to use PACE data. Default is False.
+    Returns:
+        tuploe of chains (ndarray): The MCMC chains.
+    """
 
     odict = anly_utils.prep_l23_data(
         idx, scl_noise=scl_noise, max_wave=max_wave, min_wave=min_wave)
@@ -320,7 +344,6 @@ def fit(model_name:str, idx:int, outfile:str,
             plt.show()
 
         return chains
-
     # #######################################################
     else: # chi^2
 
@@ -387,6 +410,7 @@ def main(flg):
         odict = fit('Chase2017', 170, 'fitanw_170_Chase2017.npz',
                     show=True, use_chisq=True, chk_guess=True)
 
+    # MCMC Testing
     if flg == 2:
         odict = fit('Chase2017', 170, 'fitanw_170_MCMC_Chase2017.npz', 
                     show=True, use_chisq=False, nsteps=20000, max_wave=600.,
@@ -394,7 +418,7 @@ def main(flg):
 
     # Mini Chase chi^2
     if flg == 3:
-        odict = fit('Chase2017Mini', 170, 'fitanw_170_LM_Chase2017Mini.npz', 
+        _ = fit('Chase2017Mini', 170, 'fitanw_170_LM_Chase2017Mini.npz', 
                     show=True, use_chisq=True, nsteps=20000, max_wave=600.,
                     abs_noise=0.005, chk_guess=False, min_wave=400.)
 
