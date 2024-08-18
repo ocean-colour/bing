@@ -20,22 +20,12 @@ import corner
 
 from ocpy.utils import plotting 
 from ocpy.hydrolight import loisel23
-from ocpy.satellites import pace as sat_pace
-from ocpy.satellites import seawifs as sat_seawifs
-from ocpy.satellites import modis as sat_modis
+from ocpy.water import absorption as water_abs
 
-from bing import plotting as bing_plot
-from bing.models import utils as model_utils
-from bing.models import functions
-
-#from bing.models import anw as bing_anw
-#from bing.models import bbnw as bing_bbnw
-#from bing import chisq_fit
-#from bing import stats as bing_stats
 
 # Local
-sys.path.append(os.path.abspath("../Analysis/py"))
-import anly_utils
+#sys.path.append(os.path.abspath("../Analysis/py"))
+#import anly_utils
 
 from IPython import embed
 
@@ -111,6 +101,90 @@ def fig_Kd(outfile='fig_Kd.png'):
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
+def fig_Hooker2013(outfile='fig_Hooker2013.png'):
+
+    # Load
+    ds = loisel23.load_ds(4,0)
+
+    # Unpack
+    l23_wave = ds.Lambda.data
+    l23_Rrs = ds.Rrs.data
+    all_a = ds.a.data
+    all_b = ds.b.data
+    all_bnw = ds.bnw.data
+    all_bbnw = ds.bbnw.data
+    all_bb = ds.bb.data
+    all_adg = ds.ag.data + ds.ad.data
+    all_ad = ds.ad.data
+    all_ag = ds.ag.data
+    all_aph = ds.aph.data
+    all_anw = ds.anw.data
+    #
+    all_bw = all_b - all_bnw
+    #
+    all_bbd = ds.bbd.data
+    all_bbph = ds.bbph.data
+    l23_aw = all_a[0] - all_anw[0]
+    l23_bbw = all_bb[0] - all_bbnw[0]
+
+    # Profile too
+    ds_profile = loisel23.load_ds(4,0, profile=True)
+    all_Kd = ds_profile.KEd_z[1,:,:]
+
+    # Setup
+    i350 = np.argmin(np.abs(l23_wave-350.))
+    i440 = np.argmin(np.abs(l23_wave-440.))
+    i750 = np.argmin(np.abs(l23_wave-750.))  # Should have been 780
+
+    Kd_350 = all_Kd[:,i350]
+    Kd_750 = all_Kd[:,i750]
+    acdom_440 = all_ag[:,i440]
+
+    more_wave = np.arange(320., 781., 1.)
+    aw = water_abs.a_water(more_wave)
+    #
+    i780 = np.argmin(np.abs(more_wave-780.))  
+
+    # H0
+    bb780 = 0.
+    H0 = aw[i780] + 4.18 * (1 - 0.52 * np.exp(-10.8*aw[i780])) * bb780
+
+    # H1
+    H1 = 4.18 * l23_bbw[i350]
+
+    # acdom
+    Sexp = 0.015
+    rexp = np.exp(-Sexp*120)
+
+    # Hooker+2013
+    def acdom_hooker2013(kd_ratio):
+        return 0.293 * kd_ratio - 0.015
+
+    Kd_ratio = Kd_350/Kd_750
+
+    # Figure
+    fig = plt.figure(figsize=(8,6))
+    ax = plt.gca()
+    #
+    ax.plot(Kd_350/Kd_750, acdom_440, 'o', ms=1, label='L23')
+    # Label
+    ax.set_xlabel(r'$K_d(350)/K_d(750)$')
+    ax.set_ylabel(r'$a_{\rm cdom}(440) \, [\rm m^{-1}]$')
+    # Hooker+2013
+    x = np.linspace(Kd_ratio.min(), Kd_ratio.max(), 1000) 
+    ax.plot(x, acdom_hooker2013(x), 'r-', label='Hooker+2013')
+    # Derivation
+    ax.plot(x, H0*rexp*x - H1*rexp, 'k-', label='Theory')
+    #
+    ax.legend(fontsize=15.)
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+
+    plotting.set_fontsize(ax, 17.)
+    #
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
 
 
 def main(flg):
@@ -122,6 +196,8 @@ def main(flg):
     if flg == 1:
         fig_Kd()
 
+    if flg == 2:
+        fig_Hooker2013()
 
 # Command line execution
 if __name__ == '__main__':
