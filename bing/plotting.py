@@ -39,7 +39,10 @@ def show_fit(models:list, inputs:np.ndarray,
         fontsize (float, optional): The font size of the plot labels. Default is 12.0.
         anw_true (dict, optional): The true values for `a_nw`. Default is None.
         bbnw_true (dict, optional): The true values for `b_bnw`. Default is None.
-        Rrs_true (dict, optional): The true values for `R_rs`. Default is None.
+        Rrs_true (dict, optional): 
+            The true values for `R_rs`. Default is None.
+            wave: Wavelength values
+            spec: 
         show_params (bool, optional): Whether to show the parameters. Default is False.
         log_Rrs (bool, optional): Whether to use a logarithmic scale for the y-axis of `R_rs`. Default is True.
 
@@ -135,9 +138,15 @@ def show_fit(models:list, inputs:np.ndarray,
     ax_R = plt.subplot(gs[0])
     if Rrs_true is not None:
         if 'var' in Rrs_true.keys():
+            # Calcualte chi^2
+            Rsig=np.sqrt(Rrs_true['var'])
+            f = interp1d(wave, model_Rrs)
+            mod_R = f(Rrs_true['wave'])
+            chi2 = np.sum((Rrs_true['spec']-mod_R)**2 / Rsig**2)
+            red_chi2 = chi2 / (Rsig.size-1)
             ax_R.errorbar(Rrs_true['wave'], Rrs_true['spec'], 
-                yerr=np.sqrt(Rrs_true['var']), color='k',
-                fmt='o', capsize=5) 
+                yerr=Rsig, color='k', fmt='o', capsize=5,
+                label=r'$\chi^2_\nu = '+f'{red_chi2:0.2f}'+r'$') 
         else:
             ax_R.plot(Rrs_true['wave'], Rrs_true['spec'], 'k+', label='True', zorder=1)
     #ax_R.plot(wave, gordon_Rrs, 'k+', label='L23 + Gordon')
