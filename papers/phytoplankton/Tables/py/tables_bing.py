@@ -19,12 +19,12 @@ def mktab_error(dataset:str):
 
     # Grab the error
     if dataset == 'MODIS':
-        err_dict = oc_modis.calc_errors()
+        err_dict = oc_modis.calc_errors(reduce_by_in_situ=0.5)
         waves = oc_modis.modis_wave
         outfile='tab_modis.tex'
         caption = '\\caption{'+'MODIS Data \\label{tab:modis}}\n'
     elif dataset == 'SeaWiFS':
-        err_dict = oc_seawifs.calc_errors()
+        err_dict = oc_seawifs.calc_errors(reduce_by_in_situ=0.5)
         waves = oc_seawifs.seawifs_wave
         caption = '\\caption{'+'SeaWiFS Data \\label{tab:seawifs}}\n'
         outfile='tab_seawifs.tex'
