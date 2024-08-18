@@ -143,7 +143,9 @@ def show_fit(models:list, inputs:np.ndarray,
             f = interp1d(wave, model_Rrs)
             mod_R = f(Rrs_true['wave'])
             chi2 = np.sum((Rrs_true['spec']-mod_R)**2 / Rsig**2)
-            red_chi2 = chi2 / (Rsig.size-1)
+            nparam = models[0].nparam + models[1].nparam
+            red_chi2 = chi2 / (nparam-1)
+            #
             ax_R.errorbar(Rrs_true['wave'], Rrs_true['spec'], 
                 yerr=Rsig, color='k', fmt='o', capsize=5,
                 label=r'$\chi^2_\nu = '+f'{red_chi2:0.2f}'+r'$') 
