@@ -19,7 +19,7 @@ def mktab_error(dataset:str):
 
     # Grab the error
     if dataset == 'MODIS':
-        err_dict = oc_modis.calc_errors()
+        err_dict = oc_modis.calc_errors(reduce_by_in_situ=1.41421356237)
         waves = oc_modis.modis_wave
         outfile='tab_modis.tex'
         caption = '\\caption{'+'MODIS Data \\label{tab:modis}}\n'
