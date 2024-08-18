@@ -136,71 +136,6 @@ def fig_u(outfile='fig_u.png', log_log:bool=False):
     print(f"Saved: {outfile}")
 
 
-def fig_Kd(outfile='fig_Kd.png'):
-    """
-    Generate a figure showing the relationship between Kd
-    and IOPs
-
-    Parameters:
-        outfile (str): The filename of the output figure (default: 'fig_u.png')
-
-    """
-    def lee2002_func(a, bb, thetas=0.):
-        Kd_lee = (1+0.005*thetas)*a + 4.18 * (1-0.52*np.exp(-10.8*a))*bb
-        return Kd_lee
-
-    # Load
-    ds = loisel23.load_ds(4,0)
-    ds_profile = loisel23.load_ds(4,0, profile=True)
-
-    # Unpack
-    wave = ds.Lambda.data
-    Rrs = ds.Rrs.data
-    a = ds.a.data
-    bb = ds.bb.data
-    aph = ds.aph.data
-
-    Kd = ds_profile.KEd_z[1,:,:]
-    #xscat = a[:,idx] + 4.18 * (1-0.52*np.exp(-10.8*a[:,idx]))*bb[:,idx]
-    xscat = a + 4.18 * (1-0.52*np.exp(-10.8*a))*bb
-    sclr = np.outer(np.ones(Rrs.shape[0]), wave)
-
-
-    # Select wavelengths
-    i370 = np.argmin(np.abs(wave-370.))
-    i440 = np.argmin(np.abs(wave-440.))
-    i500 = np.argmin(np.abs(wave-500.))
-    i600 = np.argmin(np.abs(wave-600.))
-
-    Chl = aph[:,i440] / 0.05582
-
-    # Calculate Kd
-
-    #
-    fig = plt.figure(figsize=(7,5))
-
-    plt.clf()
-    ax = plt.gca()
-
-    sc = ax.scatter(xscat, Kd, c=sclr, s=1., cmap='jet')
-    gen_cb(sc, 'Wavelength (nm)')
-
-    #
-    ax.set_xlabel(r'Lee+2002 $K_d(a,b_b)$ ordinate')
-    ax.set_ylabel(r'$K_d$')
-    #ax.legend(fontsize=12)
-
-    # Add a 1-1 line using the axis limits
-    axlim = ax.get_xlim()
-    ax.plot(axlim, axlim, 'k--')
-
-
-    plotting.set_fontsize(ax, 15.)
-    #
-    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
-    plt.savefig(outfile, dpi=300)
-    print(f"Saved: {outfile}")
-
 
 # ############################################################
 def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
@@ -1496,9 +1431,6 @@ def main(flg):
     # Supp
     if flg == 10:
         fig_u()
-
-    if flg == 11:
-        fig_Kd()
 
     # Satellite Noise
     if flg == 12:
