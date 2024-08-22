@@ -34,6 +34,9 @@ def show_fit(models:list, inputs:np.ndarray,
     Parameters:
         models (list): A list of models.
         inputs (np.ndarray): The input data for the models.
+            ans: The optimized parameters for the curve fitting.
+            or 
+            chains: The MCMC chains.
         outfile (str, optional): The path to save the plot as an image file. Default is None.
         figsize (tuple, optional): The size of the figure. Default is (14, 6).
         fontsize (float, optional): The font size of the plot labels. Default is 12.0.

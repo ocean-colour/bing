@@ -8,6 +8,7 @@ def parser(options=None):
     parser = argparse.ArgumentParser(description='Fit Rrs')
     parser.add_argument("table_file", type=str, help="Table of input values.  Required: [wave,Rrs] Optional: [sigRrs,anw,bbnw] (.csv)")
     parser.add_argument("models", type=str, help="Comma separate list of the a, bb models.  e.g. Exp,Cst")
+    parser.add_argument("--outroot", type=str, help="Save outputs to this root")
     parser.add_argument("--satellite", type=str, help="Simulate as if observed by the chosen satellite [Aqua, PACE]")
     parser.add_argument("--fit_method", type=str, default='mcmc', help="Simulate as if observed by the chosen satellite [Aqua, PACE]")
     #parser.add_argument("-s","--show", default=False, action="store_true", help="Show pre-processed image?")
@@ -31,6 +32,8 @@ def main(pargs):
     from bing.models import utils as model_utils
     from bing import chisq_fit
     from bing import plotting as bing_plot
+    from bing import priors as bing_priors
+    from bing import inference as bing_inf
 
     # Load up the input table
     df_input = pandas.read_csv(pargs.table_file)
@@ -66,6 +69,27 @@ def main(pargs):
     model_names = pargs.models.split(',')
     models = model_utils.init(model_names, fit_wave)
 
+    # Internals
+    if models[0].uses_Chl:
+        #models[0].set_aph(odict['Chl'])
+        raise ValueError('Not ready for fitting with Chl')
+    if models[1].uses_basis_params:  # Lee
+        raise ValueError('Not ready for fitting with Y')
+        #models[1].set_basis_func(odict['Y'])
+
+    # Set priors
+    if pargs.fit_method == 'mcmc':
+        # Default
+        prior_dict = bing_priors.default
+        for jj in range(2):
+            prior_dicts = [prior_dict]*models[jj].nparam
+            models[jj].priors = bing_priors.Priors(prior_dicts)
+        # Initialize the MCMC
+        nsteps:int=10000 
+        nburn:int=1000 
+        pdict = bing_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
+                
+
     # Initial guess
     if fit_anw is not None and fit_bbnw is not None:
         p0_a = models[0].init_guess(fit_anw)
@@ -78,9 +102,9 @@ def main(pargs):
     # Fit
     items = [(fit_Rrs, fit_sigRrs**2, p0, None)]
     if pargs.fit_method == 'mcmc':
-        embed(header='Fitting with MCMC 78')
-        from bing.fit import mcmc
-        fit_results = mcmc.fit(fit_Rrs, fit_sigRrs, p0, models)
+        # Fit
+        chains, _ = bing_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
+        ans = None
     elif pargs.fit_method == 'chisq':
         ans, cov, _ = chisq_fit.fit(items[0], models)
     
@@ -88,7 +112,8 @@ def main(pargs):
     # Plot
     anw_dict = {} if fit_anw is None else dict(wave=fit_wave, spec=fit_anw)
     bbnw_dict = {} if fit_bbnw is None else dict(wave=fit_wave, spec=fit_bbnw)
-    bing_plot.show_fit(models, ans, None, None,
+    bing_plot.show_fit(models, ans if ans is not None else chains, 
+                       None, None,
                 figsize=(9,4),
                 fontsize=17.,
                 Rrs_true=dict(wave=models[0].wave, spec=fit_Rrs, var=fit_sigRrs**2),
@@ -99,3 +124,26 @@ def main(pargs):
     #embed(header='Done fitting')
 
     # Save
+    if pargs.outroot is not None:
+        outfile = pargs.outroot + '.npz'
+
+        # Chisq
+        outdict = {}
+        if pargs.fit_method == 'mcmc':
+            outdict['chains'] = chains
+        elif pargs.fit_method == 'chisq':
+            outdict['ans'] = ans
+            outdict['cov'] = cov    
+
+        # Extras
+        outdict['wave'] = models[0].wave
+        outdict['Rrs'] = fit_Rrs
+        outdict['sigRrs'] = fit_sigRrs
+        if fit_anw is not None:
+            outdict['anw'] = fit_anw
+        if fit_bbnw is not None:
+            outdict['bbnw'] = fit_bbnw
+
+        # Do it
+        np.savez(outfile, **outdict)
+        print("Wrote: {:s}".format(outfile))
