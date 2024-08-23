@@ -14,7 +14,11 @@ def fit(items:tuple, models:list):
     Fits the given Rrs data to the specified models using curve fitting.
 
     Parameters:
-        items: A tuple containing the Rrs data, variance of Rrs data, initial parameters, and index.
+        items: A tuple containing 
+            the Rrs data 
+            variance of Rrs data 
+            initial parameters 
+            index (for running in parallel; it is not used and can be None)
         models (list): The models to fit the data to.
 
     Returns:

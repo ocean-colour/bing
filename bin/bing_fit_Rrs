@@ -1,0 +1,15 @@
+#!/usr/bin/env python
+#
+# See top-level LICENSE file for Copyright information
+#
+# -*- coding: utf-8 -*-
+
+"""
+This script runs BING on an input table of Rrs values
+"""
+
+import bing.scripts.fit_Rrs as fit_Rrs
+
+if __name__ == '__main__':
+    args = fit_Rrs.parser()
+    fit_Rrs.main(args)
