@@ -42,7 +42,12 @@ def test_priors():
 
     # Check priors
     assert anwExp.priors is not None
-    assert anwExp.priors.priors.flavor == 'uniform'
+    assert anwExp.priors.priors[0].flavor == 'uniform'
     assert anwExp.priors.nparam == 2
-    assert np.isclose(anwExp.priors.priors.pmin, -6)
-    assert np.isclose(anwExp.priors.priors.pmax, 5)
+    assert np.isclose(anwExp.priors.priors[0].pmin, -6)
+    assert np.isclose(anwExp.priors.priors[0].pmax, 5)
+
+def test_expnmf():
+    # Check init -- this requires CNMF
+    wave = np.arange(400, 755, 5.)
+    anwExpNMF = bing_anw.aNWExpNMF(wave)

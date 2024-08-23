@@ -30,7 +30,9 @@ def init_model(model_name:str, wave:np.ndarray,
     model_dict = {'Exp': aNWExp, 'Cst': aNWCst, 'ExpBricaud': aNWExpBricaud,
                   'GIOP': aNWGIOP, 'ExpNMF': aNWExpNMF, 'ExpFix': aNWExpFix,
                   'GSM': aNWGSM, 'Every': aNWEvery,
-                  'ExpB': aNWExp, 'Chase2017': aNWChase, 'Chase2017Mini': aNWChaseMini}
+                  'ExpB': aNWExp, 'Chase2017': aNWChase, 
+                  'Chase2017Mini': aNWChaseMini,
+                  }
     if model_name not in model_dict.keys():
         raise ValueError(f"Unknown model: {model_name}")
     else:
@@ -433,12 +435,15 @@ class aNWExpNMF(aNWModel):
         self.set_w1w2()
 
     def set_w1w2(self):
-        warnings.warn("Need to remove the dependency on IHOP")
+
+        # Hiding this import here to avoid making
+        #  CNMF a requirement for the package
+        from cnmf import io as cnmf_io
 
         # ##################################
         # NMF for aph
         # Load the decomposition of aph
-        aph_file = iops_io.loisel23_filename('nmf', 'aph', 2, 4, 0)
+        aph_file = cnmf_io.pcanmf_filename('L23', 'NMF', 2, 'aph')
         d_aph = np.load(aph_file)
         NMF_W1=d_aph['M'][0]
         NMF_W2=d_aph['M'][1]
@@ -458,7 +463,7 @@ class aNWExpNMF(aNWModel):
             np.ndarray: The initial guess for the parameters
         """
         i400 = np.argmin(np.abs(self.wave-400))
-        p0_a = np.array([a_nw[i400]/2., 0.017, a_nw[i400]/4., 
+        p0_a = np.array([a_nw[i400]/2., 0.017, a_nw[i400]/4.,
                          a_nw[i400]/4.])
         assert p0_a.size == self.nparam
         # Return
