@@ -64,8 +64,8 @@ def fit_one(model_names:list, idx:int,
     if MODIS:
         model_wave = sat_modis.modis_wave
     elif PACE:
-        model_wave = sat_pace.pace_wave
-        PACE_error = sat_pace.gen_noise_vector(PACE_wave)
+        model_wave = anly_utils.PACE_wave
+        PACE_error = sat_pace.gen_noise_vector(anly_utils.PACE_wave)
     elif SeaWiFS:
         model_wave = sat_seawifs.seawifs_wave
     else:
@@ -156,18 +156,11 @@ def fit_one(model_names:list, idx:int,
                                          varRrs=model_varRrs, 
                                          Chl=odict['Chl'], 
                                          Y=odict['Y']))
+        ans = None
     else: # chi^2
         # Fit
-        embed(header='ADD BOUNDS FROM PRIORS: fit_one 153')
+        #embed(header='ADD BOUNDS FROM PRIORS: fit_one 153')
         ans, cov, idx = chisq_fit.fit(items[0], models)
-        # Show?
-        if show:
-            bing_plot.show_fit(models, ans, odict['Chl'], odict['Y'],
-                                 Rrs_true=dict(wave=model_wave, spec=model_Rrs),
-                                 anw_true=dict(wave=l23_wave, spec=odict['anw']),
-                                 bbnw_true=dict(wave=l23_wave, spec=odict['bbnw'])
-                                 )
-            plt.show()
             
         # Save
         outfile = outfile.replace('BING', 'BING_LM')
@@ -175,10 +168,20 @@ def fit_one(model_names:list, idx:int,
               wave=wave, obs_Rrs=gordon_Rrs, varRrs=model_varRrs,
               Chl=odict['Chl'], Y=odict['Y'])
         print(f"Saved: {outfile}")
-        embed(header='fit_one 155')
-        #
-        return ans, cov
+    # Show?
+    if show:
+        bing_plot.show_fit(
+            models, 
+            ans if ans is not None else chains, 
+            odict['Chl'], odict['Y'],
+            Rrs_true=dict(wave=model_wave, spec=model_Rrs),
+            anw_true=dict(wave=l23_wave, spec=odict['anw']),
+            bbnw_true=dict(wave=l23_wave, spec=odict['bbnw'])
+            )
+        plt.show()
 
+    if use_chisq:
+        return ans, cov
 
 
 def main(flg):
@@ -206,7 +209,8 @@ def main(flg):
         #fit_one(['Exp', 'Cst'], idx=170, use_chisq=True)
         #fit_one(['Exp', 'Pow'], idx=170, use_chisq=True)
         #fit_one(['ExpBricaud', 'Pow'], idx=170, use_chisq=True)
-        fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True)
+        fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True,
+                show=True)
 
     # GIOP
     if flg == 5:
@@ -284,6 +288,13 @@ def main(flg):
         fit_one(['ExpB', 'Pow'], idx=170, 
                 use_chisq=False, show=True, max_wave=700.)
 
+    # Develop JXP
+    if flg == 102:
+        #fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True,
+        #        show=True)
+        fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=False,
+                show=True, add_noise=True, PACE=True,
+                scl_noise='PACE')
 
 # Command line execution
 if __name__ == '__main__':
