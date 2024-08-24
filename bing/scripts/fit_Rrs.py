@@ -10,7 +10,7 @@ def parser(options=None):
     parser.add_argument("models", type=str, help="Comma separate list of the a, bb models.  e.g. Exp,Cst")
     parser.add_argument("--outroot", type=str, help="Save outputs to this root")
     parser.add_argument("--satellite", type=str, help="Simulate as if observed by the chosen satellite [Aqua, PACE]")
-    parser.add_argument("--fit_method", type=str, default='mcmc', help="Simulate as if observed by the chosen satellite [Aqua, PACE]")
+    parser.add_argument("--fit_method", type=str, default='mcmc', help="Method for fitting [mcmc, chisq]")
     #parser.add_argument("-s","--show", default=False, action="store_true", help="Show pre-processed image?")
 
 
@@ -26,8 +26,11 @@ def main(pargs):
     """
     import numpy as np
     import pandas
+    from scipy.interpolate import interp1d
 
     from matplotlib import pyplot as plt
+
+    from ocpy.satellites import pace as sat_pace
 
     from bing.models import utils as model_utils
     from bing import chisq_fit
@@ -50,20 +53,32 @@ def main(pargs):
             raise ValueError('Input table must contain a "sigRrs" column if not simulating satellite observations.')
 
     # Process input
+
+    # Simulate satellite observations?
     if pargs.satellite is not None:
-        # Simulate satellite observations
-        pass
+        if pargs.satellite == 'Aqua':
+            # Load Aqua error
+            raise ValueError('Not ready for Aqua')
+        elif pargs.satellite == 'PACE':
+            fit_wave = np.arange(400, 701, 5)
+            fit_sigRrs = sat_pace.gen_noise_vector(fit_wave)
+
+        # Interpolate to fit_wave
+        f = interp1d(df_input['wave'], df_input['Rrs'])
+        fit_Rrs = f(fit_wave)
     else:
         fit_wave = df_input['wave'].values
         fit_Rrs = df_input['Rrs'].values
         fit_sigRrs = df_input['sigRrs'].values
-        # Optional
-        if 'anw' in df_input.columns:
-            fit_anw = df_input['anw'].values
-        if 'bbnw' in df_input.columns:
-            fit_bbnw = df_input['bbnw'].values
-        
 
+    # Optional
+    if 'anw' in df_input.columns:
+        f = interp1d(df_input['wave'], df_input['anw'])
+        fit_anw = f(fit_wave)
+    if 'bbnw' in df_input.columns:
+        f = interp1d(df_input['wave'], df_input['bbnw'])
+        fit_bbnw = f(fit_wave)
+        
 
     # Initialize the models
     model_names = pargs.models.split(',')
