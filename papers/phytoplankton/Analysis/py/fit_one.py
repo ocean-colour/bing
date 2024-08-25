@@ -31,7 +31,8 @@ def fit_one(model_names:list, idx:int,
             show:bool=False,
             MODIS:bool=False,
             SeaWiFS:bool=False,
-            PACE:bool=False):
+            PACE:bool=False,
+            show_xqaa:bool=False):
     """
     Fits a model to the data for a given index.
 
@@ -49,6 +50,7 @@ def fit_one(model_names:list, idx:int,
         MODIS (bool, optional): Flag for MODIS data. Defaults to False.
         SeaWiFS (bool, optional): Flag for SeaWiFS data. Defaults to False.
         PACE (bool, optional): Flag for PACE data. Defaults to False.
+        show_xqaa (bool, optional): Flag to show xqaa data. Defaults to False.
     Returns:
         tuple: Tuple containing the fitted parameters and covariance matrix.
     """
@@ -168,8 +170,12 @@ def fit_one(model_names:list, idx:int,
               wave=wave, obs_Rrs=gordon_Rrs, varRrs=model_varRrs,
               Chl=odict['Chl'], Y=odict['Y'])
         print(f"Saved: {outfile}")
+
     # Show?
     if show:
+        if show_xqaa:
+            anly_utils.show_xqaa(idx)
+
         bing_plot.show_fit(
             models, 
             ans if ans is not None else chains, 
@@ -294,7 +300,7 @@ def main(flg):
         #        show=True)
         fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=False,
                 show=True, add_noise=True, PACE=True,
-                scl_noise='PACE')
+                scl_noise='PACE', show_xqaa=True)
 
 # Command line execution
 if __name__ == '__main__':
