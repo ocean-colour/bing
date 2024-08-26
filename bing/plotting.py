@@ -25,6 +25,7 @@ def show_fit(models:list, inputs:np.ndarray,
              fontsize:float=12.,
              anw_true:dict=None, 
              bbnw_true:dict=None,
+             xqaa:dict=None,
              Rrs_true:dict=None,
              show_params:bool=False,
              log_Rrs:bool=True):
@@ -105,9 +106,13 @@ def show_fit(models:list, inputs:np.ndarray,
     if anw_true is not None:
         ax_anw.plot(anw_true['wave'], anw_true['spec'], 'ko', label='True', zorder=1)
     ax_anw.plot(wave, a_mean-a_w, 'r-', label='Retreival')
+
     if not use_LM:
         ax_anw.fill_between(wave, a_5-a_w, a_95-a_w, 
             color='r', alpha=0.5, label='Uncertainty') 
+
+    if xqaa is not None:
+        ax_anw.plot(xqaa['wave'], xqaa['anw'], ':', color='orange', label='XQAA')
     
     ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
 
@@ -128,6 +133,9 @@ def show_fit(models:list, inputs:np.ndarray,
     if not use_LM:
         ax_bb.fill_between(wave, bb_5-bb_w, bb_95-bb_w,
             color='g', alpha=0.5, label='Uncertainty') 
+
+    if xqaa is not None:
+        ax_bb.plot(xqaa['wave'], xqaa['bbnw'], ':', color='orange', label='XQAA')
 
     #ax_bb.set_xlabel('Wavelength (nm)')
     ax_bb.set_ylabel(r'$b_{b,nw}(\lambda) \; [{\rm m}^{-1}]$')

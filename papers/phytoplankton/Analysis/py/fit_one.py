@@ -19,6 +19,9 @@ from ocpy.satellites import modis as sat_modis
 from ocpy.satellites import pace as sat_pace
 from ocpy.satellites import seawifs as sat_seawifs
 
+from xqaa.params import XQAAParams
+from xqaa import retrieve
+
 from IPython import embed
 
 import anly_utils 
@@ -174,7 +177,16 @@ def fit_one(model_names:list, idx:int,
     # Show?
     if show:
         if show_xqaa:
-            anly_utils.show_xqaa(idx)
+            xqaaParams = XQAAParams()
+            xq_anw, xq_bbnw, _ = retrieve.iops_from_Rrs(
+                l23_wave, gordon_Rrs, xqaaParams)
+            # NaN out the anw extremes
+            keep = (l23_wave > xqaaParams.amin) & (l23_wave < 600.)
+            xq_anw[~keep] = np.nan
+            #
+            xq_dict = dict(wave=l23_wave, anw=xq_anw, bbnw=xq_bbnw)
+        else:
+            xq_dict = None
 
         bing_plot.show_fit(
             models, 
@@ -182,7 +194,8 @@ def fit_one(model_names:list, idx:int,
             odict['Chl'], odict['Y'],
             Rrs_true=dict(wave=model_wave, spec=model_Rrs),
             anw_true=dict(wave=l23_wave, spec=odict['anw']),
-            bbnw_true=dict(wave=l23_wave, spec=odict['bbnw'])
+            bbnw_true=dict(wave=l23_wave, spec=odict['bbnw']),
+            xqaa=xq_dict,
             )
         plt.show()
 
@@ -298,7 +311,7 @@ def main(flg):
     if flg == 102:
         #fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True,
         #        show=True)
-        fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=False,
+        fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True,
                 show=True, add_noise=True, PACE=True,
                 scl_noise='PACE', show_xqaa=True)
 
