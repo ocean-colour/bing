@@ -5,6 +5,7 @@ import os
 import numpy as np
 
 from matplotlib import pyplot as plt
+import corner
 
 from bing.models import anw as bing_anw
 from bing.models import bbnw as bing_bbnw
@@ -35,6 +36,7 @@ def fit_one(model_names:list, idx:int,
             MODIS:bool=False,
             SeaWiFS:bool=False,
             PACE:bool=False,
+            bbnw_pow:float=None,
             show_xqaa:bool=False):
     """
     Fits a model to the data for a given index.
@@ -60,6 +62,10 @@ def fit_one(model_names:list, idx:int,
 
     odict = anly_utils.prep_l23_data(idx, scl_noise=scl_noise,
                                      max_wave=max_wave)
+
+    # Set power-law
+    if bbnw_pow is not None:
+        odict['Y'] = bbnw_pow
 
     # Unpack
     wave = odict['wave']
@@ -199,6 +205,37 @@ def fit_one(model_names:list, idx:int,
             )
         plt.show()
 
+        if not use_chisq:
+            # Corner plot
+            burn = 7000
+            thin = 1
+            coeff = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+            # Labels
+            clbls = models[0].pnames + models[1].pnames
+            # Add log 10
+            clbls = [r'$\log_{10}('+f'{clbl}'+r'$)' for clbl in clbls]
+            fig = corner.corner(
+                coeff, labels=clbls,
+                label_kwargs={'fontsize':17},
+                color='k',
+                #axes_scale='log',
+                truths=None, #truths,
+                show_titles=True,
+                title_kwargs={"fontsize": 12},
+                )
+            # Add 95%
+            ss = 0
+            for ax in fig.get_axes():
+                if len(ax.get_title()) > 0:
+                    # Calculate the percntile
+                    p_5, p_95 = np.percentile(coeff[:,ss], [5, 95], axis=0)
+                    # Plot a vertical line
+                    ax.axvline(p_5, color='b', linestyle=':')
+                    ax.axvline(p_95, color='b', linestyle=':')
+                    ss += 1
+            plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+            plt.show()
+
     if use_chisq:
         return ans, cov
 
@@ -311,9 +348,13 @@ def main(flg):
     if flg == 102:
         #fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True,
         #        show=True)
-        fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True,
+        #fit_one(['ExpNMF', 'Lee'], idx=170, use_chisq=True,
+        #        show=True, add_noise=True, PACE=True,
+        #        scl_noise='PACE', show_xqaa=True)
+        fit_one(['ExpNMF', 'Lee'], idx=170, use_chisq=False,
                 show=True, add_noise=True, PACE=True,
-                scl_noise='PACE', show_xqaa=True)
+                scl_noise='PACE', show_xqaa=True,
+                bbnw_pow=1)
 
 # Command line execution
 if __name__ == '__main__':
