@@ -93,14 +93,17 @@ def fit_one(model_names:list, idx:int,
 
     # Set priors
     if not use_chisq:
-        prior_dict = dict(flavor='uniform', pmin=-6, pmax=5)
+        prior_dict = dict(flavor='log_uniform', pmin=-6, pmax=5)
         for jj in range(2):
             prior_dicts = [prior_dict]*models[jj].nparam
             # Special cases
             if jj == 0 and model_names[0] == 'ExpB':
-                prior_dicts[1] = dict(flavor='uniform', 
-                                      pmin=np.log10(0.007), 
-                                      pmax=np.log10(0.02))
+                prior_dicts[1] = dict(flavor='log_uniform', 
+                                    pmin=np.log10(0.007), 
+                                    pmax=np.log10(0.02))
+            elif jj == 1 and model_names[1] == 'Pow':
+                prior_dicts[1] = dict(flavor='gaussian', 
+                                    mean=1., sigma=0.1)
             models[jj].priors = bing_priors.Priors(prior_dicts)
                     
     # Initialize the MCMC
@@ -130,9 +133,21 @@ def fit_one(model_names:list, idx:int,
     # Initial guess
     p0_a = models[0].init_guess(model_anw)
     p0_b = models[1].init_guess(model_bbnw)
-    p0 = np.concatenate((np.log10(np.atleast_1d(p0_a)), 
-                         np.log10(np.atleast_1d(p0_b))))
+    p0 = np.concatenate((np.atleast_1d(p0_a), 
+                         np.atleast_1d(p0_b)))
 
+    # Log 10
+    if use_chisq:
+        p0 = np.log10(p0)
+    else:
+        cnt = 0
+        for ss in [0,1]:
+            for prior in models[ss].priors.priors:
+                if prior.flavor[0:3] == 'log':
+                    p0[cnt] = np.log10(p0[cnt])
+                cnt += 1
+
+    #embed(header='fit_one 150')
     # Chk initial guess
     ca = models[0].eval_a(p0[0:models[0].nparam])
     cbb = models[1].eval_bb(p0[models[0].nparam:])
@@ -151,12 +166,6 @@ def fit_one(model_names:list, idx:int,
 
     # Bayes
     if not use_chisq:
-        prior_dict = dict(flavor='uniform', pmin=-6, pmax=5)
-
-        for jj in range(2):
-            models[jj].priors = bing_priors.Priors(
-                [prior_dict]*models[jj].nparam)
-
         # Fit
         chains, idx = bing_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
 
@@ -194,6 +203,7 @@ def fit_one(model_names:list, idx:int,
         else:
             xq_dict = None
 
+        embed(header='show_fit 212')
         bing_plot.show_fit(
             models, 
             ans if ans is not None else chains, 
@@ -351,7 +361,7 @@ def main(flg):
         #fit_one(['ExpNMF', 'Lee'], idx=170, use_chisq=True,
         #        show=True, add_noise=True, PACE=True,
         #        scl_noise='PACE', show_xqaa=True)
-        fit_one(['ExpNMF', 'Lee'], idx=170, use_chisq=False,
+        fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=False,
                 show=True, add_noise=True, PACE=True,
                 scl_noise='PACE', show_xqaa=True,
                 bbnw_pow=1)

@@ -41,12 +41,12 @@ def gaussian(wave:np.ndarray, params:np.ndarray):
     Calculate the Gaussian function for a given wave array and parameters.
 
     Parameters:
-    wave (np.ndarray): Array of wave values.
-    params (np.ndarray): Array of parameters.
-    pivot (float, optional): Pivot value for the Gaussian function. Default is 400.
+        wave (np.ndarray): Array of wave values.
+        params (np.ndarray): Array of parameters.
+        pivot (float, optional): Pivot value for the Gaussian function. Default is 400.
 
     Returns:
-    np.ndarray: Result of the Gaussian function calculation.
+        np.ndarray: Result of the Gaussian function calculation.
     """
     #embed(header='gaussia 51')
     Amp = np.outer(10**params[...,0], np.ones_like(wave))
@@ -60,15 +60,15 @@ def powerlaw(wave:np.ndarray, params:np.ndarray, pivot:float=600.):
     Calculate the power law function for a given wavelength.
 
     Parameters:
-    wave (np.ndarray): Array of wavelengths.
-    params (np.ndarray): Array of parameters for the power law function.
-    pivot (float, optional): Pivot wavelength. Default is 600.
+        wave (np.ndarray): Array of wavelengths.
+        params (np.ndarray): Array of parameters for the power law function.
+        pivot (float, optional): Pivot wavelength. Default is 600.
 
     Returns:
-    np.ndarray: Array of calculated values for the power law function.
+        np.ndarray: Array of calculated values for the power law function.
     """
     return np.outer(10**params[...,0], np.ones_like(wave)) *\
-                    (pivot/wave)**(10**params[...,1]).reshape(-1,1)
+                    (pivot/wave)**(params[...,1]).reshape(-1,1)
 
 def gen_basis(params: np.ndarray, basis_func_list: list):
     """

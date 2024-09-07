@@ -4,7 +4,7 @@ import numpy as np
 
 from abc import ABCMeta
 
-default = dict(flavor='uniform', pmin=-6, pmax=5)
+default = dict(flavor='log_uniform', pmin=-6, pmax=5)
 
 class Prior:
     """
@@ -18,6 +18,16 @@ class Prior:
     flavor:str = None
     """
     Approach to the prior
+    """
+
+    pmin:float = None
+    """
+    Minimum value for the prior
+    """
+
+    pmax:float = None
+    """
+    Maximum value for the prior
     """
 
     def __init__(self, pdict:dict):
@@ -35,27 +45,84 @@ class Prior:
         return f"<Prior: {self.flavor}>"
 
 
-class UniformPrior(Prior):
+class GaussianPrior(Prior):
     """
     Class for a uniform prior
 
     Attributes:
 
     """
-    flavor:str = 'uniform'
+    flavor:str = 'guassian'
     """
     Approach to the prior
     """
 
-    pmn:float = None
+    mean:float = None
     """
-    Minimum value for the prior
+    The mean value for the prior
     """
 
-    pmx:float = None
+    sigma:float = None
     """
-    Maximum value for the prior
+    The standard deviation for the prior
     """
+
+    def __init__(self, pdict:dict):
+        Prior.__init__(self, pdict)
+
+    def init_from_dict(self, pdict:dict):
+        """
+        Initialize the prior from a dictionary
+
+        Args:
+            pdict (dict): The dictionary containing the prior information
+                mean (float): The mean value for the prior
+                sigma (float): The standard deviation for the prior
+        """
+        # Optional
+        if 'pmin' in pdict:
+            self.pmin = pdict['pmin']
+        if 'pmax' in pdict:
+            self.pmax = pdict['pmax']
+        # Requred
+        self.mean = pdict['mean']
+        self.sigma = pdict['sigma']
+
+    def calc(self, param:float):
+        """
+        Calculate the prior for the parameters
+
+        Args:
+            params (np.ndarray): The parameters
+
+        Returns:
+            bool: True if the parameters are within the prior, False otherwise
+        """
+        # Optional
+        if self.pmin is not None and param < self.pmin:
+            return -np.inf
+        if self.pmax is not None and param > self.pmax:
+            return -np.inf
+
+        # Required
+        return -0.5*((param - self.mean)/self.sigma)**2
+
+
+    def __repr__(self):
+        return f"<Prior: {self.flavor}, mean={self.mean:0.3f}, sigma={self.sigma:0.3f} >"
+
+class LogUniformPrior(Prior):
+    """
+    Class for a uniform prior
+
+    Attributes:
+
+    """
+    flavor:str = 'log_uniform'
+    """
+    Approach to the prior
+    """
+
     def __init__(self, pdict:dict):
         Prior.__init__(self, pdict)
 
@@ -117,8 +184,10 @@ class Priors:
         """
         self.priors = []
         for pdict in pdicts:
-            if pdict['flavor'] == 'uniform':
-                self.priors.append(UniformPrior(pdict))
+            if pdict['flavor'] == 'log_uniform':
+                self.priors.append(LogUniformPrior(pdict))
+            elif pdict['flavor'] == 'gaussian':
+                self.priors.append(GaussianPrior(pdict))
             else:
                 raise ValueError(f"Unknown prior flavor: {pdict['flavor']}")
 
