@@ -170,7 +170,8 @@ def fit_one(model_names:list, idx:int,
     # Bayes
     if not use_chisq:
         # Fit
-        chains, idx = bing_inf.fit_one(items[0], models=models, pdict=pdict, chains_only=True)
+        chains, idx = bing_inf.fit_one(
+            items[0], models=models, pdict=pdict, chains_only=True)
 
         # Save
         anly_utils.save_fits(chains, idx, outfile, 

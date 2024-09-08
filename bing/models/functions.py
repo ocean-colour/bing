@@ -33,7 +33,7 @@ def exponential(wave:np.ndarray, params:np.ndarray, pivot:float=400., S:float=No
     """
     Amp = np.outer(10**params[...,0], np.ones_like(wave)) 
     if S is None:
-        return Amp * np.exp(np.outer(params[...,1], wave-pivot))
+        return Amp * np.exp(np.outer(-1*params[...,1], wave-pivot))
     else:
         return Amp * np.exp(-S*(wave-pivot))
 
