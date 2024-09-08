@@ -155,6 +155,23 @@ class LogUniformPrior(Prior):
     def __repr__(self):
         return f"<Prior: {self.flavor}, pmin={self.pmin:0.3f}, pmax={self.pmax:0.3f} >"
 
+class UniformPrior(LogUniformPrior):
+    """
+    Class for a uniform prior
+
+    This is identical to a log_uniform prior except
+    that the prior is linear space rather than log space
+
+    Attributes:
+
+    """
+    flavor:str = 'uniform'
+    """
+    Approach to the prior
+    """
+
+    def __init__(self, pdict:dict):
+        Prior.__init__(self, pdict)
 
 class Priors:
 
@@ -186,6 +203,8 @@ class Priors:
         for pdict in pdicts:
             if pdict['flavor'] == 'log_uniform':
                 self.priors.append(LogUniformPrior(pdict))
+            elif pdict['flavor'] == 'uniform':
+                self.priors.append(UniformPrior(pdict))
             elif pdict['flavor'] == 'gaussian':
                 self.priors.append(GaussianPrior(pdict))
             else:

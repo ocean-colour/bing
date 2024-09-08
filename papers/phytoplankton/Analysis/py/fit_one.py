@@ -150,13 +150,12 @@ def fit_one(model_names:list, idx:int,
                     p0[cnt] = np.log10(p0[cnt])
                 cnt += 1
 
-    #embed(header='fit_one 150')
     # Chk initial guess
     ca = models[0].eval_a(p0[0:models[0].nparam])
     cbb = models[1].eval_bb(p0[models[0].nparam:])
     pRrs = bing_rt.calc_Rrs(ca, cbb)
     print(f'Initial Rrs guess: {np.mean((model_Rrs-pRrs)/model_Rrs)}')
-    embed(header='95 of fit one')
+    #embed(header='159 of fit one')
     
 
     # Set the items
@@ -368,13 +367,14 @@ def main(flg):
         # Priors
         apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*4
         # Gaussian for Sexp
-        apriors[1] = dict(flavor='gaussian', mean=0.015, sigma=0.001)
+        #apriors[1] = dict(flavor='gaussian', mean=0.015, sigma=0.001)
+        apriors[1]=dict(flavor='uniform', pmin=0.01, pmax=0.02)
 
         # Do it
         fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=False,
                 show=True, add_noise=True, PACE=True,
                 scl_noise='PACE', show_xqaa=True,
-                apriors=apriors)
+                apriors=apriors)#, nsteps=50000, nburn=5000)
 
 # Command line execution
 if __name__ == '__main__':
