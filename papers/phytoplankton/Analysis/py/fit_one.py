@@ -37,7 +37,8 @@ def fit_one(model_names:list, idx:int,
             SeaWiFS:bool=False,
             PACE:bool=False,
             bbnw_pow:float=None,
-            show_xqaa:bool=False):
+            show_xqaa:bool=False,
+            apriors:list=None):
     """
     Fits a model to the data for a given index.
 
@@ -97,7 +98,9 @@ def fit_one(model_names:list, idx:int,
         for jj in range(2):
             prior_dicts = [prior_dict]*models[jj].nparam
             # Special cases
-            if jj == 0 and model_names[0] == 'ExpB':
+            if jj == 0 and apriors is not None:
+                prior_dicts = apriors
+            elif jj == 0 and model_names[0] == 'ExpB':
                 prior_dicts[1] = dict(flavor='log_uniform', 
                                     pmin=np.log10(0.007), 
                                     pmax=np.log10(0.02))
@@ -153,7 +156,7 @@ def fit_one(model_names:list, idx:int,
     cbb = models[1].eval_bb(p0[models[0].nparam:])
     pRrs = bing_rt.calc_Rrs(ca, cbb)
     print(f'Initial Rrs guess: {np.mean((model_Rrs-pRrs)/model_Rrs)}')
-    #embed(header='95 of fit one')
+    embed(header='95 of fit one')
     
 
     # Set the items
@@ -203,7 +206,6 @@ def fit_one(model_names:list, idx:int,
         else:
             xq_dict = None
 
-        embed(header='show_fit 212')
         bing_plot.show_fit(
             models, 
             ans if ans is not None else chains, 
@@ -361,10 +363,17 @@ def main(flg):
         #fit_one(['ExpNMF', 'Lee'], idx=170, use_chisq=True,
         #        show=True, add_noise=True, PACE=True,
         #        scl_noise='PACE', show_xqaa=True)
+
+        # Priors
+        apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*4
+        # Gaussian for Sexp
+        apriors[1] = dict(flavor='gaussian', mean=0.015, sigma=0.001)
+
+        # Do it
         fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=False,
                 show=True, add_noise=True, PACE=True,
                 scl_noise='PACE', show_xqaa=True,
-                bbnw_pow=1)
+                apriors=apriors)
 
 # Command line execution
 if __name__ == '__main__':

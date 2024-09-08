@@ -22,17 +22,18 @@ def exponential(wave:np.ndarray, params:np.ndarray, pivot:float=400., S:float=No
     Calculate the exponential function for a given wave array and parameters.
 
     Parameters:
-    wave (np.ndarray): Array of wave values.
-    params (np.ndarray): Array of parameters.
-    pivot (float, optional): Pivot value for the exponential function. Default is 400.
-    S (float, optional): Scaling factor for the exponential function. Default is None.
+        wave (np.ndarray): Array of wave values.
+        params (np.ndarray): Array of parameters.
+        pivot (float, optional): Pivot value for the exponential function. Default is 400.
+        S (float, optional): Scaling factor for the exponential function. Default is None.
+            linear, not log10
 
     Returns:
-    np.ndarray: Result of the exponential function calculation.
+        np.ndarray: Result of the exponential function calculation.
     """
     Amp = np.outer(10**params[...,0], np.ones_like(wave)) 
     if S is None:
-        return Amp * np.exp(np.outer(-10**params[...,1], wave-pivot))
+        return Amp * np.exp(np.outer(params[...,1], wave-pivot))
     else:
         return Amp * np.exp(-S*(wave-pivot))
 
