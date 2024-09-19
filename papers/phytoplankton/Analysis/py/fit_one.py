@@ -356,7 +356,7 @@ def main(flg):
         fit_one(['ExpB', 'Pow'], idx=170, 
                 use_chisq=False, show=True, max_wave=700.)
 
-    # Develop JXP
+    # Develop JXP with NMF
     if flg == 102:
         #fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True,
         #        show=True)
@@ -375,6 +375,20 @@ def main(flg):
                 show=True, add_noise=True, PACE=True,
                 scl_noise='PACE', show_xqaa=True,
                 apriors=apriors)#, nsteps=50000, nburn=5000)
+
+    # Develop JXP with Bricaud
+    if flg == 103:
+        # Priors
+        apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*3
+        # Gaussian for Sexp
+        apriors[1]=dict(flavor='uniform', pmin=0.01, pmax=0.02)
+
+        # Do it
+        fit_one(['ExpBricaud', 'Pow'], idx=170, use_chisq=False,
+                show=True, add_noise=True, PACE=True,
+                scl_noise='PACE', show_xqaa=True,
+                apriors=apriors)#, nsteps=50000, nburn=5000)
+
 
 # Command line execution
 if __name__ == '__main__':

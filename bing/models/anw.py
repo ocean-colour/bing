@@ -27,7 +27,8 @@ def init_model(model_name:str, wave:np.ndarray,
     Returns:
         aNWModel: The model
     """
-    model_dict = {'Exp': aNWExp, 'Cst': aNWCst, 'ExpBricaud': aNWExpBricaud,
+    model_dict = {'Exp': aNWExp, 'Cst': aNWCst, 
+                  'ExpBricaud': aNWExpBricaud,
                   'GIOP': aNWGIOP, 'ExpNMF': aNWExpNMF, 'ExpFix': aNWExpFix,
                   'GSM': aNWGSM, 'Every': aNWEvery,
                   'ExpB': aNWExp, 'Chase2017': aNWChase, 
