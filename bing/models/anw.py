@@ -245,7 +245,7 @@ class aNWEvery(aNWModel):
 class aNWExpFix(aNWModel):
     """
     Exponential model for non-water absorption with fixed S
-        Aexp * exp(-Sexp*(wave-400))
+        Aexp * exp(-Sdg*(wave-400))
 
     Attributes:
 
@@ -363,8 +363,8 @@ class aNWGIOP(aNWModel):
     """
     GIOP (Werdell+2013)
     Exponential model with Sdg fixed + Bricaud aph for non-water absorption
-        aexp = Aexp * exp(-Sexp*(wave-400))
-            Sexp = 0.018
+        aexp = Adg * exp(-Sdg*(wave-400))
+            Sdg = 0.018
         aph = Aph * [A_B * chlA**E_B]
 
     Attributes:
@@ -420,13 +420,13 @@ class aNWGIOP(aNWModel):
 class aNWExpNMF(aNWModel):
     """
     Exponential model + NMF aph for non-water absorption
-        aexp = Aexp * exp(-Sexp*(wave-400))
+        aexp = Aexp * exp(-Sdg*(wave-400))
         aph = H1*W1 + H2*W2
 
     """
     name = 'ExpNMF'
     nparam = 4
-    pnames = ['Aexp', 'Sexp', 'H1', 'H2']
+    pnames = ['Aexp', 'Sdg', 'H1', 'H2']
     pivot = 400.
 
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):

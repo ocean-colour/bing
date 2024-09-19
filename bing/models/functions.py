@@ -1,6 +1,7 @@
 """ Generic functions for a and bb """
 
 import numpy as np
+from scipy.optimize import curve_fit
 
 from IPython import embed
 
@@ -94,3 +95,30 @@ def gen_basis(params: np.ndarray, basis_func_list: list):
             ans += tmp
     # Return
     return ans
+
+
+def exp_func(wave, A, S, pivot=440.):
+    return A * np.exp(-S*(wave-pivot))
+
+
+def fit_Sdg(wave:np.ndarray, a_dg:np.ndarray,
+             wv_min:float=400., wv_max:float=525.,
+             pivot:float=440.):
+
+    # Allow for a pivot wavelength
+    lambda_func = lambda x, a, b: exp_func(x, a, b, pivot=pivot)
+
+    # Initial guess
+    ipiv = np.argmin(np.abs(wave-pivot))
+    p0 = [a_dg[ipiv], 0.015]
+ 
+    # Cut to the desired range
+    cut = (wave > wv_min) & (wave < wv_max)
+
+    # Fit the exponential
+    ans, cov =  curve_fit(lambda_func, wave[cut], a_dg[cut],
+                            p0=p0, #sigma=np.sqrt(varRrs),
+                            full_output=False)
+
+    # Return
+    return ans, cov                        
