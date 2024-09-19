@@ -206,7 +206,7 @@ def fit_one(model_names:list, idx:int,
         else:
             xq_dict = None
 
-        bing_plot.show_fit(
+        bing_plot.show_fits(
             models, 
             ans if ans is not None else chains, 
             odict['Chl'], odict['Y'],

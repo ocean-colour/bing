@@ -6,7 +6,8 @@ from bing import rt as bing_rt
 from bing import chisq_fit
 
 
-def reconstruct_from_chains(models:list, chains, burn=7000, thin=1):
+def reconstruct_from_chains(models:list, chains, 
+                            burn:int=7000, thin:int=1):
     """
     Reconstructs the parameters and calculates statistics from chains of model parameters.
 
@@ -27,7 +28,7 @@ def reconstruct_from_chains(models:list, chains, burn=7000, thin=1):
         - sigRs (ndarray): The standard deviation of Rrs.
 
     """
-    # Burn the chains
+    # Burn/thin the chains
     chains = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
     # Calc
     a = models[0].eval_a(chains[..., :models[0].nparam])

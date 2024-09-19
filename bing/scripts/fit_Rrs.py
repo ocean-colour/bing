@@ -127,7 +127,7 @@ def main(pargs):
     # Plot
     anw_dict = {} if fit_anw is None else dict(wave=fit_wave, spec=fit_anw)
     bbnw_dict = {} if fit_bbnw is None else dict(wave=fit_wave, spec=fit_bbnw)
-    bing_plot.show_fit(models, ans if ans is not None else chains, 
+    bing_plot.show_fits(models, ans if ans is not None else chains, 
                        None, None,
                 figsize=(9,4),
                 fontsize=17.,

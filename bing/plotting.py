@@ -18,7 +18,7 @@ from bing import evaluate
 from IPython import embed
 
 # ############################################################
-def show_fit(models:list, inputs:np.ndarray,
+def show_fits(models:list, inputs:np.ndarray,
              ex_a_params:np.ndarray, ex_bb_params:np.ndarray,
              outfile:str=None,
              figsize:tuple=(14,6),
@@ -201,3 +201,64 @@ def show_fit(models:list, inputs:np.ndarray,
         print(f"Saved: {outfile}")
 
     return axes
+
+def show_abs_fit(models:list, chains:np.ndarray,
+             ex_a_params:np.ndarray, ex_bb_params:np.ndarray,
+             outfile:str=None,
+             figsize:tuple=(14,6),
+             fontsize:float=12.,
+             burn:int=7000,
+             thin:int=1,
+             anw_true:dict=None, 
+             bbnw_true:dict=None,
+             xqaa:dict=None,
+             Rrs_true:dict=None,
+             show_params:bool=False,
+             log_Rrs:bool=True):
+
+    # Unpack a little
+    wave = models[0].wave
+
+    # Burn/thin the chains
+    chains = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+    # Calc
+    a = models[0].eval_a(chains[..., :models[0].nparam])
+
+    # Reconstruct
+    a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
+            model_Rrs, sigRs = evaluate.reconstruct_from_chains(
+            models, chains)
+    # Generate params just in case
+    params = np.median(chains, axis=[0,1])
+
+    # Water
+    a_w = absorption.a_water(wave, data='IOCCG')
+
+    # #########################################################
+    # Plot the solution
+    lgsz = 14.
+
+    fig = plt.figure(figsize=figsize)
+    plt.clf()
+    gs = gridspec.GridSpec(1,1)
+    
+
+    # #########################################################
+    # a without water
+
+    ax_anw = plt.subplot(gs[0])
+
+    if anw_true is not None:
+        for clr, key in zip(['b','g'], ['a_dg', 'a_ph']):
+            ax_anw.plot(anw_true['wave'], 
+                    anw_true[key], 'o', color=clr, 
+                    label='True adg', zorder=1)
+    # 
+    ax_anw.plot(wave, a_mean-a_w, 'r-', label='Retreival')
+    ax_anw.fill_between(wave, a_5-a_w, a_95-a_w, 
+        color='r', alpha=0.5, label='Uncertainty') 
+
+    if xqaa is not None:
+        ax_anw.plot(xqaa['wave'], xqaa['anw'], ':', color='orange', label='XQAA')
+    
+    ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
