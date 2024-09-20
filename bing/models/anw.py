@@ -117,12 +117,13 @@ class aNWModel:
         """
         self.a_w = water_abs.a_water(self.wave, data=data)
 
-    def eval_anw(self, params:np.ndarray):
+    def eval_anw(self, params:np.ndarray, sub_comps:bool=False):
         """
         Evaluate the non-water absorption coefficient
 
         Parameters:
             params (np.ndarray): The parameters for the model
+            sub_comps (bool, optional): Return the sub-components. Default is False.
 
             Cst:
                 params[...,0] = log10(Anw)
@@ -145,7 +146,10 @@ class aNWModel:
         elif self.name == 'ExpBricaud':
             a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
             a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
-            return a_dg + a_ph
+            if sub_comps:
+                return a_dg, a_ph
+            else:
+                return a_dg + a_ph
         elif self.name in ['GIOP', 'GSM']:
             a_dg = functions.exponential(self.wave, params, pivot=self.pivot, S=self.Sdg)
             a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])

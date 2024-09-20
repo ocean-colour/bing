@@ -226,10 +226,14 @@ def fit(model_names:list, idx:int,
         plt.show()
 
         if not use_chisq:
-            # Corner plot
             burn = 7000
             thin = 1
             coeff = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+
+            # a_nw
+
+            
+            # Corner plot
             # Labels
             clbls = models[0].pnames + models[1].pnames
             # Add log 10
@@ -293,7 +297,7 @@ def main(flg):
         # Do it
         fit(['ExpBricaud', 'Pow'], idx=170, use_chisq=False,
                 show=True, add_noise=True, PACE=True,
-                scl_noise='PACE', show_xqaa=True, set_Sdg=0.002,
+                scl_noise='PACE', show_xqaa=True, set_Sdg=0.001,
                 apriors=apriors)#, nsteps=50000, nburn=5000)
 
 
