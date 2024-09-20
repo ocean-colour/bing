@@ -202,23 +202,22 @@ def show_fits(models:list, inputs:np.ndarray,
 
     return axes
 
-def show_abs_fit(models:list, prep_chains:np.ndarray,
-             ex_a_params:np.ndarray, ex_bb_params:np.ndarray,
+def show_anw_fits(models:list, prep_chains:np.ndarray,
              outfile:str=None,
-             figsize:tuple=(14,6),
+             figsize:tuple=(9,6),
              fontsize:float=12.,
-             anw_true:dict=None, 
-             bbnw_true:dict=None,
-             xqaa:dict=None,
-             Rrs_true:dict=None,
-             show_params:bool=False,
-             log_Rrs:bool=True):
+             anw_true:dict=None): 
 
     # Unpack a little
     wave = models[0].wave
 
     # Calc
-
+    a_dg, a_ph = models[0].eval_anw(prep_chains[..., :models[0].nparam],
+                           retsub_comps=True)
+    adg_mean = np.median(a_dg, axis=0)
+    adg_5, adg_95 = np.percentile(a_dg, [5, 95], axis=0)
+    aph_mean = np.median(a_ph, axis=0)
+    aph_5, aph_95 = np.percentile(a_ph, [5, 95], axis=0)
 
     # Water
     a_w = absorption.a_water(wave, data='IOCCG')
@@ -243,13 +242,11 @@ def show_abs_fit(models:list, prep_chains:np.ndarray,
                     anw_true[key], 'o', color=clr, 
                     label='True adg', zorder=1)
     # 
-    ax_anw.plot(wave, a_mean-a_w, 'r-', label='Retreival')
-    ax_anw.fill_between(wave, a_5-a_w, a_95-a_w, 
-        color='r', alpha=0.5, label='Uncertainty') 
+    ax_anw.plot(wave, adg_mean, 'b-', label='adg Retreival')
+    ax_anw.fill_between(wave, adg_5, adg_95, color='b', alpha=0.5) 
+    ax_anw.plot(wave, aph_mean, 'g-', label='aph Retreival')
+    ax_anw.fill_between(wave, aph_5, aph_95, color='g', alpha=0.5) 
 
-    if xqaa is not None:
-        ax_anw.plot(xqaa['wave'], xqaa['anw'], ':', color='orange', label='XQAA')
-    
     ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
 
     # axes
@@ -263,5 +260,7 @@ def show_abs_fit(models:list, prep_chains:np.ndarray,
     if outfile is not None:
         plt.savefig(outfile, dpi=300)
         print(f"Saved: {outfile}")
+    else:
+        plt.show()
 
     return axes

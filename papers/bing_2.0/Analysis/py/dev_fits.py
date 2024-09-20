@@ -231,7 +231,13 @@ def fit(model_names:list, idx:int,
             coeff = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
 
             # a_nw
-
+            #from importlib import reload
+            #reload(bing_plot)
+            bing_plot.show_anw_fits(
+                models, coeff,
+                anw_true=dict(
+                    wave=l23_wave, a_dg=odict['adg'],
+                    a_ph=odict['aph']))
             
             # Corner plot
             # Labels
