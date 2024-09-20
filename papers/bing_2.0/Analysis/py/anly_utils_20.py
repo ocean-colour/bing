@@ -18,7 +18,6 @@ from bing import chisq_fit
 
 from IPython import embed
 
-PACE_wave = np.arange(400, 701, 5)
 
 kdict = {2: ['Cst', 'Cst'],
             3: ['Exp', 'Cst'],
@@ -32,6 +31,9 @@ kdict = {2: ['Cst', 'Cst'],
 }
 
 MODIS_reduce = np.sqrt(2)
+
+def pace_wave(wv_min=400., wv_max=700., step=5.):
+    return np.arange(wv_min, wv_max+1, step)
 
 def chain_filename(model_names:list, scl_noise, add_noise,
                        idx:int=None, MODIS:bool=False, use_LM:bool=False,
@@ -173,7 +175,9 @@ def convert_to_satwave(wave:np.ndarray, spec:np.ndarray,
     return new_spec
 
 def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
-                  ds=None, max_wave:float=None, min_wave:float=None):
+                  ds=None, 
+                  max_wave:float=None, 
+                  min_wave:float=None):
     """ Prepare L23 the data for the fit """
 
     # Load
@@ -210,7 +214,8 @@ def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
     Chl = aph[i440] / 0.05582
 
     # For adg
-    ans, cov = functions.fit_Sdg(wave, adg)
+    ans, cov = functions.fit_Sdg(wave, adg,
+                                 wv_min=min_wave)
 
     # Cut down to 40 bands
     Rrs = Rrs[::step]

@@ -348,9 +348,20 @@ class aNWExpBricaud(aNWModel):
 
         self.a_ph = L23_A * Chla**L23_E
 
+
         # Normalize at 440
         iwave = np.argmin(np.abs(self.wave-440))
         self.a_ph /= self.a_ph[iwave]
+
+        # Extrapolate to <400nm, as necessary
+        if self.wave.min() < 400:
+            iwave = np.argmin(np.abs(self.wave-400))
+            a400 = self.a_ph[iwave]
+            scl_400 = 2./3
+            # 
+            wv_ext = self.wave < 400.
+            self.a_ph[wv_ext] = scl_400*a400 + (
+                self.wave[wv_ext]-350) * a400 * (1-scl_400) / 50.
 
     def init_guess(self, a_nw:np.ndarray):
         """

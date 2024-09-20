@@ -29,7 +29,8 @@ def fit(model_names:list, idx:int,
         nsteps:int=10000, nburn:int=1000, 
         scl_noise:float=0.02, use_chisq:bool=False,
         add_noise:bool=False,
-        max_wave:float=None,
+        min_wave:float=400.,
+        max_wave:float=700.,
         show:bool=False,
         MODIS:bool=False,
         SeaWiFS:bool=False,
@@ -37,7 +38,8 @@ def fit(model_names:list, idx:int,
         bbnw_pow:float=None,
         show_xqaa:bool=False,
         apriors:list=None,
-        set_Sdg:float=None):
+        set_Sdg:float=None, 
+        debug:bool=False):
     """
     Fits a model to the data for a given index.
 
@@ -61,8 +63,8 @@ def fit(model_names:list, idx:int,
     Returns:
         tuple: Tuple containing the fitted parameters and covariance matrix.
     """
-    odict = anly_utils_20.prep_l23_data(idx, scl_noise=scl_noise,
-                                     max_wave=max_wave)
+    odict = anly_utils_20.prep_l23_data(
+        idx, scl_noise=scl_noise, min_wave=min_wave, max_wave=max_wave)
 
     # Set power-law
     if bbnw_pow is not None:
@@ -76,8 +78,9 @@ def fit(model_names:list, idx:int,
     if MODIS:
         model_wave = sat_modis.modis_wave
     elif PACE:
-        model_wave = anly_utils_20.PACE_wave
-        PACE_error = sat_pace.gen_noise_vector(anly_utils_20.PACE_wave)
+        model_wave = anly_utils_20.pace_wave(wv_min=min_wave,
+                                             wv_max=max_wave)
+        PACE_error = sat_pace.gen_noise_vector(model_wave)
     elif SeaWiFS:
         model_wave = sat_seawifs.seawifs_wave
     else:
@@ -110,6 +113,7 @@ def fit(model_names:list, idx:int,
 
             # Sdg
             if set_Sdg is not None and jj==0:
+                print(f"Using Sdg = {odict['Sdg']}")
                 # Find Sdg
                 ii = models[0].pnames.index('Sdg')
                 prior_dicts[ii] = dict(flavor='gaussian', 
@@ -230,15 +234,6 @@ def fit(model_names:list, idx:int,
             thin = 1
             coeff = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
 
-            # a_nw
-            #from importlib import reload
-            #reload(bing_plot)
-            bing_plot.show_anw_fits(
-                models, coeff,
-                anw_true=dict(
-                    wave=l23_wave, a_dg=odict['adg'],
-                    a_ph=odict['aph']))
-            
             # Corner plot
             # Labels
             clbls = models[0].pnames + models[1].pnames
@@ -265,6 +260,17 @@ def fit(model_names:list, idx:int,
                     ss += 1
             plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
             plt.show()
+
+            # a_nw
+            bing_plot.show_anw_fits(
+                models, coeff,
+                anw_true=dict(
+                    wave=l23_wave, a_dg=odict['adg'],
+                    a_ph=odict['aph']))
+
+            if debug:
+                embed(header='268 of dev')
+            
 
     if use_chisq:
         return ans, cov
@@ -303,8 +309,10 @@ def main(flg):
         # Do it
         fit(['ExpBricaud', 'Pow'], idx=170, use_chisq=False,
                 show=True, add_noise=True, PACE=True,
-                scl_noise='PACE', show_xqaa=True, set_Sdg=0.001,
-                apriors=apriors)#, nsteps=50000, nburn=5000)
+                scl_noise='PACE', show_xqaa=True, 
+                set_Sdg=0.002,
+                apriors=apriors, debug=True,
+                min_wave=350.)#, nsteps=50000, nburn=5000)
 
 
 # Command line execution
