@@ -39,6 +39,8 @@ def fit(model_names:list, idx:int,
         show_xqaa:bool=False,
         apriors:list=None,
         set_Sdg:float=None, 
+        set_beta:float=None,
+        nMC:int=None,
         debug:bool=False):
     """
     Fits a model to the data for a given index.
@@ -80,7 +82,6 @@ def fit(model_names:list, idx:int,
     elif PACE:
         model_wave = anly_utils_20.pace_wave(wv_min=min_wave,
                                              wv_max=max_wave)
-        PACE_error = sat_pace.gen_noise_vector(model_wave)
     elif SeaWiFS:
         model_wave = sat_seawifs.seawifs_wave
     else:
@@ -107,9 +108,9 @@ def fit(model_names:list, idx:int,
                 prior_dicts[1] = dict(flavor='log_uniform', 
                                     pmin=np.log10(0.007), 
                                     pmax=np.log10(0.02))
-            elif jj == 1 and model_names[1] == 'Pow':
+            elif jj == 1 and model_names[1] == 'Pow' and set_beta is not None:
                 prior_dicts[1] = dict(flavor='gaussian', 
-                                    mean=1., sigma=0.1)
+                                    mean=set_beta, sigma=0.1)
 
             # Sdg
             if set_Sdg is not None and jj==0:
@@ -141,9 +142,10 @@ def fit(model_names:list, idx:int,
 
     model_varRrs = anly_utils_20.scale_noise(scl_noise, model_Rrs, model_wave)
 
+    orig_model_Rrs = model_Rrs.copy()
     if add_noise:
         model_Rrs = anly_utils_20.add_noise(
-                model_Rrs, abs_sig=np.sqrt(model_varRrs))
+                orig_model_Rrs, abs_sig=np.sqrt(model_varRrs))
 
     # Initial guess
     p0_a = models[0].init_guess(model_anw)
@@ -176,13 +178,30 @@ def fit(model_names:list, idx:int,
 
     outfile = anly_utils_20.chain_filename(
         model_names, scl_noise, add_noise, idx=idx,
-        MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
+        MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS,
+        beta=set_beta, Sdg=set_Sdg, 
+        wv_min=min_wave, nMC=nMC)
 
     # Bayes
     if not use_chisq:
         # Fit
-        chains, idx = bing_inf.fit_one(
-            items[0], models=models, pdict=pdict, chains_only=True)
+        if nMC is None:
+            chains, idx = bing_inf.fit_one(
+                items[0], models=models, pdict=pdict, chains_only=True)
+        else:
+            chains = []
+            for ss in range(nMC):
+                print(f'Running {ss} of {nMC}')
+                # Error
+                if add_noise:
+                    model_Rrs = anly_utils_20.add_noise(
+                        orig_model_Rrs, abs_sig=np.sqrt(model_varRrs))
+                # Run
+                ichains, idx = bing_inf.fit_one(
+                    items[0], models=models, pdict=pdict, chains_only=True)
+                # Save
+                chains.append(ichains) 
+            chains = np.array(chains)
 
         # Save
         anly_utils_20.save_fits(chains, idx, outfile, 
@@ -311,9 +330,29 @@ def main(flg):
                 show=True, add_noise=True, PACE=True,
                 scl_noise='PACE', show_xqaa=True, 
                 set_Sdg=0.002,
+                set_beta=1.,
                 apriors=apriors, debug=True,
                 min_wave=350.)#, nsteps=50000, nburn=5000)
 
+    # Bricaud + UV (100 trials)
+    if flg == 3:
+        min_wave = 400.
+
+        # Priors
+        apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*3
+        # Gaussian for Sdg
+        apriors[1]=dict(flavor='uniform', pmin=0.01, pmax=0.02)
+
+        # Do it
+        fit(['ExpBricaud', 'Pow'], idx=170, use_chisq=False,
+                show=False, add_noise=True, PACE=True,
+                scl_noise='PACE', 
+                set_Sdg=0.002,
+                set_beta=1.,
+                nMC=100,
+                nsteps=20000, nburn=2000,
+                apriors=apriors, debug=True,
+                min_wave=min_wave)
 
 # Command line execution
 if __name__ == '__main__':

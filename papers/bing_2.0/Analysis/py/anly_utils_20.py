@@ -37,8 +37,12 @@ def pace_wave(wv_min=400., wv_max=700., step=5.):
 
 def chain_filename(model_names:list, scl_noise, add_noise,
                        idx:int=None, MODIS:bool=False, use_LM:bool=False,
-                       PACE:bool=False, SeaWiFS:bool=False): 
-    outfile = f'../Analysis/Fits/BING_{model_names[0]}{model_names[1]}'
+                       PACE:bool=False, SeaWiFS:bool=False,
+                       nMC:int=None,
+                       wv_min:float=None, 
+                       Sdg:float=None,
+                       beta:float=None): 
+    outfile = f'../Analysis/Fits/BING20_{model_names[0]}{model_names[1]}'
 
     if idx is not None:
         outfile += f'_{idx}'
@@ -75,7 +79,24 @@ def chain_filename(model_names:list, scl_noise, add_noise,
         outfile += f'{int(100*scl_noise):02d}'
     # LM
     if use_LM:
-        outfile = outfile.replace('BING', 'BING_LM')
+        outfile = outfile.replace('BING20', 'BING20_LM')
+
+    # UV fussing
+    if wv_min is not None:
+        outfile += f'_UV{int(wv_min)}'
+
+    # Sdg
+    if Sdg is not None:
+        outfile += f'_Sdg{int(1000*Sdg)}'
+
+    # beta
+    if beta is not None:
+        outfile += f'_b{beta:0.1f}'
+
+    # Monte Carlo?
+    if nMC is not None:
+        outfile += f'_MC'
+
     outfile += '.npz'
     return outfile
 
