@@ -585,13 +585,13 @@ def fig_spectra(idx:int,
     bbnw = odict['bb'] - bbw
 
     #
-    fig = plt.figure(figsize=(7,5))
+    fig = plt.figure(figsize=(10,5))
     ax = plt.gca()
 
     # Colors
     ctotal ='gray'
     cwater ='black'
-    cnw ='green'
+    cnw ='orange'
     #embed(header='559 of figs')
 
     # a
@@ -606,15 +606,16 @@ def fig_spectra(idx:int,
         ax.plot(wave, adg, '-', color='brown', label=r'$a_{dg}$', zorder=1)
 
     # bb
+    bb_ls = '--'
     if show_total:
-        ax.plot(wave, bb, ':', color=ctotal, label=r'$b_{b}$', zorder=1)
+        ax.plot(wave, bb, bb_ls, color=ctotal, label=r'$b_{b}$', zorder=1)
 
     if bbscl != 1.:
-        ax.plot(wave, bbscl*bbw, ':', color=cwater, label=f'{bbscl}*'+r'$b_{b,w}$', zorder=1)
-        ax.plot(wave, bbscl*bbnw, ':', color=cnw, label=f'{bbscl}*'+r'$b_{b,nw}$', zorder=1)
+        ax.plot(wave, bbscl*bbw, bb_ls, color=cwater, label=f'{bbscl}*'+r'$b_{b,w}$', zorder=1)
+        ax.plot(wave, bbscl*bbnw, bb_ls, color=cnw, label=f'{bbscl}*'+r'$b_{b,nw}$', zorder=1)
     else:
-        ax.plot(wave, bbscl*bbw, ':', color=cwater, label=r'$b_{b,w}$', zorder=1)
-        ax.plot(wave, bbscl*bbnw, ':', color=cnw, label=r'$b_{b,nw}$', zorder=1)
+        ax.plot(wave, bbscl*bbw, bb_ls, color=cwater, label=r'$b_{b,w}$', zorder=1)
+        ax.plot(wave, bbscl*bbnw, bb_ls, color=cnw, label=r'$b_{b,nw}$', zorder=1)
 
     #
     # Legend filled white
@@ -632,7 +633,7 @@ def fig_spectra(idx:int,
         ymax = 0.08
         ax.set_ylim(0., ymax)
 
-    plotting.set_fontsize(ax, 15)
+    plotting.set_fontsize(ax, 17)
 
     # Fill between
     aw_to_anw = aw/anw
@@ -1466,7 +1467,7 @@ def main(flg):
     else:
         flg= int(flg)
 
-    # Spectra
+    # Spectra -- blue/red with water
     if flg == 1:
         fig_spectra(170)#, bbscl=20)
 
