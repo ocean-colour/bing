@@ -1,5 +1,6 @@
 
 import os
+from collections import namedtuple
 
 import numpy as np
 from scipy.interpolate import interp1d
@@ -35,66 +36,56 @@ MODIS_reduce = np.sqrt(2)
 def pace_wave(wv_min=400., wv_max=700., step=5.):
     return np.arange(wv_min, wv_max+1, step)
 
-def chain_filename(model_names:list, scl_noise, add_noise,
-                       idx:int=None, MODIS:bool=False, use_LM:bool=False,
-                       PACE:bool=False, SeaWiFS:bool=False,
-                       nMC:int=None,
-                       wv_min:float=None, 
-                       Sdg:float=None,
-                       beta:float=None): 
-    outfile = f'../Analysis/Fits/BING20_{model_names[0]}{model_names[1]}'
+def chain_filename(p:namedtuple, idx:int=None): 
+    outfile = f'../Analysis/Fits/BING20_{p.model_names[0]}{p.model_names[1]}'
 
     if idx is not None:
         outfile += f'_{idx}'
-        if MODIS:
+        if p.satellite == 'MODIS':
             outfile += '_M'
-        elif PACE:
+        elif p.satellite == 'PACE':
             outfile += '_P'
-        elif SeaWiFS:
+        elif p.satellite == 'SeaWiFS':
             outfile += '_S'
     else:
-        if MODIS:
+        if p.satellite == 'MODIS':
             outfile += '_M23'
-        elif PACE:
+        elif p.satellite == 'PACE':
             outfile += '_P23'
-        elif SeaWiFS:
+        elif p.satellite == 'SeaWiFS':
             outfile += '_S23'
         else:
             outfile += '_L23'
     # Added?
-    if add_noise:
+    if p.add_noise:
         outfile += '_N'
     else:
         outfile += '_n'
+
     # Value
-    if scl_noise == 'SeaWiFS':
+    if p.scl_noise == 'SeaWiFS':
         outfile += 'S'
-    elif scl_noise == 'MODIS_Aqua':
+    elif p.scl_noise == 'MODIS_Aqua':
         outfile += 'M'
-    elif scl_noise == 'PACE':
+    elif p.scl_noise == 'PACE':
         outfile += 'P'
-    elif scl_noise is None:
-        outfile += f'{int(100*0.02):02d}'
     else:
-        outfile += f'{int(100*scl_noise):02d}'
-    # LM
-    if use_LM:
-        outfile = outfile.replace('BING20', 'BING20_LM')
+        outfile += f'{int(100*p.scl_noise):02d}'
 
     # UV fussing
-    if wv_min is not None:
-        outfile += f'_UV{int(wv_min)}'
+    if p.wv_min is not None:
+        outfile += f'_UV{int(p.wv_min)}'
 
     # Sdg
-    if Sdg is not None:
-        outfile += f'_Sdg{int(1000*Sdg)}'
+    if p.set_Sdg is not None:
+        outfile += f'_Sdg{int(1000*p.sSdg)}'
 
     # beta
-    if beta is not None:
-        outfile += f'_b{beta:0.1f}'
+    if p.beta is not None:
+        outfile += f'_b{p.beta:0.1f}'
 
     # Monte Carlo?
-    if nMC is not None:
+    if p.nMC is not None:
         outfile += f'_MC'
 
     outfile += '.npz'
@@ -195,10 +186,10 @@ def convert_to_satwave(wave:np.ndarray, spec:np.ndarray,
     # Return
     return new_spec
 
-def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
+def prep_l23_data(idx:int, step:int=1, 
                   ds=None, 
-                  max_wave:float=None, 
-                  min_wave:float=None):
+                  wv_max:float=None, 
+                  wv_min:float=None):
     """ Prepare L23 the data for the fit """
 
     # Load
@@ -208,10 +199,10 @@ def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
     wave = ds.Lambda.data
 
     gd_wave = np.ones_like(ds.Lambda.data, dtype=bool)
-    if max_wave is not None:
-        gd_wave &= ds.Lambda.data <= max_wave
-    if min_wave is not None:
-        gd_wave &= ds.Lambda.data >= min_wave
+    if wv_max is not None:
+        gd_wave &= ds.Lambda.data <= wv_max
+    if wv_min is not None:
+        gd_wave &= ds.Lambda.data >= wv_min
     iwave = np.where(gd_wave)[0]
 
     # Grab
@@ -236,7 +227,7 @@ def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
 
     # For adg
     ans, cov = functions.fit_Sdg(wave, adg,
-                                 wv_min=min_wave)
+                                 wv_min=wv_min)
 
     # Cut down to 40 bands
     Rrs = Rrs[::step]

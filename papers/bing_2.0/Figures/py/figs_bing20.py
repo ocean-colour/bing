@@ -25,7 +25,6 @@ from ocpy.satellites import seawifs as sat_seawifs
 from ocpy.satellites import modis as sat_modis
 
 from bing import plotting as bing_plot
-from bing.models import utils as model_utils
 from bing.models import functions
 
 #from bing.models import anw as bing_anw
@@ -55,32 +54,9 @@ def fig_uv_efficacy(
             nMC=100):
 
 
-    # Load L23
-    odict = anly_utils_20.prep_l23_data(
-        idx, scl_noise=scl_noise)
-
     # Loop
     for min_wave in [350, 400]:
-        model_wave = anly_utils_20.pace_wave(wv_min=min_wave,
-                                             wv_max=max_wave)
-        # Models
-        #embed(header='figs 68')
-        models = model_utils.init(model_names, model_wave)
-        
-        # Chain file
-        chain_file = anly_utils_20.chain_filename(
-            model_names, scl_noise, add_noise, idx=idx,
-            PACE=PACE, beta=set_beta, Sdg=set_Sdg, 
-            wv_min=min_wave, nMC=nMC)
-        # Load
-        d = np.load(chain_file)
 
-        burn = 7000
-        thin = 1
-        chains = d['chains'][:,burn::thin, :, :].reshape(d['chains'].shape[0], -1, d['chains'].shape[-1])
-        a_dg, a_ph = models[0].eval_anw(
-            chains[..., :models[0].nparam], 
-            retsub_comps=True)
 
     #
     fig = plt.figure(figsize=(8,5))
