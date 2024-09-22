@@ -81,4 +81,4 @@ if __name__ == '__main__':
     p = param.p_ntuple(['ExpBricaud', 'Pow'], 
             set_Sdg=True, sSdg=0.002, beta=1., nMC=100,
             add_noise=True)
-    analyze_chains(p, 170, debug=True)
+    analyze_chains(p, 170)#, debug=True)
