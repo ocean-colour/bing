@@ -344,15 +344,17 @@ def main(flg):
         apriors[1]=dict(flavor='uniform', pmin=0.01, pmax=0.02)
 
         # Do it
-        fit(['ExpBricaud', 'Pow'], idx=170, use_chisq=False,
-                show=False, add_noise=True, PACE=True,
-                scl_noise='PACE', 
-                set_Sdg=0.002,
-                set_beta=1.,
-                nMC=100,
-                nsteps=20000, nburn=2000,
-                apriors=apriors, debug=True,
-                min_wave=min_wave)
+        fit(
+            ['ExpBricaud', 'Pow'], 
+            idx=170, use_chisq=False,
+            show=False, add_noise=True, PACE=True,
+            scl_noise='PACE', 
+            set_Sdg=0.002,
+            set_beta=1.,
+            nMC=100,
+            nsteps=20000, nburn=2000,
+            apriors=apriors, debug=True,
+            min_wave=min_wave)
 
 # Command line execution
 if __name__ == '__main__':

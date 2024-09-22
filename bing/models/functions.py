@@ -102,9 +102,11 @@ def exp_func(wave, A, S, pivot=440.):
 
 
 def fit_Sdg(wave:np.ndarray, a_dg:np.ndarray,
-             wv_min:float=400., wv_max:float=525.,
+             wv_min:float=None, wv_max:float=None,
              pivot:float=440.):
 
+    wv_min = wv_min if wv_min is not None else 400.
+    wv_max = wv_max if wv_max is not None else 525.
     # Allow for a pivot wavelength
     lambda_func = lambda x, a, b: exp_func(x, a, b, pivot=pivot)
 
