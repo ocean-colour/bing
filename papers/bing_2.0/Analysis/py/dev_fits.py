@@ -295,7 +295,9 @@ def main(flg):
 
     # Bricaud + UV (100 trials)
     if flg == 3:
-        min_wave = 400.
+        p = param.p_ntuple(['ExpBricaud', 'Pow'], 
+            set_Sdg=True, sSdg=0.002, beta=1., nMC=100,
+            add_noise=True, wv_min=400.)
 
         # Priors
         apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*3
@@ -303,17 +305,9 @@ def main(flg):
         apriors[1]=dict(flavor='uniform', pmin=0.01, pmax=0.02)
 
         # Do it
-        fit(
-            ['ExpBricaud', 'Pow'], 
-            idx=170, 
-            show=False, add_noise=True, PACE=True,
-            scl_noise='PACE', 
-            set_Sdg=0.002,
-            set_beta=1.,
-            nMC=100,
+        fit(p, 170, show=False, 
             nsteps=20000, nburn=2000,
-            apriors=apriors, debug=True,
-            min_wave=min_wave)
+            apriors=apriors, debug=True)
 
 # Command line execution
 if __name__ == '__main__':
