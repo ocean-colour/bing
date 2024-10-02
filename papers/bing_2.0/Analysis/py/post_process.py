@@ -40,6 +40,8 @@ def analyze_chains(p:namedtuple, idx:int,
     if not clobber and os.path.isfile(outfile):
         print(f'File exists.  Skipping: {outfile}')
         return
+    else:
+        print(f'Working on: {outfile}')
     # Load
     d = np.load(chain_file)
 
