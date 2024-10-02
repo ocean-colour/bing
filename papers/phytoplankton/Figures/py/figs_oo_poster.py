@@ -797,11 +797,13 @@ def fig_bic_modis_pace(use_LM:bool=True,
         ax = plt.subplot(gs[ss])
         D_BIC = D_BIC_A #if ss == 0 else D_BIC_B
         subset = f'{ks[0]},{ks[1]}'
-        for ss, s2n in enumerate(s2ns):
+        for tt, s2n in enumerate(s2ns):
+            if ss == 0 and s2n == 0.05:
+                continue
             if log_x:
-                xvals = np.log10(D_BIC[ss] + 6.)
+                xvals = np.log10(D_BIC[tt] + 6.)
             else:
-                xvals = D_BIC[ss]
+                xvals = D_BIC[tt]
             # CDF
             srt = np.sort(xvals)
             yvals = np.arange(srt.size) / srt.size
@@ -823,9 +825,9 @@ def fig_bic_modis_pace(use_LM:bool=True,
             ax.set_xlabel(r'$\log_{10}(\Delta \, \rm '+xlbl+'_{'+f'{subset}'+r'} + 6)$')
         else:
             if ss == 0:
-                ax.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{Exp+Cst,ExpBricaud+Pow}'+r'$')
+                ax.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{Exp+Cst,ExpBricaud+Pow}^{MODIS}'+r'$')
             else:
-                ax.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{Exp+Pow,ExpBricaud+Pow}'+r'$')
+                ax.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{Exp+Pow,ExpBricaud+Pow}^{PACE}'+r'$')
 
         # Make it pretty
         # Title
@@ -834,7 +836,7 @@ def fig_bic_modis_pace(use_LM:bool=True,
 
         ax.set_ylabel('CDF')
         ax.grid(True)
-        plotting.set_fontsize(ax, 17)
+        plotting.set_fontsize(ax, 19)
         #
         xmax = 30. #if MODIS else 50.
         if not log_x:
@@ -842,7 +844,7 @@ def fig_bic_modis_pace(use_LM:bool=True,
         else:
             ax.set_xlim(0.25, None)
         ax.set_ylim(0.,1)
-        ax.legend(fontsize=17)
+        ax.legend(fontsize=17, loc='lower right')
 
         # Vertical line at 0
         vline = 0.
