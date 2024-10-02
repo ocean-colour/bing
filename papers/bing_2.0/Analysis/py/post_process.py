@@ -93,5 +93,7 @@ if __name__ == '__main__':
     analyze_chains(p, 170, clobber=False)#, debug=True)
 
     # 350nm
-    p.wv_min = 350.
-    analyze_chains(p, 170)#, debug=True)
+    p350 = param.p_ntuple(['ExpBricaud', 'Pow'], 
+            set_Sdg=True, sSdg=0.002, beta=1., nMC=100,
+            add_noise=True, wv_min=350.)
+    analyze_chains(p350, 170)#, debug=True)
