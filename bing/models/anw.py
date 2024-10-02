@@ -187,6 +187,8 @@ class aNWModel:
         Parameters:
             a_nw (np.ndarray): The non-water absorption coefficient
         """
+    def __repr__(self):
+        return f"<aNWModel: {self.name}, nparam={self.nparam}>"
 
 class aNWCst(aNWModel):
     """
