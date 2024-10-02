@@ -89,11 +89,11 @@ if __name__ == '__main__':
 
     p = param.p_ntuple(['ExpBricaud', 'Pow'], 
             set_Sdg=True, sSdg=0.002, beta=1., nMC=100,
-            add_noise=True)
-    analyze_chains(p, 170, clobber=False)#, debug=True)
+            add_noise=True, wv_min=400.)
+    analyze_chains(p, 170, clobber=True)#, debug=True)
 
     # 350nm
     p350 = param.p_ntuple(['ExpBricaud', 'Pow'], 
             set_Sdg=True, sSdg=0.002, beta=1., nMC=100,
             add_noise=True, wv_min=350.)
-    analyze_chains(p350, 170)#, debug=True)
+    analyze_chains(p350, 170, clobber=True)#, debug=True)
