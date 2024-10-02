@@ -1,6 +1,7 @@
 """ Algorithms to post-process the results of the Bing 2.0 analysis. """
 
 from collections import namedtuple
+import os
 import numpy as np
 
 from ocpy.utils import io as ocio
@@ -13,7 +14,8 @@ import param
 from IPython import embed
 
 def analyze_chains(p:namedtuple, idx:int,
-                   debug:bool=False):
+                   debug:bool=False,
+                   clobber:bool=False):
     """ Analyze the MCMC chains for the given parameters. """
 
     # Load L23
@@ -33,6 +35,11 @@ def analyze_chains(p:namedtuple, idx:int,
     
     # Chain file
     chain_file = anly_utils_20.chain_filename(p, idx=idx)
+    # Output
+    outfile = chain_file.replace('.npz', '.json')
+    if not clobber and os.path.isfile(outfile):
+        print(f'File exists.  Skipping: {outfile}')
+        return
     # Load
     d = np.load(chain_file)
 
@@ -69,7 +76,6 @@ def analyze_chains(p:namedtuple, idx:int,
                  aph_440=aph_440, aph_5=aph_5, aph_95=aph_95)
 
     jdict = ocio.jsonify(sdict)
-    outfile = chain_file.replace('.npz', '.json')
     ocio.savejson(outfile, jdict, overwrite=True)
     print(f'Saved: {outfile}')
 
@@ -78,7 +84,12 @@ def analyze_chains(p:namedtuple, idx:int,
 
 # Command line execution
 if __name__ == '__main__':
+
     p = param.p_ntuple(['ExpBricaud', 'Pow'], 
             set_Sdg=True, sSdg=0.002, beta=1., nMC=100,
             add_noise=True)
+    analyze_chains(p, 170, clobber=False)#, debug=True)
+
+    # 350nm
+    p.wv_min = 350.
     analyze_chains(p, 170)#, debug=True)
