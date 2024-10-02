@@ -297,7 +297,8 @@ def main(flg):
     if flg == 3:
         p = param.p_ntuple(['ExpBricaud', 'Pow'], 
             set_Sdg=True, sSdg=0.002, beta=1., nMC=100,
-            add_noise=True, wv_min=400.)
+            add_noise=True, wv_min=350.)
+            #add_noise=True, wv_min=400.)
 
         # Priors
         apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*3
