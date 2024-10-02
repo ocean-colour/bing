@@ -305,7 +305,7 @@ def main(flg):
         # Do it
         fit(
             ['ExpBricaud', 'Pow'], 
-            idx=170, use_chisq=False,
+            idx=170, 
             show=False, add_noise=True, PACE=True,
             scl_noise='PACE', 
             set_Sdg=0.002,
