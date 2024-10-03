@@ -6,6 +6,9 @@ import numpy as np
 
 from ocpy.utils import io as ocio
 
+from matplotlib import pyplot as plt
+import seaborn as sns
+
 from bing.models import utils as model_utils
 
 import anly_utils_20
@@ -42,8 +45,17 @@ def analyze_chains(p:namedtuple, idx:int,
         return
     else:
         print(f'Working on: {outfile}')
+
+    # Right answer
+    l23_wave = odict['wave']
+    l23_i400 = np.argmin(np.abs(l23_wave-400))
+    l23_i440 = np.argmin(np.abs(l23_wave-440))
+    l23_adg_400 = odict['adg'][l23_i400]
+    l23_aph_440 = odict['aph'][l23_i440]
+
     # Load
     d = np.load(chain_file)
+    print('Loaded chains:', d['chains'].shape)
 
     burn = 7000
     thin = 1
@@ -53,29 +65,32 @@ def analyze_chains(p:namedtuple, idx:int,
         nMC = 2
     chains = d['chains'][:nMC,burn::thin, :, :].reshape(-1, d['chains'].shape[-1])
     
-    # TESTING
+    # Generate the ANW components
     a_dg, a_ph = models[0].eval_anw(
         chains[..., :models[0].nparam], 
         retsub_comps=True)
+    print('Done with eval_anw')
     # Reshape
     a_dg = a_dg.reshape(nMC, -1, model_wave.size)
     a_ph = a_ph.reshape(nMC, -1, model_wave.size)
+    #embed(header='analyze_chains 64 of post_process.py')
 
     # Wavelengths
     i400 = np.argmin(np.abs(model_wave-400))
     i440 = np.argmin(np.abs(model_wave-440))
 
     # Stats
-    all_adg_400 = np.median(a_dg[..., i400],axis=1)
-    all_aph_440 = np.median(a_ph[..., i440],axis=1)
+    all_adg_400 = a_dg[..., i400]
+    all_aph_440 = a_ph[..., i440]
     adg_400 = np.median(all_adg_400)
     aph_440 = np.median(all_aph_440)
-    adg_5, adg_95 = np.percentile(all_adg_400, [16, 84])
-    aph_5, aph_95 = np.percentile(all_aph_440, [16, 84])
+    adg_5, adg_95 = np.percentile(all_adg_400.flatten(), [16, 84])
+    aph_5, aph_95 = np.percentile(all_aph_440.flatten(), [16, 84])
 
     # Save
     sdict = dict(adg_400=adg_400, adg_5=adg_5, adg_95=adg_95,
-                 aph_440=aph_440, aph_5=aph_5, aph_95=aph_95)
+                 aph_440=aph_440, aph_5=aph_5, aph_95=aph_95,
+                 l23_adg_400=l23_adg_400, l23_aph_440=l23_aph_440)
 
     jdict = ocio.jsonify(sdict)
     ocio.savejson(outfile, jdict, overwrite=True)

@@ -302,7 +302,8 @@ def main(flg):
     # Bricaud
     if flg == 2:
         p = param.p_ntuple(['ExpBricaud', 'Pow'], 
-            set_Sdg=True, sSdg=0.002, beta=1.)
+            set_Sdg=True, sSdg=0.002, beta=1., 
+            add_noise=True, wv_min=400.)
         # Priors
         apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*3
         # Gaussian for Sdg
