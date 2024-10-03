@@ -33,6 +33,7 @@ def fit(p:namedtuple, idx:int,
         bbnw_pow:float=None,
         show_xqaa:bool=False,
         apriors:list=None,
+        burn:int=7000, thin:int=1,
         debug:bool=False):
     """
     Fits a model to the data for a given index.
@@ -77,6 +78,10 @@ def fit(p:namedtuple, idx:int,
         model_wave = sat_seawifs.seawifs_wave
     else:
         model_wave = wave
+
+    # Wavelengths
+    i400 = np.argmin(np.abs(model_wave-400))
+    i440 = np.argmin(np.abs(model_wave-440))
 
     # Priors
     if p.model_names[0] == 'ExpB':
@@ -182,6 +187,20 @@ def fit(p:namedtuple, idx:int,
                 items[0], models=models, pdict=pdict, chains_only=True)
             # Save
             chains.append(ichains) 
+            # Calc adg, aph
+            tchains = ichains[burn::thin, :, :].reshape(-1, ichains.shape[-1])
+            a_dg, a_ph = models[0].eval_anw(
+                tchains[..., :models[0].nparam], 
+                retsub_comps=True)
+            all_adg_400 = a_dg[..., i400].flatten()
+            all_aph_440 = a_ph[..., i440].flatten()
+            adg_400 = float(np.median(all_adg_400))
+            aph_440 = float(np.median(all_aph_440))
+            adg_5, adg_95 = np.percentile(all_adg_400, [16, 84])
+            aph_5, aph_95 = np.percentile(all_aph_440, [16, 84])
+            # Print
+            print(f'adg_400: {adg_400} [{adg_5}, {adg_95}]')
+            print(f'aph_440: {aph_440} [{aph_5}, {aph_95}]')
         chains = np.array(chains)
 
     # Save
@@ -306,7 +325,7 @@ def main(flg):
         apriors[1]=dict(flavor='uniform', pmin=0.01, pmax=0.02)
 
         # Do it
-        fit(p, 170, show=False, 
+        fit(p, 170, show=True, 
             nsteps=20000, nburn=2000,
             apriors=apriors, debug=True)
 
