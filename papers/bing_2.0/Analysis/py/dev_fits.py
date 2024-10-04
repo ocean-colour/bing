@@ -324,7 +324,7 @@ def main(flg):
             #add_noise=True, wv_min=400.)
 
         # Do it
-        fit(p, 170, show=True, 
+        fit(p, 170, show=False, 
             nsteps=20000, nburn=2000,
             debug=False)
 
@@ -346,7 +346,7 @@ def main(flg):
             apriors[1]=dict(flavor='uniform', pmin=0.01, pmax=0.02)
 
             # Do it
-            fit(p, 170, show=True, 
+            fit(p, 170, show=False, 
                 nsteps=20000, nburn=2000,
                 apriors=apriors, debug=False)
 
