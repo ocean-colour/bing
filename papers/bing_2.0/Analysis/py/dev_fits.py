@@ -314,21 +314,40 @@ def main(flg):
             
 
     # Bricaud + UV (100 trials)
+    #  - 100 trials
+    #  - Strict prior on Sdg and beta
     if flg == 3:
         p = param.p_ntuple(['ExpBricaud', 'Pow'], 
             set_Sdg=True, sSdg=0.002, beta=1., nMC=100,
-            add_noise=True, wv_min=350.)
+            add_noise=True, wv_min=375.)
+            #add_noise=True, wv_min=350.)
             #add_noise=True, wv_min=400.)
-
-        # Priors
-        apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*3
-        # Gaussian for Sdg
-        apriors[1]=dict(flavor='uniform', pmin=0.01, pmax=0.02)
 
         # Do it
         fit(p, 170, show=True, 
             nsteps=20000, nburn=2000,
-            apriors=apriors, debug=True)
+            debug=False)
+
+    # Bricaud + UV (100 trials)
+    #  - 100 trials
+    #  - Loos prior on Sdg
+    if flg == 4:
+        for wv_min in [350., 375, 400]:
+            p = param.p_ntuple(['ExpBricaud', 'Pow'], 
+                set_Sdg=False, beta=1., nMC=100,
+                add_noise=True, wv_min=wv_min)
+                #add_noise=True, wv_min=350.)
+                #add_noise=True, wv_min=400.)
+
+            # Priors
+            apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*3
+            # Uniform for Sdg
+            apriors[1]=dict(flavor='uniform', pmin=0.01, pmax=0.02)
+
+            # Do it
+            fit(p, 170, show=True, 
+                nsteps=20000, nburn=2000,
+                apriors=apriors, debug=False)
 
 # Command line execution
 if __name__ == '__main__':

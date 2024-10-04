@@ -84,12 +84,12 @@ def analyze_chains(p:namedtuple, idx:int,
     all_aph_440 = a_ph[..., i440]
     adg_400 = np.median(all_adg_400)
     aph_440 = np.median(all_aph_440)
-    adg_5, adg_95 = np.percentile(all_adg_400.flatten(), [16, 84])
-    aph_5, aph_95 = np.percentile(all_aph_440.flatten(), [16, 84])
+    adg_16, adg_84 = np.percentile(all_adg_400.flatten(), [16, 84])
+    aph_16, aph_84 = np.percentile(all_aph_440.flatten(), [16, 84])
 
     # Save
-    sdict = dict(adg_400=adg_400, adg_5=adg_5, adg_95=adg_95,
-                 aph_440=aph_440, aph_5=aph_5, aph_95=aph_95,
+    sdict = dict(adg_400=adg_400, adg_16=adg_16, adg_84=adg_84,
+                 aph_440=aph_440, aph_16=aph_16, aph_84=aph_84,
                  l23_adg_400=l23_adg_400, l23_aph_440=l23_aph_440)
 
     jdict = ocio.jsonify(sdict)
