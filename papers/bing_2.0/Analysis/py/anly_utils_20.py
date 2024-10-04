@@ -79,6 +79,8 @@ def chain_filename(p:namedtuple, idx:int=None):
     # Sdg
     if p.set_Sdg: 
         outfile += f'_Sdg{int(1000*p.sSdg)}'
+    else:
+        outfile += f'_SdgU'
 
     # beta
     if p.beta is not None:
