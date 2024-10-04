@@ -77,7 +77,7 @@ def chain_filename(p:namedtuple, idx:int=None):
         outfile += f'_UV{int(p.wv_min)}'
 
     # Sdg
-    if p.set_Sdg is not None:
+    if p.set_Sdg: 
         outfile += f'_Sdg{int(1000*p.sSdg)}'
 
     # beta
