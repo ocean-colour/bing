@@ -102,13 +102,9 @@ def analyze_chains(p:namedtuple, idx:int,
 # Command line execution
 if __name__ == '__main__':
 
-    p = param.p_ntuple(['ExpBricaud', 'Pow'], 
+    # Strong Sdg prior
+    for wv_min in [350., 375., 400.]:
+        p = param.p_ntuple(['ExpBricaud', 'Pow'], 
             set_Sdg=True, sSdg=0.002, beta=1., nMC=100,
-            add_noise=True, wv_min=400.)
-    analyze_chains(p, 170, clobber=True)#, debug=True)
-
-    # 350nm
-    p350 = param.p_ntuple(['ExpBricaud', 'Pow'], 
-            set_Sdg=True, sSdg=0.002, beta=1., nMC=100,
-            add_noise=True, wv_min=350.)
-    analyze_chains(p350, 170, clobber=True)#, debug=True)
+            add_noise=True, wv_min=wv_min)
+        analyze_chains(p, 170, clobber=True)#, debug=True)
