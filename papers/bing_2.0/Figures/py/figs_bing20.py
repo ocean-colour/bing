@@ -45,7 +45,7 @@ def gen_cb(img, lbl, csz = 17.):
 
 def fig_uv_efficacy(model_names=['ExpBricaud', 'Pow'], 
     idx=170, outfile='fig_uv_efficacy.png',
-    set_beta=1., nMC=100):
+    set_beta=1., nMC=100, set_Sdg:bool=True):
     wv_mins = [350, 375, 400]
 
     # Parse outputs
@@ -58,7 +58,7 @@ def fig_uv_efficacy(model_names=['ExpBricaud', 'Pow'],
     aph_84 = []
     for ss, wv_min in enumerate(wv_mins): 
         p = param.p_ntuple(model_names,
-                set_Sdg=True, sSdg=0.002, beta=set_beta, nMC=nMC,
+                set_Sdg=set_Sdg, sSdg=0.002, beta=set_beta, nMC=nMC,
                 add_noise=True, wv_min=wv_min)
         # Load up the results
         chain_file = anly_utils_20.chain_filename(p, idx=idx)
@@ -130,6 +130,7 @@ def main(flg):
     # Spectra
     if flg == 1:
         fig_uv_efficacy()#, bbscl=20)
+        fig_uv_efficacy(set_Sdg=False, outfile='fig_uv_efficacyU.png')#, bbscl=20)
 
 # Command line execution
 if __name__ == '__main__':

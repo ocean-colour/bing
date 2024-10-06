@@ -59,6 +59,7 @@ def fit(p:namedtuple, idx:int,
     """
     odict = anly_utils_20.prep_l23_data(
         idx, wv_min=p.wv_min, wv_max=p.wv_max)
+    print(f"Sdg = {odict['Sdg']}")
 
     # Set power-law
     if bbnw_pow is not None:
@@ -299,14 +300,18 @@ def main(flg):
                 scl_noise='PACE', show_xqaa=True,
                 apriors=apriors)#, nsteps=50000, nburn=5000)
 
-    # Bricaud
+    # Single fit
     if flg == 2:
+        #p = param.p_ntuple(['ExpBricaud', 'Pow'], 
+        #    set_Sdg=True, sSdg=0.002, beta=1., 
+        #    add_noise=True, wv_min=400.)
         p = param.p_ntuple(['ExpBricaud', 'Pow'], 
-            set_Sdg=True, sSdg=0.002, beta=1., 
-            add_noise=True, wv_min=400.)
+            set_Sdg=False, sSdg=0.002, beta=1., 
+            add_noise=True, wv_min=350.)
         # Priors
         apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*3
-        # Gaussian for Sdg
+
+        # Uniform for Sdg
         apriors[1]=dict(flavor='uniform', pmin=0.01, pmax=0.02)
 
         # Do it
@@ -332,8 +337,8 @@ def main(flg):
     #  - 100 trials
     #  - Loos prior on Sdg
     if flg == 4:
-        #for wv_min in [350., 375, 400]:
-        for wv_min in [375., 400]:
+        #for wv_min in [375., 400]:
+        for wv_min in [350.]:#, 375, 400]:
             p = param.p_ntuple(['ExpBricaud', 'Pow'], 
                 set_Sdg=False, beta=1., nMC=100,
                 add_noise=True, wv_min=wv_min)
