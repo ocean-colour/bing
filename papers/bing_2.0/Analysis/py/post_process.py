@@ -105,9 +105,16 @@ def analyze_chains(p:namedtuple, idx:int,
 # Command line execution
 if __name__ == '__main__':
 
-    # Strong Sdg prior
     for wv_min in [350., 375., 400.]:
+
+        # Strong Sdg prior
         p = param.p_ntuple(['ExpBricaud', 'Pow'], 
             set_Sdg=True, sSdg=0.002, beta=1., nMC=100,
             add_noise=True, wv_min=wv_min)
-        analyze_chains(p, 170, clobber=True)#, debug=True)
+        analyze_chains(p, 170, clobber=False)#, debug=True)
+
+        # Weak Sdg prior
+        p = param.p_ntuple(['ExpBricaud', 'Pow'], 
+            set_Sdg=False, beta=1., nMC=100,
+            add_noise=True, wv_min=wv_min)
+        analyze_chains(p, 170, clobber=False)#, debug=True)
