@@ -333,7 +333,7 @@ def main(flg):
     #  - Loos prior on Sdg
     if flg == 4:
         #for wv_min in [350., 375, 400]:
-        for wv_min in [350., 400]:
+        for wv_min in [375., 400]:
             p = param.p_ntuple(['ExpBricaud', 'Pow'], 
                 set_Sdg=False, beta=1., nMC=100,
                 add_noise=True, wv_min=wv_min)

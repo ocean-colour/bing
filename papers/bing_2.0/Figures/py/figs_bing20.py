@@ -46,7 +46,7 @@ def gen_cb(img, lbl, csz = 17.):
 def fig_uv_efficacy(model_names=['ExpBricaud', 'Pow'], 
     idx=170, outfile='fig_uv_efficacy.png',
     set_beta=1., nMC=100):
-    wv_mins = [350, 400]
+    wv_mins = [350, 375, 400]
 
     # Parse outputs
     pdicts = []
@@ -69,12 +69,12 @@ def fig_uv_efficacy(model_names=['ExpBricaud', 'Pow'],
         pdicts.append(pdict)
         #
         adg.append(pdict['adg_400'])
-        adg_16.append(adg[-1]-pdict['adg_5']) # Fix to 16 eventually
-        adg_84.append(pdict['adg_95']-adg[-1])
+        adg_16.append(adg[-1]-pdict['adg_16']) # Fix to 16 eventually
+        adg_84.append(pdict['adg_84']-adg[-1])
         # aph
         aph.append(pdict['aph_440'])
-        aph_16.append(aph[-1]-pdict['aph_5'])
-        aph_84.append(pdict['aph_95']-aph[-1])
+        aph_16.append(aph[-1]-pdict['aph_16'])
+        aph_84.append(pdict['aph_84']-aph[-1])
 
         # True answer
         if ss == 0:
@@ -107,7 +107,7 @@ def fig_uv_efficacy(model_names=['ExpBricaud', 'Pow'],
     ax_ph.errorbar(wv_mins, aph, yerr=[aph_16, aph_84], fmt='o', 
                    color='k', label='Retrieved')
     # Horizonal line at true
-    ax_ph.axhline(aph_true, color='b', linestyle='--', label='Truth')
+    ax_ph.axhline(aph_true, color='g', linestyle='--', label='Truth')
 
     ax_ph.set_xlabel('Wavelength (nm)')
     ax_ph.set_ylabel(r'$a_{\rm ph} (440)$')
