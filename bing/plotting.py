@@ -28,6 +28,7 @@ def show_fits(models:list, inputs:np.ndarray,
              xqaa:dict=None,
              Rrs_true:dict=None,
              show_params:bool=False,
+             perc:tuple=(5,95),
              log_Rrs:bool=True):
     """
     Plots the fit results for the given models and inputs.
@@ -49,6 +50,7 @@ def show_fits(models:list, inputs:np.ndarray,
             spec: 
         show_params (bool, optional): Whether to show the parameters. Default is False.
         log_Rrs (bool, optional): Whether to use a logarithmic scale for the y-axis of `R_rs`. Default is True.
+        perc (tuple, optional): The percentiles to calculate. Default is (5, 95).
 
     Returns:
         axes (list): A list of the axes objects used in the plot.
@@ -71,7 +73,7 @@ def show_fits(models:list, inputs:np.ndarray,
     else:
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
             model_Rrs, sigRs = evaluate.reconstruct_from_chains(
-            models, chains)
+            models, chains, perc=perc)
         # Generate params just in case
         params = np.median(chains, axis=[0,1])
         #embed(header='show_fit 70')
@@ -206,6 +208,7 @@ def show_anw_fits(models:list, prep_chains:np.ndarray,
              outfile:str=None,
              figsize:tuple=(9,6),
              fontsize:float=12.,
+             perc:tuple=(5,95),
              anw_true:dict=None): 
 
     # Unpack a little
@@ -215,9 +218,9 @@ def show_anw_fits(models:list, prep_chains:np.ndarray,
     a_dg, a_ph = models[0].eval_anw(prep_chains[..., :models[0].nparam],
                            retsub_comps=True)
     adg_mean = np.median(a_dg, axis=0)
-    adg_5, adg_95 = np.percentile(a_dg, [5, 95], axis=0)
+    adg_low, adg_high = np.percentile(a_dg, perc, axis=0)
     aph_mean = np.median(a_ph, axis=0)
-    aph_5, aph_95 = np.percentile(a_ph, [5, 95], axis=0)
+    aph_low, aph_high = np.percentile(a_ph, perc, axis=0)
 
     # Water
     a_w = absorption.a_water(wave, data='IOCCG')
@@ -243,9 +246,9 @@ def show_anw_fits(models:list, prep_chains:np.ndarray,
                     label='True adg', zorder=1)
     # 
     ax_anw.plot(wave, adg_mean, 'b-', label='adg Retreival')
-    ax_anw.fill_between(wave, adg_5, adg_95, color='b', alpha=0.5) 
+    ax_anw.fill_between(wave, adg_low, adg_high, color='b', alpha=0.5) 
     ax_anw.plot(wave, aph_mean, 'g-', label='aph Retreival')
-    ax_anw.fill_between(wave, aph_5, aph_95, color='g', alpha=0.5) 
+    ax_anw.fill_between(wave, aph_low, aph_high, color='g', alpha=0.5) 
 
     ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
 

@@ -231,7 +231,7 @@ def fit(p:namedtuple, idx:int,
             Rrs_true=dict(wave=model_wave, spec=model_Rrs),
             anw_true=dict(wave=l23_wave, spec=odict['anw']),
             bbnw_true=dict(wave=l23_wave, spec=odict['bbnw']),
-            xqaa=xq_dict,
+            xqaa=xq_dict, perc=(16, 84),
             )
         plt.show()
 
@@ -253,7 +253,7 @@ def fit(p:namedtuple, idx:int,
             show_titles=True,
             title_kwargs={"fontsize": 12},
             )
-        # Add 95%
+        # Add 90%
         ss = 0
         for ax in fig.get_axes():
             if len(ax.get_title()) > 0:
@@ -271,7 +271,8 @@ def fit(p:namedtuple, idx:int,
             models, coeff,
             anw_true=dict(
                 wave=l23_wave, a_dg=odict['adg'],
-                a_ph=odict['aph']))
+                a_ph=odict['aph']),
+            perc=(16, 84))
 
         if debug:
             embed(header='268 of dev')
@@ -307,7 +308,7 @@ def main(flg):
         #    add_noise=True, wv_min=400.)
         p = param.p_ntuple(['ExpBricaud', 'Pow'], 
             set_Sdg=False, sSdg=0.002, beta=1., 
-            add_noise=True, wv_min=350.)
+            add_noise=True, wv_min=400.)
         # Priors
         apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*3
 
@@ -315,7 +316,8 @@ def main(flg):
         apriors[1]=dict(flavor='uniform', pmin=0.01, pmax=0.02)
 
         # Do it
-        fit(p, 170, show=True, apriors=apriors) 
+        #fit(p, 170, show=True, apriors=apriors) 
+        fit(p, 2532, show=True, apriors=apriors) 
             
 
     # Bricaud + UV (100 trials)
