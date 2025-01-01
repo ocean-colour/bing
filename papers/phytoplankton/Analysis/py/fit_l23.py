@@ -148,6 +148,7 @@ def fit(model_names:list,
         all_idx = []
         # Fit
         for item in items:
+                
             if models[0].uses_Chl:
                 models[0].set_aph(Chls[item[3]])
             if models[1].uses_basis_params:  # Lee
@@ -164,6 +165,9 @@ def fit(model_names:list,
                 flags[idx] += 1 # Failed fit
             if np.any(np.isnan(cov)):
                 flags[idx] += 2
+            #if item[3] == 2773:
+            #    embed(header='fit 169')
+            # Save
             all_ans.append(ans)
             all_cov.append(cov)
             all_idx.append(idx)

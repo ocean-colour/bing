@@ -282,7 +282,7 @@ def main(flg):
         #fit_one(['Cst', 'Cst'], idx=170, use_chisq=True)
         #fit_one(['Exp', 'Cst'], idx=170, use_chisq=True)
         #fit_one(['Exp', 'Pow'], idx=170, use_chisq=True)
-        fit_one(['ExpBricaud', 'Pow'], idx=3315, use_chisq=True,
+        fit_one(['ExpBricaud', 'Pow'], idx=2773, use_chisq=True, # High Chl
                 scl_noise='PACE', show=True, debug=True)
         #fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True,
         #        show=True)
