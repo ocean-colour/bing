@@ -36,6 +36,7 @@ def init_model(model_name:str, wave:np.ndarray,
         aNWModel: The model
     """
     model_dict = {'Exp': aNWExp, 'Cst': aNWCst, 
+                  'ExpBricaudFix': aNWExpBricaudFix,
                   'ExpBricaud': aNWExpBricaud,
                   'GIOP': aNWGIOP, 'ExpNMF': aNWExpNMF, 'ExpFix': aNWExpFix,
                   'GSM': aNWGSM, 'Every': aNWEvery,
@@ -157,9 +158,10 @@ class aNWModel:
             return functions.exponential(self.wave, params, pivot=self.pivot, S=self.Sdg)
         elif self.name in ['ExpBricaudFix', 'ExpBricaud']:
             a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
-            if self. name == 'ExpBricaudFix':
+            if self.fix_Chl:
                 a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
             else:
+                # The following line may break
                 Chl = 10**params[...,-1:] / 0.05582
                 self.set_aph(Chl)
                 a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
@@ -348,6 +350,7 @@ class aNWExpBricaud(aNWModel):
     pnames = ['Adg', 'Sdg', 'Aph']
     pivot = 400.
     uses_Chl = True
+    fix_Chl = False
 
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         aNWModel.__init__(self, wave, prior_dicts)
@@ -393,6 +396,32 @@ class aNWExpBricaud(aNWModel):
         # Return
         return p0_a
 
+class aNWExpBricaudFix(aNWExpBricaud):
+    """
+    Exponential model + Bricaud aph for non-water absorption
+        adg = Adg * exp(-Sdg*(wave-400))
+        aph = A_B * chlA**B_B
+
+    Here, the Chl is fixed to its provided value, 
+        estimated in some other way
+        e.g. like GIOP
+
+    Attributes:
+
+    """
+    name = 'ExpBricaudFix'
+    nparam = 3
+    pnames = ['Adg', 'Sdg', 'Aph']
+    pivot = 400.
+    uses_Chl = True
+    fix_Chl = True
+
+    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
+        aNWModel.__init__(self, wave, prior_dicts)
+
+        # Apply
+        self.L23_A = f_b1998_A(self.wave)
+        self.L23_E = f_b1998_E(self.wave)
 
 class aNWGIOP(aNWModel):
     """
