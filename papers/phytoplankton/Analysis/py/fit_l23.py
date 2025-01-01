@@ -250,6 +250,7 @@ def main(flg):
         fit(['Exp', 'Cst'], **param)
         fit(['Exp', 'Pow'], **param)
         fit(['ExpBricaud', 'Pow'], **param)
+        fit(['ExpBricaudFix', 'Pow'], **param)
         #fit(['ExpNMF', 'Pow'], use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise)
         fit(['GIOP', 'Pow'], **param)
         fit(['GIOP', 'Lee'], **param)

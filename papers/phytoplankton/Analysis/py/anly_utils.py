@@ -386,6 +386,7 @@ def calc_aph(models, Chl, params, sig_params, aph_idx, wave:float=443.):
     aphlow_fits = []
     aphhi_fits = []
     for ss in range(Chl.size):
+        #embed(header='389 of anly_utils')
         models[0].set_aph(Chl[ss])
         #
         iaph = functions.gen_basis(params[ss,aph_idx:aph_idx+1], 

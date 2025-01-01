@@ -158,13 +158,11 @@ class aNWModel:
             return functions.exponential(self.wave, params, pivot=self.pivot, S=self.Sdg)
         elif self.name in ['ExpBricaudFix', 'ExpBricaud']:
             a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
-            if self.fix_Chl:
-                a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
-            else:
+            if not self.fix_Chl:
                 # The following line may break
                 Chl = 10**params[...,-1:] / 0.05582
                 self.set_aph(Chl)
-                a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
+            a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
             if retsub_comps:
                 return a_dg, a_ph
             else:
@@ -340,7 +338,7 @@ class aNWExpBricaud(aNWModel):
     """
     Exponential model + Bricaud aph for non-water absorption
         adg = Adg * exp(-Sdg*(wave-400))
-        aph = A_B * chlA**B_B
+        aph = a_ph(440) * A_B * chlA**B_B
 
     Attributes:
 
@@ -358,17 +356,15 @@ class aNWExpBricaud(aNWModel):
         # Apply
         self.L23_A = f_b1998_A(self.wave)
         self.L23_E = f_b1998_E(self.wave)
+        self.i440 = np.argmin(np.abs(self.wave-440))
 
 
-    def set_aph(self, Chla, norm:bool=True):
+    def set_aph(self, Chla):
 
 
         self.a_ph = self.L23_A * Chla**self.L23_E
-
-        # Normalize at 440
-        if norm:
-            self.i440 = np.argmin(np.abs(self.wave-440))
-            self.a_ph /= self.a_ph[self.i440]
+        # Normalize
+        self.a_ph /= self.a_ph[self.i440]
 
         # Extrapolate to <400nm, as necessary
         if self.wave.min() < 400:
@@ -417,11 +413,7 @@ class aNWExpBricaudFix(aNWExpBricaud):
     fix_Chl = True
 
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
-        aNWModel.__init__(self, wave, prior_dicts)
-
-        # Apply
-        self.L23_A = f_b1998_A(self.wave)
-        self.L23_E = f_b1998_E(self.wave)
+        aNWExpBricaud.__init__(self, wave, prior_dicts)
 
 class aNWGIOP(aNWModel):
     """

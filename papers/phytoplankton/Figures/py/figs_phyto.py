@@ -1543,7 +1543,7 @@ def main(flg):
         #fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, add_noise=True,
         #                 scl_noise='PACE',
         #                 outfile='fig_aph_and_bbnw_GIOP_PACE_noise.png')
-        fig_aph_and_bbnw(['ExpBricaud', 'Pow'], PACE=True, 
+        fig_aph_and_bbnw(['ExpBricaudFix', 'Pow'], PACE=True, 
                          add_noise=False,
                          scl_noise='PACE',
                          outfile='fig_aph_and_bbnw_k5_PACE.png')
