@@ -239,7 +239,8 @@ def main(flg):
 
     #embed(header='main 168')
     if flg in [4,5,6,7,8,9,10,11,12]:
-        param = dict(use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, scl_noise=scl_noise, add_noise=add_noise,
+        param = dict(use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, MODIS=MODIS, 
+                     scl_noise=scl_noise, add_noise=add_noise,
                      reduce_by_in_situ=reduce_by_in_situ)
         fit(['Cst', 'Cst'], **param)
         fit(['Exp', 'Cst'], **param)

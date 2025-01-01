@@ -31,12 +31,14 @@ def fit_one(model_names:list, idx:int,
             nsteps:int=10000, nburn:int=1000, 
             scl_noise:float=0.02, use_chisq:bool=False,
             add_noise:bool=False,
+            min_wave:float=400.,
             max_wave:float=None,
             show:bool=False,
             MODIS:bool=False,
             SeaWiFS:bool=False,
             PACE:bool=False,
             bbnw_pow:float=None,
+            debug:bool=False,
             show_xqaa:bool=False,
             apriors:list=None):
     """
@@ -61,7 +63,8 @@ def fit_one(model_names:list, idx:int,
         tuple: Tuple containing the fitted parameters and covariance matrix.
     """
 
-    odict = anly_utils.prep_l23_data(idx, scl_noise=scl_noise,
+    odict = anly_utils.prep_l23_data(idx, min_wave=min_wave,
+                                     scl_noise=scl_noise,
                                      max_wave=max_wave)
 
     # Set power-law
@@ -217,6 +220,9 @@ def fit_one(model_names:list, idx:int,
             )
         plt.show()
 
+        if debug:
+            embed(header='fit_one 221')
+
         if not use_chisq:
             # Corner plot
             burn = 7000
@@ -276,9 +282,10 @@ def main(flg):
         #fit_one(['Cst', 'Cst'], idx=170, use_chisq=True)
         #fit_one(['Exp', 'Cst'], idx=170, use_chisq=True)
         #fit_one(['Exp', 'Pow'], idx=170, use_chisq=True)
-        #fit_one(['ExpBricaud', 'Pow'], idx=170, use_chisq=True)
-        fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True,
-                show=True)
+        fit_one(['ExpBricaud', 'Pow'], idx=3315, use_chisq=True,
+                scl_noise='PACE', show=True, debug=True)
+        #fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True,
+        #        show=True)
 
     # GIOP
     if flg == 5:

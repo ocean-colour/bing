@@ -1381,9 +1381,15 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
         wave=aph_wv)
 
     # bbnw
-    bbnw_idx = d['ans'].shape[1]-1
+    if models[1].name == 'Pow':
+        bbnw_idx = d['ans'].shape[1]-2
+        nbbnw = 2
+    else:
+        bbnw_idx = d['ans'].shape[1]-1
+        nbbnw = 2
+
     bbnw = anly_utils.calc_bbnw(
-        models, d['ans'], perrs, bbnw_idx, bb_wv, Y=Y)
+        models, d['ans'], perrs, bbnw_idx, nbbnw, bb_wv, Y=Y)
 
     def plot_lines(ax, xmin, xmax, scl):
         ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
@@ -1394,6 +1400,7 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     fig = plt.figure(figsize=(12,6))
     gs = gridspec.GridSpec(1,2)
 
+    # ########################################################
     # aph
     ax_ph = plt.subplot(gs[0])
 
@@ -1527,9 +1534,13 @@ def main(flg):
                          outfile='fig_aph_and_bbnw_GSM_noise.png')
         '''
         # PACE
-        fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, add_noise=True,
+        #fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, add_noise=True,
+        #                 scl_noise='PACE',
+        #                 outfile='fig_aph_and_bbnw_GIOP_PACE_noise.png')
+        fig_aph_and_bbnw(['ExpBricaud', 'Pow'], PACE=True, 
+                         add_noise=False,
                          scl_noise='PACE',
-                         outfile='fig_aph_and_bbnw_GIOP_PACE_noise.png')
+                         outfile='fig_aph_and_bbnw_k5_PACE.png')
 
 
     # BIC/AIC for MODIS+L23

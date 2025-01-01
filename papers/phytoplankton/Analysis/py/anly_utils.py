@@ -412,7 +412,8 @@ def calc_aph(models, Chl, params, sig_params, aph_idx, wave:float=443.):
 
     return g_awv, sig_awv
 
-def calc_bbnw(models, params, sig_params, bbnw_idx, pwave,
+def calc_bbnw(models, params, sig_params, bbnw_idx:int, 
+              nbbnw:int, pwave,
               Y:np.ndarray=None):
 
     ipiv = np.argmin(np.abs(models[0].wave-pwave))
@@ -425,7 +426,7 @@ def calc_bbnw(models, params, sig_params, bbnw_idx, pwave,
             models[1].set_basis_func(Y[ss])
         #
         #embed(header='calc_bbnw')
-        bbnw = models[1].eval_bbnw(params[ss,bbnw_idx:bbnw_idx+1])
+        bbnw = models[1].eval_bbnw(params[ss,bbnw_idx:bbnw_idx+nbbnw])
         '''
         # Brute for cme
         iaph_lo = functions.gen_basis(
