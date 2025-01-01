@@ -14,6 +14,14 @@ from bing.models import functions
 
 from IPython import embed
 
+# ##################################
+# Bricaud
+b1998 = ph_absorption.load_bricaud1998()
+
+# Interpolate
+f_b1998_A = interp1d(b1998['lambda'], b1998.Aphi, bounds_error=False, fill_value=0.)
+f_b1998_E = interp1d(b1998['lambda'], b1998.Ephi, bounds_error=False, fill_value=0.)
+
 def init_model(model_name:str, wave:np.ndarray, 
                prior_dicts:list=None):
     """
@@ -130,6 +138,10 @@ class aNWModel:
             Exp:
                 params[...,0] = log10(Anw)
                 params[...,1] = log10(Snw)
+            ExpBricaud:
+                params[...,0] = log10(Adg)
+                params[...,1] = log10(Sdg)
+                params[...,2] = log10(Aph)
 
         Returns:
             np.ndarray: The non-water absorption coefficient
@@ -143,9 +155,14 @@ class aNWModel:
             return functions.exponential(self.wave, params, pivot=self.pivot)
         elif self.name == 'ExpFix':
             return functions.exponential(self.wave, params, pivot=self.pivot, S=self.Sdg)
-        elif self.name == 'ExpBricaud':
+        elif self.name in ['ExpBricaudFix', 'ExpBricaud']:
             a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
-            a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
+            if self. name == 'ExpBricaudFix':
+                a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
+            else:
+                Chl = 10**params[...,-1:] / 0.05582
+                self.set_aph(Chl)
+                a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
             if retsub_comps:
                 return a_dg, a_ph
             else:
@@ -335,25 +352,20 @@ class aNWExpBricaud(aNWModel):
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         aNWModel.__init__(self, wave, prior_dicts)
 
-    def set_aph(self, Chla):
-        # ##################################
-        # Bricaud
-        b1998 = ph_absorption.load_bricaud1998()
-
-        # Interpolate
-        f_b1998_A = interp1d(b1998['lambda'], b1998.Aphi, bounds_error=False, fill_value=0.)
-        f_b1998_E = interp1d(b1998['lambda'], b1998.Ephi, bounds_error=False, fill_value=0.)
-
         # Apply
-        L23_A = f_b1998_A(self.wave)
-        L23_E = f_b1998_E(self.wave)
+        self.L23_A = f_b1998_A(self.wave)
+        self.L23_E = f_b1998_E(self.wave)
 
-        self.a_ph = L23_A * Chla**L23_E
 
+    def set_aph(self, Chla, norm:bool=True):
+
+
+        self.a_ph = self.L23_A * Chla**self.L23_E
 
         # Normalize at 440
-        iwave = np.argmin(np.abs(self.wave-440))
-        self.a_ph /= self.a_ph[iwave]
+        if norm:
+            self.i440 = np.argmin(np.abs(self.wave-440))
+            self.a_ph /= self.a_ph[self.i440]
 
         # Extrapolate to <400nm, as necessary
         if self.wave.min() < 400:
