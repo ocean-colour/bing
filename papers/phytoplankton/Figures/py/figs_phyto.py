@@ -313,8 +313,8 @@ def compare_models(models:list, idx:int, axes:list,
             scl_noise=scl_noise, add_noise=add_noise, use_LM=use_LM,
             full_LM=full_LM, min_wave=min_wave, max_wave=max_wave)
         # Unpack what we need
-        noise_lbl = rdict['noise_lbl']
-        noises = rdict['noises']
+        #noise_lbl = rdict['noise_lbl']
+        #noises = rdict['noises']
         wave_true = rdict['wave_true']
         Rrs_true = rdict['Rrs_true']
         a_true = rdict['a_true']
@@ -1624,6 +1624,11 @@ def main(flg):
         #fig_corner(['GIOP', 'Lee'], idx=1032, full_LM=False,
         #    MODIS=True, use_LM=False, scl_noise='MODIS_Aqua',
         #    show_log=True)
+
+    # High aph
+    if flg == 33:
+        #fig_multi_fits(indices=[170,2590])
+        fig_multi_fits(indices=[605,2951])
 
 
 # Command line execution
