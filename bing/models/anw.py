@@ -161,12 +161,13 @@ class aNWModel:
             a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
             # a_ph
             if not self.fix_Chl:
-                # The following line may break
-                if len(params.shape) == 2:
-                    embed(header='anw 166')
                 Chl = 10**params[...,-1:] / 0.05582
                 self.set_aph(Chl)
-            a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
+            if len(params.shape) == 2:
+                a_ph = (10**params[...,-1:]) * self.a_ph
+            else:
+                a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
+            # Finish
             if retsub_comps:
                 return a_dg, a_ph
             else:
@@ -372,7 +373,11 @@ class aNWExpBricaud(aNWModel):
         self.a_ph = self.L23_A * Chla**self.L23_E
 
         # Normalize
-        self.a_ph /= self.a_ph[self.i440]
+        if len(Chla.shape) == 2:
+            norm = np.outer(self.a_ph[:,self.i440], np.ones(self.a_ph.shape[1]))
+            self.a_ph /= norm
+        else:
+            self.a_ph /= self.a_ph[self.i440]
 
         # Extrapolate to <400nm, as necessary
         if self.wave.min() < 400:

@@ -225,7 +225,6 @@ def fit(p:namedtuple, idx:int,
         else:
             xq_dict = None
 
-        embed(header='228 of dev')
         bing_plot.show_fits(
             models, chains, 
             odict['Chl'], odict['Y'],
@@ -237,6 +236,8 @@ def fit(p:namedtuple, idx:int,
         plt.show()
 
         burn = 7000
+        if burn > chains.shape[0]:
+            embed(header='210 of dev_fits')
         thin = 1
         coeff = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
 
@@ -319,7 +320,7 @@ def main(flg):
         # Do it
         #fit(p, 170, show=True, apriors=apriors) 
         #fit(p, 2532, show=True, apriors=apriors) 
-        fit(p, 2773, show=True, apriors=apriors) 
+        fit(p, 2773, show=True, apriors=apriors, nsteps=10000) 
             
 
     # Bricaud + UV (100 trials)
