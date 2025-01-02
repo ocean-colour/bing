@@ -120,6 +120,9 @@ def fit(model_names:list,
         p0_b = models[1].init_guess(model_bbnw)
         p0 = np.concatenate((np.log10(np.atleast_1d(p0_a)), 
                          np.log10(np.atleast_1d(p0_b))))
+        # Deal with S
+        if models[0].name in ['Exp', 'ExpBricaud', 'ExpBricaudFix']:
+            p0[1] = 10**p0[1]
         params.append(p0)
         # Others
         varRrs.append(model_varRrs)

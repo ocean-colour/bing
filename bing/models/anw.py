@@ -276,6 +276,9 @@ class aNWExpFix(aNWModel):
     Exponential model for non-water absorption with fixed S
         Aexp * exp(-Sdg*(wave-400))
 
+    Free parameters:
+        Aexp
+
     Attributes:
 
     """

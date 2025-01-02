@@ -1377,14 +1377,13 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     perrs = [np.sqrt(np.diag(item)) for item in d['cov']]
     perrs = np.array(perrs)
 
-    if models[0].name == 'ExpBricaud':
+    if models[0].name in ['ExpBricaud', 'ExpBricaudFix']:
         aph_idx = 2
     else:
         aph_idx = 1
     g_aph, sig_aph = anly_utils.calc_aph(
         models, d['Chl'], d['ans'], perrs, aph_idx,
         wave=aph_wv)
-    #embed(header='fig_aph_and_bbnw 1383')
 
     # bbnw
     if models[1].name == 'Pow':

@@ -7,6 +7,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import corner
 
+from bing.models import functions
 from bing.models import anw as bing_anw
 from bing.models import bbnw as bing_bbnw
 from bing.models import utils as model_utils
@@ -142,9 +143,12 @@ def fit_one(model_names:list, idx:int,
     p0 = np.concatenate((np.atleast_1d(p0_a), 
                          np.atleast_1d(p0_b)))
 
-    # Log 10
+    # Log 10?
     if use_chisq:
         p0 = np.log10(p0)
+        # S should be linear
+        if model_names[0] in ['Exp', 'ExpBricaud', 'ExpBricaudFix']:
+            p0[1] = 10**p0[1]
     else:
         cnt = 0
         for ss in [0,1]:
@@ -185,7 +189,6 @@ def fit_one(model_names:list, idx:int,
         ans = None
     else: # chi^2
         # Fit
-        #embed(header='ADD BOUNDS FROM PRIORS: fit_one 153')
         ans, cov, idx = chisq_fit.fit(items[0], models)
             
         # Save
@@ -221,6 +224,14 @@ def fit_one(model_names:list, idx:int,
         plt.show()
 
         if debug:
+            if not models[0].fix_Chl:
+                iChl = 10**ans[2] / 0.05582
+            else:
+                iChl = odict['Chl']
+            models[0].set_aph(iChl)
+            #
+            iaph = functions.gen_basis(ans[2:3], [models[0].a_ph])
+            print(f'a_ph(440) = {iaph[0,6]}')
             embed(header='fit_one 221')
 
         if not use_chisq:
@@ -282,7 +293,7 @@ def main(flg):
         #fit_one(['Cst', 'Cst'], idx=170, use_chisq=True)
         #fit_one(['Exp', 'Cst'], idx=170, use_chisq=True)
         #fit_one(['Exp', 'Pow'], idx=170, use_chisq=True)
-        fit_one(['ExpBricaud', 'Pow'], idx=2773, use_chisq=True, # High Chl
+        fit_one(['ExpBricaudFix', 'Pow'], idx=2773, use_chisq=True, # High Chl
                 scl_noise='PACE', show=True, debug=True)
         #fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True,
         #        show=True)

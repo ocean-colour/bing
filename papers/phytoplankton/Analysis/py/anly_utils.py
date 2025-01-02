@@ -386,11 +386,16 @@ def calc_aph(models, Chl, params, sig_params, aph_idx, wave:float=443.):
     aphlow_fits = []
     aphhi_fits = []
     for ss in range(Chl.size):
-        #embed(header='389 of anly_utils')
-        models[0].set_aph(Chl[ss])
+        if not models[0].fix_Chl:
+            iChl = 10**params[ss,aph_idx] / 0.05582
+        else:
+            iChl = Chl[ss]
+        models[0].set_aph(iChl)
         #
         iaph = functions.gen_basis(params[ss,aph_idx:aph_idx+1], 
                                    [models[0].a_ph])
+        #if ss == 2773:
+        #    embed(header='calc_aph 398')
         # Brute for cme
         iaph_lo = functions.gen_basis(
             params[ss,aph_idx:aph_idx+1]-sig_params[ss,aph_idx:aph_idx+1], 
