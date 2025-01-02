@@ -5,6 +5,7 @@ import numpy as np
 from bing import rt as bing_rt
 from bing import chisq_fit
 
+from IPython import embed
 
 def reconstruct_from_chains(models:list, chains, 
                             burn:int=7000, thin:int=1,

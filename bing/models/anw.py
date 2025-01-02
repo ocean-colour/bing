@@ -157,9 +157,13 @@ class aNWModel:
         elif self.name == 'ExpFix':
             return functions.exponential(self.wave, params, pivot=self.pivot, S=self.Sdg)
         elif self.name in ['ExpBricaudFix', 'ExpBricaud']:
+            # a_dg
             a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
+            # a_ph
             if not self.fix_Chl:
                 # The following line may break
+                if len(params.shape) == 2:
+                    embed(header='anw 166')
                 Chl = 10**params[...,-1:] / 0.05582
                 self.set_aph(Chl)
             a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
@@ -364,8 +368,9 @@ class aNWExpBricaud(aNWModel):
 
     def set_aph(self, Chla):
 
-
+        # Bricaud
         self.a_ph = self.L23_A * Chla**self.L23_E
+
         # Normalize
         self.a_ph /= self.a_ph[self.i440]
 
