@@ -27,6 +27,7 @@ from ocpy.satellites import modis as sat_modis
 from bing import plotting as bing_plot
 from bing.models import utils as model_utils
 from bing.models import functions
+from bing import evaluate
 
 #from bing.models import anw as bing_anw
 #from bing.models import bbnw as bing_bbnw
@@ -1566,6 +1567,64 @@ def fig_bing_on_high_chl(idx:int=2773,
                 a_ph=odict['aph']),
             perc=(16, 84), outfile=outfile3,)
 
+def fig_pace_chi2(outfile:str='fig_pace_chi2.png',
+                  model_names:list=['ExpBricaud', 'Pow'],
+                  scl_noise='PACE', add_noise=True):
+
+    # Load up
+    ds = loisel23.load_ds(4,0)
+    # Unpack
+    wave = ds.Lambda.data
+    Rrs = ds.Rrs.data
+    a = ds.a.data
+    bb = ds.bb.data
+    aph = ds.aph.data
+
+    i440 = np.argmin(np.abs(wave-440.))
+
+    Chl = aph[:,i440] / 0.05582
+
+    model_wave = anly_utils.PACE_wave
+    models = model_utils.init(model_names, model_wave)
+    nparam = models[0].nparam + models[1].nparam
+
+    # Fits
+    fit_file = anly_utils.chain_filename(
+        model_names, scl_noise, add_noise, use_LM=True, 
+        MODIS=False, PACE=True, SeaWiFS=False)
+    d = np.load(fit_file)
+
+    # Reconstruct
+    #embed(header='fig_pace_chi2 1598')
+    model_Rrs, a_mean, bb_mean = evaluate.reconstruct_chisq_fits(
+        models, d['ans'], Chl=d['Chl'])#, bb_basis_params=None)
+
+    # Calc chi2
+    chi2s = []
+    for ss in range(Rrs.shape[0]):
+        chi2 = (model_Rrs[ss] - d['obs_Rrs'][ss])**2 / d['varRrs'][ss]
+        chi2s.append(np.sum(chi2)/(Rrs.shape[1]-nparam))
+
+    # Plot
+    fig = plt.figure(figsize=(8,6))
+    plt.clf()
+    ax = plt.gca()
+
+    ax.plot(Chl, chi2s, 'bo')
+
+    ax.set_xlabel(r'$\rm Chl \; [mg \, m^{-3}]$')
+    ax.set_ylabel(r'$\chi^2_\nu$')
+
+    ax.set_xscale('log')
+    ax.axhline(1., color='r', linestyle='--', label=r'$\chi^2_\nu=1$')
+
+    plotting.set_fontsize(ax, 17)
+
+    # Finish
+    plt.tight_layout()
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+        
 def main(flg):
     if flg== 'all':
         flg= np.sum(np.array([2 ** ii for ii in range(25)]))
@@ -1726,6 +1785,10 @@ def main(flg):
     # High Chla
     if flg == 34:
         fig_bing_on_high_chl(make_fit=True, make_corner=False)
+
+    # PACE chi^2
+    if flg == 35:
+        fig_pace_chi2()
 
 # Command line execution
 if __name__ == '__main__':
