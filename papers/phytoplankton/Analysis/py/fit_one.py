@@ -354,6 +354,10 @@ def main(flg):
                 use_chisq=False, show=True, scl_noise='MODIS_Aqua',
                 nburn=5000, nsteps=50000)
 
+    # Bayes on high Chl
+        fit_one(['ExpBricaud', 'Lee'], idx=1032, MODIS=True,
+                use_chisq=False, show=True, scl_noise='MODIS_Aqua',
+                nburn=5000, nsteps=50000)
 
     # Debug
     if flg == 99:

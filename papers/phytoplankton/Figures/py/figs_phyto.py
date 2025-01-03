@@ -34,6 +34,10 @@ from bing.models import functions
 #from bing import stats as bing_stats
 
 # Local
+sys.path.append(os.path.abspath("../../bing_2.0/Analysis/py"))
+import anly_utils_20
+import param as param20
+
 sys.path.append(os.path.abspath("../Analysis/py"))
 import anly_utils
 
@@ -1425,9 +1429,16 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
         mae = np.mean(np.abs(diff)/x)
         #
         return std, bias, np.median(sigy/y), mae
-    # Stats
+
+    # Stats 
     std, bias, err, mae = calc_stats(l23_aph, g_aph, sig_aph)
     print(f'aph stats: bias={bias:0.2f}, std={std:0.2f}')
+
+    high_aph = l23_aph > 0.01
+    std2, bias2, _, mae2 = calc_stats(l23_aph[high_aph], 
+                                      g_aph[high_aph], 
+                                      sig_aph[high_aph])
+    print(f'aph stats with l23_aph>0.01: bias={bias2:0.2f}, mae={mae2:0.2f}')
 
     # Text
     ax_ph.text(0.95, 0.10, 
@@ -1471,6 +1482,89 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
+def fig_bing_on_high_chl(idx:int=2773,
+                         make_fit:bool=True,
+                         make_corner:bool=True,
+                         make_anw:bool=True,
+                         ):
+
+    p = param20.p_ntuple(['ExpBricaud', 'Pow'], 
+            set_Sdg=False, sSdg=0.002, beta=1., 
+            add_noise=True, wv_min=400.)
+    odict = anly_utils_20.prep_l23_data(
+        idx, wv_min=p.wv_min, wv_max=p.wv_max)
+    l23_wave = odict['true_wave']
+
+    model_wave = anly_utils_20.pace_wave(
+        wv_min=p.wv_min, wv_max=p.wv_max)
+    use_model_names = p.model_names.copy()
+    models = model_utils.init(use_model_names, model_wave)
+
+    # Load chains
+    chain_file = anly_utils_20.chain_filename(p, idx=idx,
+                                              path='../../bing_2.0/Analysis/Fits')
+    d = np.load(chain_file)
+
+    # Fit
+    if make_fit:
+        outfile1 = 'fig_bing_fit_high_chl.png'
+        bing_plot.show_fits(
+            models, d['chains'], 
+            odict['Chl'], odict['Y'],
+            Rrs_true=dict(wave=model_wave, spec=d['obs_Rrs'], var=d['varRrs']),
+            anw_true=dict(wave=l23_wave, spec=odict['anw']),
+            bbnw_true=dict(wave=l23_wave, spec=odict['bbnw']),
+            perc=(16, 84), outfile=outfile1,
+            )
+
+    chains = d['chains']
+    burn = 7000
+    thin = 1
+    coeff = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+
+    # Corner plot
+    if make_corner:
+        # Labels
+        clbls = models[0].pnames + models[1].pnames
+        # Add log 10
+        clbls = [r'$\log_{10}('+f'{clbl}'+r'$)' for clbl in clbls]
+        # Fix Sedg
+        clbls[1] = f'{clbls[1]}'
+
+        fig = corner.corner(
+            coeff, labels=clbls,
+            label_kwargs={'fontsize':17},
+            color='k',
+            #axes_scale='log',
+            truths=None, #truths,
+            show_titles=True,
+            title_kwargs={"fontsize": 12},
+            )
+        # Add 90%
+        ss = 0
+        for ax in fig.get_axes():
+            if len(ax.get_title()) > 0:
+                # Calculate the percntile
+                p_5, p_95 = np.percentile(coeff[:,ss], [5, 95], axis=0)
+                # Plot a vertical line
+                ax.axvline(p_5, color='b', linestyle=':')
+                ax.axvline(p_95, color='b', linestyle=':')
+                ss += 1
+        plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+
+        outfile2 = 'fig_bing_corner_high_chl.png'
+        plt.savefig(outfile2, dpi=300)
+        print(f"Saved: {outfile2}")
+
+    # a_nw
+    if make_anw:
+        outfile3 = 'fig_bing_anw_high_chl.png'
+        bing_plot.show_anw_fits(
+            models, coeff,
+            anw_true=dict(
+                wave=l23_wave, a_dg=odict['adg'],
+                a_ph=odict['aph']),
+            perc=(16, 84), outfile=outfile3,)
 
 def main(flg):
     if flg== 'all':
@@ -1629,6 +1723,9 @@ def main(flg):
         #fig_multi_fits(indices=[170,2590])
         fig_multi_fits(indices=[605,2951])
 
+    # High Chla
+    if flg == 34:
+        fig_bing_on_high_chl(make_fit=True, make_corner=False)
 
 # Command line execution
 if __name__ == '__main__':
@@ -1642,6 +1739,9 @@ if __name__ == '__main__':
         # flg = 3 :: Figure 3; BIC
         
         # flg = 10 :: Supp 1; fig_u
+
+        # New PACE figures
+        # flg = 34 :: Rrs, anw, bbnw on high Chla
 
     else:
         flg = sys.argv[1]

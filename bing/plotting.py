@@ -157,7 +157,7 @@ def show_fits(models:list, inputs:np.ndarray,
             mod_R = f(Rrs_true['wave'])
             chi2 = np.sum((Rrs_true['spec']-mod_R)**2 / Rsig**2)
             nparam = models[0].nparam + models[1].nparam
-            red_chi2 = chi2 / (nparam-1)
+            red_chi2 = chi2 / (Rsig.size-nparam)
             #
             ax_R.errorbar(Rrs_true['wave'], Rrs_true['spec'], 
                 yerr=Rsig, color='k', fmt='o', capsize=5,
@@ -240,17 +240,17 @@ def show_anw_fits(models:list, prep_chains:np.ndarray,
     ax_anw = plt.subplot(gs[0])
 
     if anw_true is not None:
-        for clr, key in zip(['b','g'], ['a_dg', 'a_ph']):
+        for clr, key, marker in zip(['b','g'], ['a_dg', 'a_ph'], ['o','s']):
             ax_anw.plot(anw_true['wave'], 
-                    anw_true[key], 'o', color=clr, 
-                    label='True adg', zorder=1)
+                    anw_true[key], marker, color=clr, 
+                    label=f'True {key}', zorder=1)
     # 
-    ax_anw.plot(wave, adg_mean, 'b-', label='adg Retreival')
+    ax_anw.plot(wave, adg_mean, 'b-', label='a_dg Retreival')
     ax_anw.fill_between(wave, adg_low, adg_high, color='b', alpha=0.5) 
-    ax_anw.plot(wave, aph_mean, 'g-', label='aph Retreival')
+    ax_anw.plot(wave, aph_mean, 'g-', label='a_ph Retreival')
     ax_anw.fill_between(wave, aph_low, aph_high, color='g', alpha=0.5) 
 
-    ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
+    ax_anw.set_ylabel(r'$a(\lambda) \; [{\rm m}^{-1}]$')
 
     # axes
     axes = [ax_anw]

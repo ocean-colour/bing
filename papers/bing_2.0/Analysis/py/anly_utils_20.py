@@ -36,8 +36,8 @@ MODIS_reduce = np.sqrt(2)
 def pace_wave(wv_min=400., wv_max=700., step=5.):
     return np.arange(wv_min, wv_max+1, step)
 
-def chain_filename(p:namedtuple, idx:int=None): 
-    outfile = f'../Analysis/Fits/BING20_{p.model_names[0]}{p.model_names[1]}'
+def chain_filename(p:namedtuple, idx:int=None, path:str='../Analysis/Fits/'): 
+    outfile = os.path.join(path, f'BING20_{p.model_names[0]}{p.model_names[1]}')
 
     if idx is not None:
         outfile += f'_{idx}'

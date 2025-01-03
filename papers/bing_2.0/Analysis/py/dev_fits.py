@@ -320,7 +320,7 @@ def main(flg):
         # Do it
         #fit(p, 170, show=True, apriors=apriors) 
         #fit(p, 2532, show=True, apriors=apriors) 
-        fit(p, 2773, show=True, apriors=apriors, nsteps=10000) 
+        fit(p, 2773, show=True, apriors=apriors, nsteps=40000) 
             
 
     # Bricaud + UV (100 trials)
