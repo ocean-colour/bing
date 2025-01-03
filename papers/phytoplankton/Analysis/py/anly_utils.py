@@ -386,7 +386,7 @@ def calc_aph(models, Chl, params, sig_params, aph_idx, wave:float=443.):
     aphlow_fits = []
     aphhi_fits = []
     for ss in range(Chl.size):
-        if not models[0].fix_Chl:
+        if models[0].fix_Chl is not None and not models[0].fix_Chl:
             iChl = 10**params[ss,aph_idx] / 0.05582
         else:
             iChl = Chl[ss]

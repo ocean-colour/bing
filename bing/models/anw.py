@@ -77,6 +77,11 @@ class aNWModel:
     Does the model use chlorophyll?
     """
 
+    fix_Chl:bool = None
+    """
+    If Chl, is it fixed?
+    """
+
     a_w:np.ndarray = None
     """
     The absorption coefficient of water
