@@ -140,7 +140,9 @@ def fit_one(model_names:list, idx:int,
     if models[0].uses_Chl:
         if models[0].name == 'GIOP':
             # Calculate Chl from Rrs
-            odict['Chl'] = band_ratios.oc4(model_wave, model_Rrs)
+            OC_Chl = band_ratios.oc4(model_wave, model_Rrs)
+            print(f'Using Chl = {OC_Chl} instead of {odict["Chl"]}')
+            #odict['Chl'] = OC_Chl
         models[0].set_aph(odict['Chl'])
     if models[1].uses_basis_params:  # Lee
         models[1].set_basis_func(odict['Y'])
@@ -239,8 +241,8 @@ def fit_one(model_names:list, idx:int,
             models[0].set_aph(iChl)
             #
             iaph = functions.gen_basis(ans[2:3], [models[0].a_ph])
-            print(f'a_ph(440) = {iaph[0,6]}')
-            embed(header='fit_one 221')
+            print(f'a_ph(440) = {iaph[0,6]} vs. {odict["aph"][6]}')
+            #embed(header='fit_one 221')
 
         if not use_chisq:
             # Corner plot
@@ -419,8 +421,8 @@ def main(flg):
 
     # High Chl
     if flg == 104:
-        #fit_one(['GIOP', 'Lee'], idx=2773, use_chisq=True,
-        fit_one(['ExpBricaud', 'Pow'], idx=2773, use_chisq=False,
+        #fit_one(['ExpBricaud', 'Pow'], idx=2773, use_chisq=False,
+        fit_one(['GIOP', 'Lee'], idx=2773, use_chisq=False,
                 scl_noise='PACE', show=True, debug=True,
                 seed=54321, add_noise=True)
 

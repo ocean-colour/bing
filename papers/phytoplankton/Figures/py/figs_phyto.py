@@ -1483,13 +1483,14 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
-def fig_bing_on_high_chl(idx:int=2773,
+def fig_bing_on_high_chl(idx:int=2773, 
+                         model_names=['ExpBricaud', 'Pow'],
                          make_fit:bool=True,
                          make_corner:bool=True,
                          make_anw:bool=True,
                          ):
 
-    p = param20.p_ntuple(['ExpBricaud', 'Pow'], 
+    p = param20.p_ntuple(model_names,
             set_Sdg=False, sSdg=0.002, beta=1., 
             add_noise=True, wv_min=400.)
     odict = anly_utils_20.prep_l23_data(
@@ -1784,7 +1785,8 @@ def main(flg):
 
     # High Chla
     if flg == 34:
-        fig_bing_on_high_chl(make_fit=True, make_corner=False)
+        fig_bing_on_high_chl(make_fit=True, make_corner=False,
+                             model_names=['GIOP', 'Lee'])
 
     # PACE chi^2
     if flg == 35:

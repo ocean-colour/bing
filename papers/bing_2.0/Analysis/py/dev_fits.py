@@ -308,7 +308,12 @@ def main(flg):
         #p = param.p_ntuple(['ExpBricaud', 'Pow'], 
         #    set_Sdg=True, sSdg=0.002, beta=1., 
         #    add_noise=True, wv_min=400.)
+
         p = param.p_ntuple(['ExpBricaud', 'Pow'], 
+            set_Sdg=False, sSdg=0.002, beta=1., 
+            add_noise=True, wv_min=400.)
+
+        p = param.p_ntuple(['GIOP', 'Lee'], 
             set_Sdg=False, sSdg=0.002, beta=1., 
             add_noise=True, wv_min=400.)
         # Priors
