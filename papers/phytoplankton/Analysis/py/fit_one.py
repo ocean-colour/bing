@@ -20,6 +20,7 @@ from bing import priors as bing_priors
 from ocpy.satellites import modis as sat_modis
 from ocpy.satellites import pace as sat_pace
 from ocpy.satellites import seawifs as sat_seawifs
+from ocpy.chl import band_ratios
 
 from xqaa.params import XQAAParams
 from xqaa import retrieve
@@ -41,7 +42,8 @@ def fit_one(model_names:list, idx:int,
             bbnw_pow:float=None,
             debug:bool=False,
             show_xqaa:bool=False,
-            apriors:list=None):
+            apriors:list=None,
+            seed:int=None):
     """
     Fits a model to the data for a given index.
 
@@ -60,9 +62,12 @@ def fit_one(model_names:list, idx:int,
         SeaWiFS (bool, optional): Flag for SeaWiFS data. Defaults to False.
         PACE (bool, optional): Flag for PACE data. Defaults to False.
         show_xqaa (bool, optional): Flag to show xqaa data. Defaults to False.
+        seed (int, optional): Seed for the random number generator. Defaults to None.
     Returns:
         tuple: Tuple containing the fitted parameters and covariance matrix.
     """
+    if seed is not None:
+        np.random.seed(seed)
 
     odict = anly_utils.prep_l23_data(idx, min_wave=min_wave,
                                      scl_noise=scl_noise,
@@ -81,7 +86,6 @@ def fit_one(model_names:list, idx:int,
         model_wave = sat_modis.modis_wave
     elif PACE:
         model_wave = anly_utils.PACE_wave
-        PACE_error = sat_pace.gen_noise_vector(anly_utils.PACE_wave)
     elif SeaWiFS:
         model_wave = sat_seawifs.seawifs_wave
     else:
@@ -119,11 +123,6 @@ def fit_one(model_names:list, idx:int,
     # Gordon Rrs
     gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'])
 
-    # Internals
-    if models[0].uses_Chl:
-        models[0].set_aph(odict['Chl'])
-    if models[1].uses_basis_params:  # Lee
-        models[1].set_basis_func(odict['Y'])
 
     # Bricaud?
     # Interpolate
@@ -136,6 +135,15 @@ def fit_one(model_names:list, idx:int,
     if add_noise:
         model_Rrs = anly_utils.add_noise(
                 model_Rrs, abs_sig=np.sqrt(model_varRrs))
+
+    # Internals
+    if models[0].uses_Chl:
+        if models[0].name == 'GIOP':
+            # Calculate Chl from Rrs
+            odict['Chl'] = band_ratios.oc4(model_wave, model_Rrs)
+        models[0].set_aph(odict['Chl'])
+    if models[1].uses_basis_params:  # Lee
+        models[1].set_basis_func(odict['Y'])
 
     # Initial guess
     p0_a = models[0].init_guess(model_anw)
@@ -184,7 +192,7 @@ def fit_one(model_names:list, idx:int,
                              extras=dict(wave=model_wave, 
                                          obs_Rrs=model_Rrs, 
                                          varRrs=model_varRrs, 
-                                         Chl=odict['Chl'], 
+                                         Chl=odict['Chl'],
                                          Y=odict['Y']))
         ans = None
     else: # chi^2
@@ -223,7 +231,7 @@ def fit_one(model_names:list, idx:int,
             )
         plt.show()
 
-        if debug:
+        if debug and use_chisq:
             if not models[0].fix_Chl:
                 iChl = 10**ans[2] / 0.05582
             else:
@@ -293,10 +301,8 @@ def main(flg):
         #fit_one(['Cst', 'Cst'], idx=170, use_chisq=True)
         #fit_one(['Exp', 'Cst'], idx=170, use_chisq=True)
         #fit_one(['Exp', 'Pow'], idx=170, use_chisq=True)
-        fit_one(['ExpBricaudFix', 'Pow'], idx=2773, use_chisq=True, # High Chl
-                scl_noise='PACE', show=True, debug=True)
-        #fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True,
-        #        show=True)
+        fit_one(['ExpNMF', 'Pow'], idx=170, use_chisq=True,
+                show=True)
 
     # GIOP
     if flg == 5:
@@ -411,6 +417,12 @@ def main(flg):
                 scl_noise='PACE', show_xqaa=True,
                 apriors=apriors)#, nsteps=50000, nburn=5000)
 
+    # High Chl
+    if flg == 104:
+        #fit_one(['ExpBricaud', 'Pow'], idx=2773, use_chisq=False,
+        fit_one(['GIOP', 'Lee'], idx=2773, use_chisq=True,
+                scl_noise='PACE', show=True, debug=True,
+                seed=54321, add_noise=True)
 
 # Command line execution
 if __name__ == '__main__':
