@@ -202,7 +202,7 @@ def fit_one(model_names:list, idx:int,
         # Save
         outfile = outfile.replace('BING', 'BING_LM')
         np.savez(outfile, ans=ans, cov=cov,
-              wave=wave, obs_Rrs=gordon_Rrs, varRrs=model_varRrs,
+              wave=wave, obs_Rrs=model_Rrs, varRrs=model_varRrs,
               Chl=odict['Chl'], Y=odict['Y'])
         print(f"Saved: {outfile}")
 

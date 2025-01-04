@@ -202,7 +202,7 @@ def show_fits(models:list, inputs:np.ndarray,
         plt.savefig(outfile, dpi=300)
         print(f"Saved: {outfile}")
 
-    return axes
+    return axes, model_Rrs
 
 def show_anw_fits(models:list, prep_chains:np.ndarray,
              outfile:str=None,
