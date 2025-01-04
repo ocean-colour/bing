@@ -34,7 +34,7 @@ def fit_one(model_names:list, idx:int,
             scl_noise:float=0.02, use_chisq:bool=False,
             add_noise:bool=False,
             min_wave:float=400.,
-            max_wave:float=None,
+            max_wave:float=700., # Bricaud peters out
             show:bool=False,
             MODIS:bool=False,
             SeaWiFS:bool=False,
@@ -419,8 +419,8 @@ def main(flg):
 
     # High Chl
     if flg == 104:
-        #fit_one(['ExpBricaud', 'Pow'], idx=2773, use_chisq=False,
-        fit_one(['GIOP', 'Lee'], idx=2773, use_chisq=True,
+        #fit_one(['GIOP', 'Lee'], idx=2773, use_chisq=True,
+        fit_one(['ExpBricaud', 'Pow'], idx=2773, use_chisq=False,
                 scl_noise='PACE', show=True, debug=True,
                 seed=54321, add_noise=True)
 
