@@ -568,14 +568,18 @@ class aNWGSM(aNWModel):
         # Sdg 
         self.Sdg = 0.0206
 
-    def set_aph(self, Chla):
-        # ##################################
-        # Maritorena+2002
-        interp_wv = [412., 443., 490., 510., 555.]
-        interp_aph_star = [0.00665, 0.05582, 0.02055, 0.01910, 0.01015]
+    def set_aph(self, Chla, version:str='Maritorena2002'):
 
-        # Interpolate
-        f = interp1d(interp_wv, interp_aph_star, kind='linear', fill_value='extrapolate')
+        if version == 'Maritorena2002':
+            # ##################################
+            # Maritorena+2002
+            interp_wv = [412., 443., 490., 510., 555.]
+            interp_aph_star = [0.00665, 0.05582, 0.02055, 0.01910, 0.01015]
+
+            # Interpolate
+            f = interp1d(interp_wv, interp_aph_star, kind='linear', fill_value='extrapolate')
+        else:
+            raise ValueError(f"Unknown aph* version: {version}")
 
         # Apply
         aph_star = f(self.wave)

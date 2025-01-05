@@ -1783,7 +1783,7 @@ def main(flg):
         #fig_multi_fits(indices=[170,2590])
         fig_multi_fits(indices=[605,2951])
 
-    # High Chla
+    # Individual High Chla
     if flg == 34:
         # ExpBricaud, Pow
         if False:
@@ -1796,7 +1796,7 @@ def main(flg):
             fig_bing_on_high_chl(p, 'ExpBPow', make_fit=True, make_corner=True)
 
         # GIOP, Lee
-        if True:
+        if False:
             model_names=['GIOP', 'Lee']
             p = param20.p_ntuple(model_names,
                 set_Sdg=False, sSdg=0.002, 
@@ -1805,8 +1805,22 @@ def main(flg):
 
             fig_bing_on_high_chl(p, 'GIOP', make_fit=True, make_corner=True)
 
-    # PACE chi^2
+        # GSM
+        if True:
+            model_names=['GSM', 'GSM']
+            p = param20.p_ntuple(model_names,
+                set_Sdg=False, sSdg=0.002, 
+                scl_noise='PACE', 
+                add_noise=True, wv_min=400., wv_max=700.)
+
+            fig_bing_on_high_chl(p, 'GSM', make_fit=True, make_corner=True)
+
+    # Compare high Chl
     if flg == 35:
+        fig_compare_high_chl()
+
+    # PACE chi^2
+    if flg == 36:
         fig_pace_chi2()
 
 # Command line execution

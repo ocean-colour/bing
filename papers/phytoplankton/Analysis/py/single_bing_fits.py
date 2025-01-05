@@ -47,7 +47,22 @@ def main(flg):
 
         # Do it
         dev_fits.fit(p, 2773, show=True, apriors=apriors, bpriors=bpriors,
-                     nsteps=40000, seed=54321) 
+                     nsteps=40000, seed=54321)
+
+    # High Chl + GSM
+    if flg == 3:
+        p = param20.p_ntuple(['GSM', 'GSM'], 
+            set_Sdg=False, sSdg=0.002,
+            scl_noise='PACE', 
+            add_noise=True, wv_min=400., wv_max=700.)
+
+        # Priors
+        apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*2
+        bpriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*1
+
+        # Do it
+        dev_fits.fit(p, 2773, show=True, apriors=apriors, bpriors=bpriors,
+                     nsteps=40000, seed=54321)
 
 # Command line execution
 if __name__ == '__main__':
