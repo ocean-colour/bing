@@ -142,7 +142,7 @@ def fit_one(model_names:list, idx:int,
             # Calculate Chl from Rrs
             OC_Chl = band_ratios.oc4(model_wave, model_Rrs)
             print(f'Using Chl = {OC_Chl} instead of {odict["Chl"]}')
-            #odict['Chl'] = OC_Chl
+            odict['Chl'] = OC_Chl
         models[0].set_aph(odict['Chl'])
     if models[1].uses_basis_params:  # Lee
         models[1].set_basis_func(odict['Y'])

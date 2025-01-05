@@ -18,6 +18,7 @@ from bing import priors as bing_priors
 from ocpy.satellites import modis as sat_modis
 from ocpy.satellites import pace as sat_pace
 from ocpy.satellites import seawifs as sat_seawifs
+from ocpy.chl import band_ratios
 
 from xqaa.params import XQAAParams
 from xqaa import retrieve
@@ -33,7 +34,9 @@ def fit(p:namedtuple, idx:int,
         bbnw_pow:float=None,
         show_xqaa:bool=False,
         apriors:list=None,
+        bpriors:list=None,
         burn:int=7000, thin:int=1,
+        seed:int=None,
         debug:bool=False):
     """
     Fits a model to the data for a given index.
@@ -57,6 +60,9 @@ def fit(p:namedtuple, idx:int,
     Returns:
         tuple: Tuple containing the fitted parameters and covariance matrix.
     """
+    if seed is not None:
+        np.random.seed(seed)
+
     odict = anly_utils_20.prep_l23_data(
         idx, wv_min=p.wv_min, wv_max=p.wv_max)
     print(f"Sdg = {odict['Sdg']}")
@@ -100,6 +106,8 @@ def fit(p:namedtuple, idx:int,
         # Special cases
         if jj == 0 and apriors is not None:
             prior_dicts = apriors
+        elif jj == 1 and bpriors is not None:
+            prior_dicts = bpriors
         elif jj == 0 and p.model_names[0] == 'ExpBricaud':
             prior_dicts[1] = dict(flavor='log_uniform', 
                                 pmin=np.log10(0.007), 
@@ -126,6 +134,11 @@ def fit(p:namedtuple, idx:int,
 
     # Internals
     if models[0].uses_Chl:
+        if models[0].name == 'GIOP':
+            # Calculate Chl from Rrs
+            OC_Chl = band_ratios.oc4(model_wave, model_Rrs)
+            print(f'Using Chl = {OC_Chl} instead of {odict["Chl"]}')
+            odict['Chl'] = OC_Chl
         models[0].set_aph(odict['Chl'])
     if models[1].uses_basis_params:  # Lee
         models[1].set_basis_func(odict['Y'])
@@ -308,10 +321,6 @@ def main(flg):
         #p = param.p_ntuple(['ExpBricaud', 'Pow'], 
         #    set_Sdg=True, sSdg=0.002, beta=1., 
         #    add_noise=True, wv_min=400.)
-
-        p = param.p_ntuple(['ExpBricaud', 'Pow'], 
-            set_Sdg=False, sSdg=0.002, beta=1., 
-            add_noise=True, wv_min=400.)
 
         p = param.p_ntuple(['GIOP', 'Lee'], 
             set_Sdg=False, sSdg=0.002, beta=1., 

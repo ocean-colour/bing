@@ -120,7 +120,7 @@ class bbNWModel:
 
             Pow:
                 params[0] = log10(Bnw)
-                params[1] = log10(beta)
+                params[1] = beta
             Cst:
                 params[0] = log10(Bnw)
 
