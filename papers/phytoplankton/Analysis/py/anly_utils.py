@@ -8,6 +8,7 @@ from ocpy.hydrolight import loisel23
 from ocpy.satellites import pace as sat_pace
 from ocpy.satellites import modis as sat_modis
 from ocpy.satellites import seawifs as sat_seawifs
+from ocpy.iop import zlee
 
 from bing import rt as bing_rt
 from bing.models import anw as bing_anw
@@ -202,10 +203,11 @@ def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
     aph = ds.aph.data[idx,iwave]
 
     # For bp: Lee+2002 prescription
-    rrs = Rrs / (bing_rt.A_Rrs + bing_rt.B_Rrs*Rrs)
-    i440 = np.argmin(np.abs(true_wave-440))
-    i555 = np.argmin(np.abs(true_wave-555))
-    Y = 2.2 * (1 - 1.2 * np.exp(-0.9 * rrs[i440]/rrs[i555]))
+    #rrs = Rrs / (bing_rt.A_Rrs + bing_rt.B_Rrs*Rrs)
+    #i440 = np.argmin(np.abs(true_wave-440))
+    #i555 = np.argmin(np.abs(true_wave-555))
+    #Y = 2.2 * (1 - 1.2 * np.exp(-0.9 * rrs[i440]/rrs[i555]))
+    Y = zlee.Y_from_Rrs(true_wave, Rrs)
 
     # For aph
     aph = ds.aph.data[idx,iwave]

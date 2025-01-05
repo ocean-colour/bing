@@ -36,7 +36,7 @@ def main(flg):
     # High Chl + GIOP, Lee
     if flg == 2:
         p = param20.p_ntuple(['GIOP', 'Lee'], 
-            set_Sdg=False, sSdg=0.002, 
+            set_Sdg=False, sSdg=0.002,
             scl_noise='PACE', 
             #beta=1., 
             add_noise=True, wv_min=400., wv_max=700.)
@@ -47,7 +47,7 @@ def main(flg):
 
         # Do it
         dev_fits.fit(p, 2773, show=True, apriors=apriors, bpriors=bpriors,
-                     nsteps=10000, seed=54321) 
+                     nsteps=40000, seed=54321) 
 
 # Command line execution
 if __name__ == '__main__':

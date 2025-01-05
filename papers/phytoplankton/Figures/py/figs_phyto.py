@@ -1504,12 +1504,15 @@ def fig_bing_on_high_chl(p, outroot:str, idx:int=2773,
                                               #path='../../bing_2.0/Analysis/Fits')
     d = np.load(chain_file)
 
+    # Init the other stuff..
+    _ = model_utils.init_other_bits(models, Chl=d['Chl'], 
+                                    Y=d['Y'])
+
     # Fit
     if make_fit:
         outfile1 = f'fig_bing_fit_high_chl_{outroot}.png'
         bing_plot.show_fits(
-            models, d['chains'], 
-            odict['Chl'], odict['Y'],
+            models, d['chains'], d['Chl'], d['Y'],
             Rrs_true=dict(wave=model_wave, spec=d['obs_Rrs'], var=d['varRrs']),
             anw_true=dict(wave=l23_wave, spec=odict['anw']),
             bbnw_true=dict(wave=l23_wave, spec=odict['bbnw']),
@@ -1782,13 +1785,25 @@ def main(flg):
 
     # High Chla
     if flg == 34:
-        model_names=['ExpBricaud', 'Pow']
-        p = param20.p_ntuple(model_names,
-            set_Sdg=False, sSdg=0.002, 
-            add_noise=True, wv_min=400.)
+        # ExpBricaud, Pow
+        if False:
+            model_names=['ExpBricaud', 'Pow']
+            p = param20.p_ntuple(model_names,
+                set_Sdg=False, sSdg=0.002, 
+                scl_noise='PACE', 
+                add_noise=True, wv_min=400., wv_max=700)
 
-        fig_bing_on_high_chl(p, 'ExpBPow', make_fit=True, make_corner=True)
-                             #model_names=['GIOP', 'Lee'])
+            fig_bing_on_high_chl(p, 'ExpBPow', make_fit=True, make_corner=True)
+
+        # GIOP, Lee
+        if True:
+            model_names=['GIOP', 'Lee']
+            p = param20.p_ntuple(model_names,
+                set_Sdg=False, sSdg=0.002, 
+                scl_noise='PACE', 
+                add_noise=True, wv_min=400., wv_max=700.)
+
+            fig_bing_on_high_chl(p, 'GIOP', make_fit=True, make_corner=True)
 
     # PACE chi^2
     if flg == 35:

@@ -19,6 +19,7 @@ from ocpy.satellites import modis as sat_modis
 from ocpy.satellites import pace as sat_pace
 from ocpy.satellites import seawifs as sat_seawifs
 from ocpy.chl import band_ratios
+from ocpy.iop import zlee
 
 from xqaa.params import XQAAParams
 from xqaa import retrieve
@@ -132,16 +133,7 @@ def fit(p:namedtuple, idx:int,
     # Gordon Rrs
     gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'])
 
-    # Internals
-    if models[0].uses_Chl:
-        if models[0].name == 'GIOP':
-            # Calculate Chl from Rrs
-            OC_Chl = band_ratios.oc4(model_wave, model_Rrs)
-            print(f'Using Chl = {OC_Chl} instead of {odict["Chl"]}')
-            odict['Chl'] = OC_Chl
-        models[0].set_aph(odict['Chl'])
-    if models[1].uses_basis_params:  # Lee
-        models[1].set_basis_func(odict['Y'])
+
 
     # Bricaud?
     # Interpolate
@@ -155,6 +147,28 @@ def fit(p:namedtuple, idx:int,
     if p.add_noise:
         model_Rrs = anly_utils_20.add_noise(
                 orig_model_Rrs, abs_sig=np.sqrt(model_varRrs))
+
+    # Internals (some of which depend on Rrs)
+    _ = model_utils.init_other_bits(
+        models, Chl=odict['Chl'], Y=odict['Y'],
+        update_dict=odict, Rrs=model_Rrs)
+
+
+    #if models[0].uses_Chl:
+    #    if models[0].name == 'GIOP':
+    #        # Calculate Chl from Rrs
+    #        OC_Chl = band_ratios.oc4(model_wave, model_Rrs)
+    #        print(f'Using Chl = {OC_Chl} instead of {odict["Chl"]}')
+    #        odict['Chl'] = OC_Chl
+    #    models[0].set_aph(odict['Chl'])
+    #if models[1].uses_basis_params:  # Lee
+    #    # GIOP?
+    #    if models[0].name == 'GIOP':
+    #        Y = zlee.Y_from_Rrs(model_wave, model_Rrs)
+    #        print(f'Using Y = {Y} instead of {odict["Y"]}')
+    #        odict['Y'] = Y
+    #    # Go forth
+    #    models[1].set_basis_func(odict['Y'])
 
     # Initial guess
     p0_a = models[0].init_guess(model_anw)

@@ -169,6 +169,8 @@ class bbNWModel:
             param (float): The basis function
         """
 
+    def __repr__(self):
+        return f"<bbNWModel: {self.name}, nparam={self.nparam}>"
 
 class bbNWCst(bbNWModel):
     """
