@@ -13,11 +13,7 @@ def main(flg):
 
     # High Chl + ExpBricaud, Pow
     if flg == 1:
-        p = param20.p_ntuple(['ExpBricaud', 'Pow'], 
-            set_Sdg=False, sSdg=0.002, 
-            scl_noise='PACE', 
-            #beta=1., 
-            add_noise=True, wv_min=400., wv_max=700.)
+
 
         # Priors
         apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*3
@@ -28,6 +24,11 @@ def main(flg):
 
         # Uniform for beta from 0. - 2. (positive here means negative slope)
         bpriors[1]=dict(flavor='uniform', pmin=0., pmax=2.)
+
+        p = param20.p_ntuple(['ExpBricaud', 'Pow'], 
+            set_Sdg=False, sSdg=0.002, apriors=apriors, bpriors=bpriors,
+            scl_noise='PACE', 
+            add_noise=True, wv_min=400., wv_max=700.)
 
         # Do it
         dev_fits.fit(p, 2773, show=True, apriors=apriors, bpriors=bpriors,
@@ -66,12 +67,6 @@ def main(flg):
 
     # Low Chl + ExpBricaud, Pow
     if flg == 4:
-        p = param20.p_ntuple(['ExpBricaud', 'Pow'], 
-            set_Sdg=False, sSdg=0.002, 
-            scl_noise='PACE', 
-            #beta=1., 
-            add_noise=True, wv_min=400., wv_max=700.)
-
         # Priors
         apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*3
         bpriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*2
@@ -81,6 +76,11 @@ def main(flg):
 
         # Uniform for beta from 0. - 2. (positive here means negative slope)
         bpriors[1]=dict(flavor='uniform', pmin=0., pmax=2.)
+
+        p = param20.p_ntuple(['ExpBricaud', 'Pow'], 
+            set_Sdg=False, sSdg=0.002, apriors=apriors, bpriors=bpriors,
+            scl_noise='PACE', 
+            add_noise=True, wv_min=400., wv_max=700.)
 
         # Do it
         dev_fits.fit(p, 170, show=True, apriors=apriors, bpriors=bpriors,

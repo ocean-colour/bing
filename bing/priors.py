@@ -242,3 +242,35 @@ class Priors:
             rstr += f"  {prior}\n"
         rstr += ">"
         return rstr
+
+
+def set_standard_priors(models, p):
+
+    # Set priors
+    prior_dict = dict(flavor='log_uniform', pmin=-6, pmax=5)
+    for jj in range(2):
+        prior_dicts = [prior_dict]*models[jj].nparam
+        # Special cases
+        if jj == 0 and p.apriors is not None:
+            prior_dicts = p.apriors
+        elif jj == 1 and p.bpriors is not None:
+            prior_dicts = p.bpriors
+        elif jj == 0 and models[0].name == 'ExpBricaud':
+            prior_dicts[1] = dict(flavor='log_uniform',
+                                pmin=np.log10(0.007),
+                                pmax=np.log10(0.02))
+        elif jj == 1 and p.model_names[1] == 'Pow' and \
+            p.beta is not None:
+            prior_dicts[1] = dict(flavor='gaussian',
+                                mean=p.beta, sigma=0.1)
+
+        # Sdg
+        if p.set_Sdg and jj==0:
+            print(f"Using Sdg = {p.Sdg}")
+            # Find Sdg
+            ii = models[0].pnames.index('Sdg')
+            prior_dicts[ii] = dict(flavor='gaussian',
+                                mean=p.Sdg, sigma=p.sSdg)
+        # Finish
+        models[jj].priors = Priors(prior_dicts)
+                    

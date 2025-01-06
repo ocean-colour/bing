@@ -30,7 +30,8 @@ def fit(model_names:list,
         reduce_by_in_situ:float=None,
         MODIS:bool=False, PACE:bool=False, SeaWiFS:bool=False,
         scl_noise:float=0.02, add_noise:bool=False,
-        n_cores:int=20, debug:bool=False): 
+        n_cores:int=20, debug:bool=False,
+        seed:bool=None): 
     """
     Fits the data with or without considering any errors.
 
@@ -46,6 +47,8 @@ def fit(model_names:list,
         use_NMF_pos (bool): Whether to use positive priors for NMF. Default is False.
 
     """
+    if seed is not None:
+        np.random.seed(seed)
     # Load L23
     ds = loisel23.load_ds(4,0)
     gd_wave = np.ones_like(ds.Lambda.data, dtype=bool)

@@ -11,15 +11,11 @@ import corner
 from bing.models import utils as model_utils
 from bing import inference as bing_inf
 from bing import rt as bing_rt
-from bing import chisq_fit
 from bing import plotting as bing_plot
 from bing import priors as bing_priors
 
 from ocpy.satellites import modis as sat_modis
-from ocpy.satellites import pace as sat_pace
 from ocpy.satellites import seawifs as sat_seawifs
-from ocpy.chl import band_ratios
-from ocpy.iop import zlee
 
 from xqaa.params import XQAAParams
 from xqaa import retrieve
@@ -101,6 +97,9 @@ def fit(p:namedtuple, idx:int,
     models = model_utils.init(use_model_names, model_wave)
 
     # Set priors
+    bing_priors.set_standard_priors(models, p)
+
+    '''
     prior_dict = dict(flavor='log_uniform', pmin=-6, pmax=5)
     for jj in range(2):
         prior_dicts = [prior_dict]*models[jj].nparam
@@ -126,6 +125,7 @@ def fit(p:namedtuple, idx:int,
                                 mean=odict['Sdg'], sigma=p.sSdg)
         # Finish
         models[jj].priors = bing_priors.Priors(prior_dicts)
+    '''
                     
     # Initialize the MCMC
     pdict = bing_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)

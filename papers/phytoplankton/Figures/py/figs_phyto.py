@@ -1877,7 +1877,8 @@ def fig_multi_model(ps, lbls, idx:int, outfile:str,
         nparam = models[0].nparam + models[1].nparam
         red_chi2 = chi2 / (Rsig.size-nparam)
             #
-        ax_R.plot(wave, model_Rrs, l, color=R_clr, label=lbl, zorder=10)
+        ax_R.plot(wave, model_Rrs, l, color=R_clr, zorder=10,
+                label=lbl+r': $\chi^2_\nu = '+f'{red_chi2:0.2f}'+r'$') 
 
     ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
 
