@@ -24,14 +24,11 @@ from IPython import embed
 
 import anly_utils_20 
 import param
+import prep_for_fits
 
 def fit(p:namedtuple, idx:int, 
-        nsteps:int=10000, nburn:int=1000, 
         show:bool=False,
-        bbnw_pow:float=None,
         show_xqaa:bool=False,
-        apriors:list=None,
-        bpriors:list=None,
         burn:int=7000, thin:int=1,
         seed:int=None,
         debug:bool=False):
@@ -60,6 +57,7 @@ def fit(p:namedtuple, idx:int,
     if seed is not None:
         np.random.seed(seed)
 
+    '''
     odict = anly_utils_20.prep_l23_data(
         idx, wv_min=p.wv_min, wv_max=p.wv_max)
     print(f"Sdg = {odict['Sdg']}")
@@ -99,48 +97,15 @@ def fit(p:namedtuple, idx:int,
     # Set priors
     bing_priors.set_standard_priors(models, p)
 
-    '''
-    prior_dict = dict(flavor='log_uniform', pmin=-6, pmax=5)
-    for jj in range(2):
-        prior_dicts = [prior_dict]*models[jj].nparam
-        # Special cases
-        if jj == 0 and apriors is not None:
-            prior_dicts = apriors
-        elif jj == 1 and bpriors is not None:
-            prior_dicts = bpriors
-        elif jj == 0 and p.model_names[0] == 'ExpBricaud':
-            prior_dicts[1] = dict(flavor='log_uniform', 
-                                pmin=np.log10(0.007), 
-                                pmax=np.log10(0.02))
-        elif jj == 1 and p.model_names[1] == 'Pow' and p.beta is not None:
-            prior_dicts[1] = dict(flavor='gaussian', 
-                                mean=p.beta, sigma=0.1)
-
-        # Sdg
-        if p.set_Sdg and jj==0:
-            print(f"Using Sdg = {odict['Sdg']}")
-            # Find Sdg
-            ii = models[0].pnames.index('Sdg')
-            prior_dicts[ii] = dict(flavor='gaussian', 
-                                mean=odict['Sdg'], sigma=p.sSdg)
-        # Finish
-        models[jj].priors = bing_priors.Priors(prior_dicts)
-    '''
-                    
     # Initialize the MCMC
     pdict = bing_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
     
     # Gordon Rrs
     gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'])
 
-
-
-    # Bricaud?
-    # Interpolate
     model_Rrs = anly_utils_20.convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
     model_anw = anly_utils_20.convert_to_satwave(l23_wave, odict['anw'], model_wave)
     model_bbnw = anly_utils_20.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
-
     model_varRrs = anly_utils_20.scale_noise(p.scl_noise, model_Rrs, model_wave)
 
     orig_model_Rrs = model_Rrs.copy()
@@ -152,23 +117,6 @@ def fit(p:namedtuple, idx:int,
     _ = model_utils.init_other_bits(
         models, Chl=odict['Chl'], Y=odict['Y'],
         update_dict=odict, Rrs=model_Rrs)
-
-
-    #if models[0].uses_Chl:
-    #    if models[0].name == 'GIOP':
-    #        # Calculate Chl from Rrs
-    #        OC_Chl = band_ratios.oc4(model_wave, model_Rrs)
-    #        print(f'Using Chl = {OC_Chl} instead of {odict["Chl"]}')
-    #        odict['Chl'] = OC_Chl
-    #    models[0].set_aph(odict['Chl'])
-    #if models[1].uses_basis_params:  # Lee
-    #    # GIOP?
-    #    if models[0].name == 'GIOP':
-    #        Y = zlee.Y_from_Rrs(model_wave, model_Rrs)
-    #        print(f'Using Y = {Y} instead of {odict["Y"]}')
-    #        odict['Y'] = Y
-    #    # Go forth
-    #    models[1].set_basis_func(odict['Y'])
 
     # Initial guess
     p0_a = models[0].init_guess(model_anw)
@@ -190,7 +138,24 @@ def fit(p:namedtuple, idx:int,
     pRrs = bing_rt.calc_Rrs(ca, cbb)
     print(f'Initial Rrs guess: {np.mean((model_Rrs-pRrs)/model_Rrs)}')
     #embed(header='159 of fit one')
+    '''
     
+    # Prep and unpack
+    prep_dict = prep_for_fits.one_l23(p, idx)
+    odict = prep_dict['odict']
+    pdict = prep_dict['pdict']
+    models = prep_dict['models']
+    model_Rrs = prep_dict['model_Rrs']
+    model_varRrs = prep_dict['model_varRrs']
+    model_wave = models[0].wave
+    p0 = prep_dict['p0']
+    l23_wave = odict['true_wave']
+
+    # pdict -- this is a hack for a single run
+    pdict['Chl'] = np.zeros(idx+1)
+    pdict['Chl'][idx] = odict['Chl']
+    pdict['Y'] = np.zeros(idx+1)
+    pdict['Y'][idx] = odict['Y']
 
     # Set the items
     #p0 -= 1
@@ -199,38 +164,8 @@ def fit(p:namedtuple, idx:int,
     outfile = anly_utils_20.chain_filename(p, idx=idx)
 
     # Fit
-    if p.nMC is None:
-        chains, idx = bing_inf.fit_one(
+    chains, idx = bing_inf.fit_one(
             items[0], models=models, pdict=pdict, chains_only=True)
-    else:
-        chains = []
-        for ss in range(p.nMC):
-            print(f'Running {ss} of {p.nMC}')
-            # Error
-            if p.add_noise:
-                model_Rrs = anly_utils_20.add_noise(
-                    orig_model_Rrs, abs_sig=np.sqrt(model_varRrs))
-            # Run
-            ichains, idx = bing_inf.fit_one(
-                items[0], models=models, pdict=pdict, chains_only=True)
-            # Save
-            chains.append(ichains) 
-            # Calc adg, aph
-            tchains = ichains[burn::thin, :, :].reshape(-1, ichains.shape[-1])
-            a_dg, a_ph = models[0].eval_anw(
-                tchains[..., :models[0].nparam], 
-                retsub_comps=True)
-            all_adg_400 = a_dg[..., i400].flatten()
-            all_aph_440 = a_ph[..., i440].flatten()
-            adg_400 = float(np.median(all_adg_400))
-            aph_440 = float(np.median(all_aph_440))
-            adg_5, adg_95 = np.percentile(all_adg_400, [16, 84])
-            aph_5, aph_95 = np.percentile(all_aph_440, [16, 84])
-            # Print
-            print(f'adg_400: {adg_400} [{adg_5}, {adg_95}]')
-            print(f'aph_440: {aph_440} [{aph_5}, {aph_95}]')
-        chains = np.array(chains)
-
     # Save
     anly_utils_20.save_fits(chains, idx, outfile, 
                             extras=dict(wave=model_wave, 

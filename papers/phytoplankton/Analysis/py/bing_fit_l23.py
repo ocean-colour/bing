@@ -1,5 +1,5 @@
-""" Fit the full L23 dataset """
-import os
+""" Fit the full L23 dataset with BING 2.0 """
+import os, sys
 import numpy as np
 
 
@@ -23,16 +23,12 @@ sys.path.append(os.path.abspath("../../bing_2.0/Analysis/py"))
 import anly_utils_20
 import param as param20
 import dev_fits
+import prep_for_fits
 
 from IPython import embed
 
 
-def fit(p,
-        Nspec:int=None, 
-        nsteps=80000, nburn=8000,
-        use_chisq:bool=False,
-        reduce_by_in_situ:float=None,
-        n_cores:int=20, debug:bool=False,
+def batch_fit(p, n_batch:int=5, n_cores:int=15, debug:bool=False,
         seed:bool=None): 
     """
     Fits the data with or without considering any errors.
@@ -55,113 +51,85 @@ def fit(p,
     # Load L23
     ds = loisel23.load_ds(4,0)
     # Prep
-    if Nspec is None:
-        idx = np.arange(ds.Rrs.shape[0])
-    else:
-        idx = np.arange(Nspec)
+    all_idx = np.arange(ds.Rrs.shape[0]).tolist()
     if debug:
         #idx = idx[0:2]
-        idx = [170, 180]
+        all_idx = [170, 180, 200, 250]
         #idx = [2706]
 
-    # Setup the model
-
-    # Wavelenegths
-    if p.satellite == 'MODIS':
-        model_wave = sat_modis.modis_wave
-    elif p.satellite == 'PACE':
-        model_wave = anly_utils_20.pace_wave(wv_min=p.wv_min,
-                                             wv_max=p.wv_max)
-    elif p.satellite == 'SeaWiFS':
-        model_wave = sat_seawifs.seawifs_wave
-    else:
-        raise IOError("Satellite not recognized")
-
-    # Wavelengths
-    i400 = np.argmin(np.abs(model_wave-400))
-    i440 = np.argmin(np.abs(model_wave-440))
-
-    # Priors
-    if p.model_names[0] == 'ExpB':
-        use_model_names = ['Exp', p.model_names[1]]
-    else:
-        use_model_names = p.model_names.copy()
-
-    # Models
-    models = model_utils.init(use_model_names, model_wave)
-
-    # Set priors
-    bing_priors.set_standard_priors(models, p)
-
-    # Initialize the MCMC
-    pdict = bing_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn)
-
-    # Calcualte the Rrs
     Rrs = []
     varRrs = []
     params = []
     Chls = []
     Ys = []
-    for ss in idx:
-        odict = anly_utils_20.prep_l23_data(
-            ss, wv_min=p.wv_min, wv_max=p.wv_max)
-        # Rrs
-        gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'])
-        # Internals
-        if models[0].uses_Chl:
-            models[0].set_aph(odict['Chl'])
-        if models[1].uses_basis_params:  # Lee
-            models[1].set_basis_func(odict['Y'])
+    for idx in all_idx:
+        if idx % 50 == 0:
+            print("Working on {:d}".format(idx))
+        prep_dict = prep_for_fits.one_l23(p, idx)
 
-        # Interpolate
-        l23_wave = odict['true_wave']
-        model_Rrs = anly_utils.convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
-        model_anw = anly_utils.convert_to_satwave(l23_wave, odict['anw'], model_wave)
-        model_bbnw = anly_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
-
-        # Noise
-        model_varRrs = anly_utils.scale_noise(
-            p.scl_noise, model_Rrs, model_wave,
-            reduce_by_in_situ=reduce_by_in_situ)
-
-        # Add noise?
-        if p.add_noise:
-            model_Rrs = anly_utils.add_noise(
-                model_Rrs, abs_sig=np.sqrt(model_varRrs))
-
-        p0_a = models[0].init_guess(model_anw)
-        p0_b = models[1].init_guess(model_bbnw)
-        p0 = np.concatenate((np.log10(np.atleast_1d(p0_a)), 
-                         np.log10(np.atleast_1d(p0_b))))
-        # Deal with S
-        if models[0].name in ['Exp', 'ExpBricaud', 'ExpBricaudFix']:
-            p0[1] = 10**p0[1]
-        params.append(p0)
         # Others
-        varRrs.append(model_varRrs)
-        Rrs.append(model_Rrs)
-        Chls.append(odict['Chl'])
-        Ys.append(odict['Y'])
+        varRrs.append(prep_dict['model_varRrs'])
+        Rrs.append(prep_dict['model_Rrs'])
+        Chls.append(prep_dict['odict']['Chl'])
+        Ys.append(prep_dict['odict']['Y'])
+        params.append(prep_dict['p0'])
 
     # Arrays
     Rrs = np.array(Rrs)
     params = np.array(params)
     varRrs = np.array(varRrs)
 
-    flags = np.zeros_like(Rrs, dtype=int) # Binary flags for failed fits
+    # Add to pdict
+    pdict = prep_dict['pdict']
+    max_idx = np.max(all_idx)
+    # Brutal kludge for multi-processing
+    pdict['Chl'] = np.zeros(max_idx+1)
+    pdict['Y'] = np.zeros(max_idx+1)
+    for ss, idx in enumerate(all_idx):
+        pdict['Chl'][idx] = Chls[ss]
+        pdict['Y'][idx] = Ys[ss]
 
-    # Build the items
-    items = [(Rrs[i], varRrs[i], params[i], i) for i in idx]
+    # Models
+    models = prep_dict['models']
 
-    # Output file
-    outfile = anly_utils_20.chain_filename(p, idx=idx)
-    embed(header='fit 158')
+    i0 = 0
+    while i0 < len(all_idx):
+        # Batch
+        i1 = i0 + n_batch*n_cores
+        i1 = min(i1, len(all_idx))
+        print("Working on {:d} to {:d}".format(i0, i1))
 
-    all_samples, all_idx = big_inf.fit_batch(
-        models, pdict, items, n_cores=n_cores)
-    # Save
-    anly_utils.save_fits(all_samples, all_idx, outfile,
-                        extras=dict(Rrs=Rrs, varRrs=varRrs))
+        # Build the items
+        items = []
+        for ss, idx in enumerate(all_idx[i0:i1]):
+            item = (Rrs[ss], varRrs[ss], params[ss], idx)
+            items.append(item)
+
+        # Fit
+        all_samples, sub_idx = bing_inf.fit_batch(
+            models, pdict, items, n_cores=n_cores)
+
+        # Check
+        assert np.all([item[3] for item in items] == sub_idx)
+
+        # Output
+        for ss, item in enumerate(items):
+            # Unpack
+            Rrs, varRrs, params, idx = item
+            chains = all_samples[ss]
+            outfile = anly_utils_20.chain_filename(p, idx=idx)
+            anly_utils_20.save_fits(chains, idx, outfile, 
+                            extras=dict(wave=models[0].wave, 
+                                        obs_Rrs=Rrs, 
+                                        varRrs=varRrs, 
+                                        Chl=pdict['Chl'][idx],
+                                        Y=pdict['Y'][idx]))
+
+        # Update i0
+        i0 = i1
+
+    print("Done!")
+
 
 
 def main(flg):
@@ -169,7 +137,23 @@ def main(flg):
 
     # Testing
     if flg == 1:
-        fit(['Exp', 'Pow'], Nspec=50, nsteps=10000, nburn=1000)
+
+        # Priors
+        apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*3
+        bpriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*2
+
+        # Uniform for Sdg from 0.01 - 0.02
+        apriors[1]=dict(flavor='uniform', pmin=0.01, pmax=0.02)
+
+        # Uniform for beta from 0. - 2. (positive here means negative slope)
+        bpriors[1]=dict(flavor='uniform', pmin=0., pmax=2.)
+
+        p = param20.p_ntuple(['ExpBricaud', 'Pow'], 
+            set_Sdg=False, sSdg=0.002, apriors=apriors, bpriors=bpriors,
+            scl_noise='PACE', nsteps=40000,
+            add_noise=True, wv_min=400., wv_max=700.)
+
+        batch_fit(p, seed=54321)#, debug=True)
 
 
     

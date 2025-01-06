@@ -15,6 +15,8 @@ def p_ntuple(model_names:list,
                sSdg:float=None,
                beta:float=None, 
                nMC:int=None,
+               nsteps:int=40000,  # MCMC steps
+               nburn:int=1000  # MCMC burn-in
     ):
 
     pdict = dict(model_names=model_names,
@@ -27,6 +29,8 @@ def p_ntuple(model_names:list,
                     bpriors=bpriors,
                     sSdg=sSdg,
                     nMC=nMC,
+                    nsteps=nsteps,
+                    nburn=nburn,
                     beta=beta)
     # Scale noise
     if scl_noise is not None:
