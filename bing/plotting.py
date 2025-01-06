@@ -208,7 +208,10 @@ def show_anw_fits(models:list, prep_chains:np.ndarray,
              outfile:str=None,
              figsize:tuple=(9,6),
              fontsize:float=12.,
-             perc:tuple=(5,95),
+             perc:tuple=(5,95), 
+             ax_anw=None,
+             no_show:bool=False,
+             adg_clr = 'blue', aph_clr = 'green',
              anw_true:dict=None): 
 
     # Unpack a little
@@ -222,33 +225,29 @@ def show_anw_fits(models:list, prep_chains:np.ndarray,
     aph_mean = np.median(a_ph, axis=0)
     aph_low, aph_high = np.percentile(a_ph, perc, axis=0)
 
-    # Water
-    a_w = absorption.a_water(wave, data='IOCCG')
-
     # #########################################################
     # Plot the solution
     lgsz = 14.
 
-    fig = plt.figure(figsize=figsize)
-    plt.clf()
-    gs = gridspec.GridSpec(1,1)
+    if ax_anw is None:
+        fig = plt.figure(figsize=figsize)
+        plt.clf()
+        gs = gridspec.GridSpec(1,1)
+        ax_anw = plt.subplot(gs[0])
     
 
     # #########################################################
     # a without water
-
-    ax_anw = plt.subplot(gs[0])
-
     if anw_true is not None:
         for clr, key, marker in zip(['b','g'], ['a_dg', 'a_ph'], ['o','s']):
             ax_anw.plot(anw_true['wave'], 
                     anw_true[key], marker, color=clr, 
                     label=f'True {key}', zorder=1)
     # 
-    ax_anw.plot(wave, adg_mean, 'b-', label='a_dg Retreival')
-    ax_anw.fill_between(wave, adg_low, adg_high, color='b', alpha=0.5) 
-    ax_anw.plot(wave, aph_mean, 'g-', label='a_ph Retreival')
-    ax_anw.fill_between(wave, aph_low, aph_high, color='g', alpha=0.5) 
+    ax_anw.plot(wave, adg_mean, '-', color=adg_clr, label='a_dg Retreival')
+    ax_anw.fill_between(wave, adg_low, adg_high, color=adg_clr, alpha=0.5) 
+    ax_anw.plot(wave, aph_mean, '-', color=aph_clr, label='a_ph Retreival')
+    ax_anw.fill_between(wave, aph_low, aph_high, color=aph_clr, alpha=0.5) 
 
     ax_anw.set_ylabel(r'$a(\lambda) \; [{\rm m}^{-1}]$')
 
@@ -263,7 +262,7 @@ def show_anw_fits(models:list, prep_chains:np.ndarray,
     if outfile is not None:
         plt.savefig(outfile, dpi=300)
         print(f"Saved: {outfile}")
-    else:
+    elif not no_show:
         plt.show()
 
-    return axes
+    return ax_anw

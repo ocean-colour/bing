@@ -51,7 +51,7 @@ def main(flg):
 
     # High Chl + GSM
     if flg == 3:
-        p = param20.p_ntuple(['GSM', 'GSM'], 
+        p = param20.p_ntuple(['GSM', 'GSM'],
             set_Sdg=False, sSdg=0.002,
             scl_noise='PACE', 
             add_noise=True, wv_min=400., wv_max=700.)
@@ -63,6 +63,29 @@ def main(flg):
         # Do it
         dev_fits.fit(p, 2773, show=True, apriors=apriors, bpriors=bpriors,
                      nsteps=40000, seed=54321)
+
+    # Low Chl + ExpBricaud, Pow
+    if flg == 4:
+        p = param20.p_ntuple(['ExpBricaud', 'Pow'], 
+            set_Sdg=False, sSdg=0.002, 
+            scl_noise='PACE', 
+            #beta=1., 
+            add_noise=True, wv_min=400., wv_max=700.)
+
+        # Priors
+        apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*3
+        bpriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*2
+
+        # Uniform for Sdg from 0.01 - 0.02
+        apriors[1]=dict(flavor='uniform', pmin=0.01, pmax=0.02)
+
+        # Uniform for beta from 0. - 2. (positive here means negative slope)
+        bpriors[1]=dict(flavor='uniform', pmin=0., pmax=2.)
+
+        # Do it
+        dev_fits.fit(p, 170, show=True, apriors=apriors, bpriors=bpriors,
+                     nsteps=40000, seed=54321) 
+
 
 # Command line execution
 if __name__ == '__main__':
