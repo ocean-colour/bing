@@ -101,7 +101,8 @@ def batch_fit(p, n_batch:int=5, n_cores:int=15, debug:bool=False,
 
         # Build the items
         items = []
-        for ss, idx in enumerate(all_idx[i0:i1]):
+        for idx in all_idx[i0:i1]:
+            ss = all_idx.index(idx)
             item = (Rrs[ss], varRrs[ss], params[ss], idx)
             items.append(item)
 
@@ -115,13 +116,13 @@ def batch_fit(p, n_batch:int=5, n_cores:int=15, debug:bool=False,
         # Output
         for ss, item in enumerate(items):
             # Unpack
-            Rrs, varRrs, params, idx = item
+            iRrs, ivarRrs, iparams, idx = item
             chains = all_samples[ss]
             outfile = anly_utils_20.chain_filename(p, idx=idx)
             anly_utils_20.save_fits(chains, idx, outfile, 
                             extras=dict(wave=models[0].wave, 
-                                        obs_Rrs=Rrs, 
-                                        varRrs=varRrs, 
+                                        obs_Rrs=iRrs, 
+                                        varRrs=ivarRrs, 
                                         Chl=pdict['Chl'][idx],
                                         Y=pdict['Y'][idx]))
 
