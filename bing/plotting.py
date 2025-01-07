@@ -225,6 +225,14 @@ def show_anw_fits(models:list, prep_chains:np.ndarray,
     aph_mean = np.median(a_ph, axis=0)
     aph_low, aph_high = np.percentile(a_ph, perc, axis=0)
 
+    # Stats
+    i440 = np.argmin(np.abs(wave-440.))
+    #print(f'Fit: a_dg(440) = {adg_mean[i440]:0.3f} +/- {0.5*(adg_high[i440]-adg_low[i440]):0.3f}')
+    print(f'Fit: a_ph(440) = {aph_mean[i440]:0.4f} +/- {0.5*(aph_high[i440]-aph_low[i440]):0.4f}')
+    if anw_true is not None:
+        i440 = np.argmin(np.abs(anw_true['wave']-440.))
+        print(f'True: a_ph(440) = {anw_true["a_ph"][i440]:0.4f}')
+
     # #########################################################
     # Plot the solution
     lgsz = 14.

@@ -1486,7 +1486,7 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     print(f"Saved: {outfile}")
 
 # ############################################################
-def fig_bing_on_high_chl(p, outroot:str, idx:int=2773, 
+def fig_bing_figs(p, outroot:str, idx:int=2773, 
                          make_fit:bool=True,
                          make_corner:bool=True,
                          make_anw:bool=True,
@@ -1512,7 +1512,7 @@ def fig_bing_on_high_chl(p, outroot:str, idx:int=2773,
 
     # Fit
     if make_fit:
-        outfile1 = f'fig_bing_fit_high_chl_{outroot}.png'
+        outfile1 = f'fig_bing_fit_{outroot}.png'
         bing_plot.show_fits(
             models, d['chains'], d['Chl'], d['Y'],
             Rrs_true=dict(wave=model_wave, spec=d['obs_Rrs'], var=d['varRrs']),
@@ -1556,13 +1556,13 @@ def fig_bing_on_high_chl(p, outroot:str, idx:int=2773,
                 ss += 1
         plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
 
-        outfile2 = f'fig_bing_corner_high_chl_{outroot}.png'
+        outfile2 = f'fig_bing_corner_{outroot}.png'
         plt.savefig(outfile2, dpi=300)
         print(f"Saved: {outfile2}")
 
     # a_nw
     if make_anw:
-        outfile3 = f'fig_bing_anw_high_chl_{outroot}.png'
+        outfile3 = f'fig_bing_anw_{outroot}.png'
         bing_plot.show_anw_fits(
             models, coeff,
             anw_true=dict(
@@ -1631,7 +1631,7 @@ def fig_pace_chi2(outfile:str='fig_pace_chi2.png',
 
 # ############################################################
 def fig_four_panel_fit(p, idx, outfile:str,
-             perc:tuple=(5,95), fontsize=12.):
+             perc:tuple=(16,84), fontsize=12.):
 
     # Load up
     odict = anly_utils_20.prep_l23_data(
@@ -2081,14 +2081,15 @@ def main(flg):
     # Individual High Chla
     if flg == 34:
         # ExpBricaud, Pow
-        if False:
+        if True:
             model_names=['ExpBricaud', 'Pow']
             p = param20.p_ntuple(model_names,
                 set_Sdg=False, sSdg=0.002, 
                 scl_noise='PACE', 
                 add_noise=True, wv_min=400., wv_max=700)
 
-            fig_bing_on_high_chl(p, 'ExpBPow', make_fit=True, make_corner=True)
+            fig_bing_figs(p, 'ExpBPow_170', make_fit=True, make_corner=True,
+                          idx=170)
 
         # GIOP, Lee
         if False:
@@ -2101,18 +2102,14 @@ def main(flg):
             fig_bing_on_high_chl(p, 'GIOP', make_fit=True, make_corner=True)
 
         # GSM
-        if True:
+        if False:
             model_names=['GSM', 'GSM']
             p = param20.p_ntuple(model_names,
                 set_Sdg=False, sSdg=0.002, 
                 scl_noise='PACE', 
                 add_noise=True, wv_min=400., wv_max=700.)
 
-            fig_bing_on_high_chl(p, 'GSM', make_fit=True, make_corner=True)
-
-    # Compare high Chl
-    if flg == 35:
-        fig_compare_high_chl()
+            fig_bing_figs(p, 'GSM', make_fit=True, make_corner=True)
 
     # PACE chi^2
     if flg == 36:
