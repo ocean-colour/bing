@@ -1415,6 +1415,12 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
         bbnw = df_bing['bb_440'].values
         sig_bbnw = df_bing['sig_bb_440'].values
 
+        # REMOVE THIS!
+        ds = loisel23.load_ds(4,0)
+        iwave = np.argmin(np.abs(ds.Lambda.data - 440))
+        bbw_440=ds.bb.data[0,iwave]-ds.bbnw.data[0,iwave]
+        bbnw -= bbw_440
+
 
     def plot_lines(ax, xmin, xmax, scl):
         ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
@@ -1429,7 +1435,13 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     # aph
     ax_ph = plt.subplot(gs[0])
 
-    ax_ph.scatter(l23_aph, g_aph, s=1, color='b')#, label=model)
+    # Non detections
+    non_d = g_aph < 3*sig_aph
+    ax_ph.scatter(l23_aph[~non_d], g_aph[~non_d], s=1, color='b')#, label=model)
+    ax_ph.scatter(l23_aph[non_d], g_aph[non_d], s=1, edgecolors='b',
+                    facecolors='none', alpha=0.5)#, label=model)
+
+
     xmin_aph, xmax_aph = 1e-4, 1
     plot_lines(ax_ph, xmin_aph, xmax_aph, scl)
     ax_ph.set_ylim(xmin_aph, xmax_aph)

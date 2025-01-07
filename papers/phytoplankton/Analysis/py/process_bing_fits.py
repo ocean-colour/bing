@@ -10,6 +10,8 @@ from functools import partial
 from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
 
+from ocpy.hydrolight import loisel23
+
 from bing.models import utils as model_utils
 from bing import evaluate
 
@@ -20,6 +22,11 @@ import param as param20
 import single_bing_fits
 
 from IPython import embed
+
+# bb water
+ds = loisel23.load_ds(4,0)
+iwave = np.argmin(np.abs(ds.Lambda.data - 440))
+bbw_440=ds.bb.data[0,iwave]-ds.bbnw.data[0,iwave]
 
 def process_one(idx, pdict=None, perc=(16, 84), burn:int=7000, thin:int=1,
                 verbose:bool=False):
@@ -48,7 +55,7 @@ def process_one(idx, pdict=None, perc=(16, 84), burn:int=7000, thin:int=1,
 
 
     # Reconstruct
-    anw_mean, bb_mean, anw_low, anw_high, bb_low, bb_high,\
+    a_mean, bb_mean, a_low, anw_high, bb_low, bb_high,\
             model_Rrs, sigRs = evaluate.reconstruct_from_chains(
             models, chains, perc=perc)
 
@@ -64,8 +71,8 @@ def process_one(idx, pdict=None, perc=(16, 84), burn:int=7000, thin:int=1,
     # Stats
     i440 = np.argmin(np.abs(models[0].wave - 440))
 
-    bb_440 = bb_mean[i440]
-    sig_bb_440 = 0.5*(bb_high[i440] - bb_low[i440])
+    bbp_440 = bb_mean[i440] - bbw_440
+    sig_bbp_440 = 0.5*(bb_high[i440] - bb_low[i440])
 
     aph_440 = aph_mean[i440]
     sig_aph_440 = 0.5*(aph_high[i440] - aph_low[i440])
@@ -74,7 +81,7 @@ def process_one(idx, pdict=None, perc=(16, 84), burn:int=7000, thin:int=1,
     sig_adg_440 = 0.5*(adg_high[i440] - adg_low[i440])
 
     # Generate a simple dict
-    standard = dict(bb_440=bb_440, sig_bb_440=sig_bb_440,
+    standard = dict(bbp_440=bbp_440, sig_bbp_440=sig_bbp_440,
                     aph_440=aph_440, sig_aph_440=sig_aph_440,
                     adg_440=adg_440, sig_adg_440=sig_adg_440)
 
