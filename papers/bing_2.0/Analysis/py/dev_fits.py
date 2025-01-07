@@ -8,14 +8,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 import corner
 
-from bing.models import utils as model_utils
 from bing import inference as bing_inf
-from bing import rt as bing_rt
 from bing import plotting as bing_plot
-from bing import priors as bing_priors
-
-from ocpy.satellites import modis as sat_modis
-from ocpy.satellites import seawifs as sat_seawifs
 
 from xqaa.params import XQAAParams
 from xqaa import retrieve
