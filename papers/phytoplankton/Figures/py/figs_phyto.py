@@ -1323,8 +1323,9 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph',
 def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
                 scl_noise:float=0.02, add_noise:bool=False, 
                 SeaWiFS:bool=False, MODIS:bool=False,
-                bb_wv:int=443, # Wave for bbnw
-                aph_wv:int=443, # Wave for bbnw
+                bb_wv:int=440, # Wave for bbnw
+                aph_wv:int=440, # Wave for bbnw
+                BING_file:str=None,
                 PACE:bool=False,
                 no_errorbars:bool=True, outfile:str=None):
 
@@ -1338,8 +1339,10 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     l23_wave = ds.Lambda.data
     aph = ds.aph.data
     iawv_l23 = np.argmin(np.abs(l23_wave-aph_wv))
+    ibwv_l23 = np.argmin(np.abs(l23_wave-bb_wv))
     l23_aph = aph[:,iawv_l23]
     l23_bbnw = ds.bbnw.data
+    l23_bbnw = l23_bbnw[:,ibwv_l23]
 
     if add_noise:
         error_text = 'Observational error'
@@ -1358,50 +1361,60 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
         raise IOError("Bad satellite")
         
 
-
     # Load
-    chain_file = anly_utils.chain_filename(
-        model_names, scl_noise, add_noise,
-        MODIS=MODIS, SeaWiFS=SeaWiFS, PACE=PACE)
-    chain_file = chain_file.replace('BING', 'BING_LM')
-    # Load up
-    print(f'Loading {chain_file}')
-    d = np.load(chain_file)
+    if BING_file is None:
+        chain_file = anly_utils.chain_filename(
+            model_names, scl_noise, add_noise,
+            MODIS=MODIS, SeaWiFS=SeaWiFS, PACE=PACE)
+        chain_file = chain_file.replace('BING', 'BING_LM')
+        # Load up
+        print(f'Loading {chain_file}')
+        d = np.load(chain_file)
 
-    models = model_utils.init(model_names, d['wave'])
+        models = model_utils.init(model_names, d['wave'])
 
-    # More
-    ibbnw = np.argmin(np.abs(d['wave']-models[1].pivot))
-    l23_bbnw = l23_bbnw[:,ibbnw]
+        # More
+        ibbnw = np.argmin(np.abs(d['wave']-models[1].pivot))
+        l23_bbnw = l23_bbnw[:,ibbnw]
 
-    # Specifics
-    if model_names[1] == 'Lee':
-        Y = d['Y']
+        # Specifics
+        if model_names[1] == 'Lee':
+            Y = d['Y']
+        else:
+            Y = None
+
+        # aph
+        perrs = [np.sqrt(np.diag(item)) for item in d['cov']]
+        perrs = np.array(perrs)
+
+        if models[0].name in ['ExpBricaud', 'ExpBricaudFix']:
+            aph_idx = 2
+        else:
+            aph_idx = 1
+        g_aph, sig_aph = anly_utils.calc_aph(
+            models, d['Chl'], d['ans'], perrs, aph_idx,
+            wave=aph_wv)
+
+        # bbnw
+        if models[1].name == 'Pow':
+            bbnw_idx = d['ans'].shape[1]-2
+            nbbnw = 2
+        else:
+            bbnw_idx = d['ans'].shape[1]-1
+            nbbnw = 2
+
+        bbnw = anly_utils.calc_bbnw(
+            models, d['ans'], perrs, bbnw_idx, nbbnw, bb_wv, Y=Y)
     else:
-        Y = None
+        # Load
+        df_bing = pandas.read_csv(BING_file)
+        # Extract
+        g_aph = df_bing['aph_440'].values
+        sig_aph = df_bing['sig_aph_440'].values
 
-    # aph
-    perrs = [np.sqrt(np.diag(item)) for item in d['cov']]
-    perrs = np.array(perrs)
+        bbnw = df_bing['bb_440'].values
+        sig_bbnw = df_bing['sig_bb_440'].values
 
-    if models[0].name in ['ExpBricaud', 'ExpBricaudFix']:
-        aph_idx = 2
-    else:
-        aph_idx = 1
-    g_aph, sig_aph = anly_utils.calc_aph(
-        models, d['Chl'], d['ans'], perrs, aph_idx,
-        wave=aph_wv)
-
-    # bbnw
-    if models[1].name == 'Pow':
-        bbnw_idx = d['ans'].shape[1]-2
-        nbbnw = 2
-    else:
-        bbnw_idx = d['ans'].shape[1]-1
-        nbbnw = 2
-
-    bbnw = anly_utils.calc_bbnw(
-        models, d['ans'], perrs, bbnw_idx, nbbnw, bb_wv, Y=Y)
 
     def plot_lines(ax, xmin, xmax, scl):
         ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
@@ -1463,7 +1476,7 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     ax_bb.set_xlabel(r'$b_{\rm b,nw}^{\rm L23} '+f'({int(bb_wv)})'+r'$')
     ax_bb.set_ylabel(r'$b_{\rm b,nw}^{\rm '+f'{model_names[0]}'+r'}'+f' ({int(bb_wv)})'+r'$')
 
-    std, bias, err, mae = calc_stats(l23_bbnw, bbnw, sig_aph)
+    std, bias, err, mae = calc_stats(l23_bbnw, bbnw, sig_bbnw)
     print(f'bb stats: bias={bias:0.2f}, std={std:0.2f}')
 
     ax_bb.text(0.95, 0.10, 
@@ -1988,11 +2001,12 @@ def main(flg):
                          outfile='fig_aph_and_bbnw_GSM_noise.png')
         '''
         # PACE
-        fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, add_noise=True,
-                         scl_noise='PACE',
-                         outfile='fig_aph_and_bbnw_GIOP_PACE_noise.png')
+        #fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, add_noise=True,
+        #                 scl_noise='PACE',
+        #                 outfile='fig_aph_and_bbnw_GIOP_PACE_noise.png')
         fig_aph_and_bbnw(['ExpBricaud', 'Pow'], PACE=True, 
-                         add_noise=True,
+                         add_noise=True, 
+                         BING_file='../Analysis/BING_L23_results_ExpBricaudPow.csv',
                          scl_noise='PACE',
                          outfile='fig_aph_and_bbnw_k5_PACE.png')
 

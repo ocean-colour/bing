@@ -26,14 +26,24 @@ def standard_expb_pow():
 
     return p
 
+
+def p_every_every(nsteps:int=500000):
+
+    p = param20.p_ntuple(['Every', 'Every'],
+        set_Sdg=False, sSdg=0.002, apriors=None, bpriors=None,
+        scl_noise=0.02, nsteps=nsteps,
+        add_noise=False, wv_min=400., wv_max=700.)
+
+    return p
+
 def main(flg):
     flg = int(flg)
 
     # High Chl + ExpBricaud, Pow
     if flg == 1:
 
-
         # Do it
+        p = standard_expb_pow()
         dev_fits.fit(p, 2773, show=True, seed=54321) 
 
     # High Chl + GIOP, Lee
@@ -85,6 +95,11 @@ def main(flg):
         # Do it
         dev_fits.fit(p, 170, show=True, seed=54321) 
 
+    # Degenerate solutions
+    if flg == 5:
+        p = p_every_every(nsteps=40000)
+        dev_fits.fit(p, 170, show=True, seed=54321) 
+    
 
 # Command line execution
 if __name__ == '__main__':
