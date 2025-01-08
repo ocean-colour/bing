@@ -26,6 +26,17 @@ def standard_expb_pow():
 
     return p
 
+def standard_giop():
+    # Priors
+    apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*2
+    bpriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*1
+
+    p = param20.p_ntuple(['GIOP', 'Lee'], 
+        set_Sdg=False, sSdg=0.002, apriors=apriors, bpriors=bpriors,
+        scl_noise='PACE', nsteps=40000,
+        add_noise=True, wv_min=400., wv_max=700.)
+
+    return p
 
 def p_every_every(nsteps:int=500000):
 
@@ -49,16 +60,8 @@ def main(flg):
     # High Chl + GIOP, Lee
     if flg == 2:
 
-        # Priors
-        apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*2
-        bpriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*1
-
-        p = param20.p_ntuple(['GIOP', 'Lee'], 
-            set_Sdg=False, sSdg=0.002, apriors=apriors, bpriors=bpriors,
-            scl_noise='PACE', nsteps=40000,
-            add_noise=True, wv_min=400., wv_max=700.)
-
         # Do it
+        p = standard_giop()
         dev_fits.fit(p, 2773, show=True, seed=54321)
 
     # High Chl + GSM

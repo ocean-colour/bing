@@ -30,7 +30,8 @@ def init(model_names: list, model_wave: np.ndarray,
     return models
 
 def init_other_bits(models:list, Chl:float=None, Y:float=None,
-                    Rrs:np.ndarray=None, update_dict:dict=None):
+                    Rrs:np.ndarray=None, update_dict:dict=None,
+                    verbose:bool=False) -> dict:
     """
     Initialize other bits for the models.
 
@@ -38,6 +39,9 @@ def init_other_bits(models:list, Chl:float=None, Y:float=None,
         models (list): A list of models.
         Chl (float, optional): The chlorophyll value. Defaults to None.
         Y (float, optional): The Y value. Defaults to None.
+        Rrs (np.ndarray, optional): The Rrs values. Defaults to None.
+        update_dict (dict, optional): A dictionary to be updated. Defaults to None.
+        verbose (bool, optional): Flag to show verbose output. Defaults to False.
 
     Returns:
         dict: A dictionary of any updated items
@@ -51,7 +55,8 @@ def init_other_bits(models:list, Chl:float=None, Y:float=None,
             OC_Chl = band_ratios.oc4(models[0].wave, Rrs)
             Chl = OC_Chl
             if update_dict is not None:
-                print(f'Using Chl = {OC_Chl} instead of {update_dict["Chl"]}')
+                if verbose:
+                    print(f'Using Chl = {OC_Chl} instead of {update_dict["Chl"]}')
                 update_dict['Chl'] = Chl
             ret_items['Chl'] = Chl
         #
@@ -62,7 +67,8 @@ def init_other_bits(models:list, Chl:float=None, Y:float=None,
         if models[0].name == 'GIOP' and Rrs is not None:
             Y = zlee.Y_from_Rrs(models[1].wave, Rrs)
             if update_dict is not None:
-                print(f'Using Y = {Y} instead of {update_dict["Y"]}')
+                if verbose:
+                    print(f'Using Y = {Y} instead of {update_dict["Y"]}')
                 update_dict['Y'] = Y
             ret_items['Y'] = Y
         # Go forth
