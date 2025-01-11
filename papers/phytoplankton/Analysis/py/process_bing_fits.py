@@ -151,15 +151,20 @@ def main(flg):
         p = single_bing_fits.standard_expb_pow()
         process_all(p, 'BING_L23_results_ExpBricaudPow.csv')#, debug=True)
 
+    # Run em all on GIOP
+    if flg == 3:
+        p = single_bing_fits.standard_giop()
+        process_all(p, 'BING_L23_results_GIOPLee.csv')#, debug=True)
+
 # Command line execution
 if __name__ == '__main__':
     import sys
 
     if len(sys.argv) == 1:
         flg = 0
-        #flg += 2 ** 0  # 1 -- Testing
-        #flg += 2 ** 1  # 2 -- No priors
-        #flg += 2 ** 2  # 4 -- bb_water
+        #flg = 1 # -- Testing
+        #flg = 2 # -- ExpBricaud Pow
+        #flg = 3 # -- GIOP Lee
 
     else:
         flg = sys.argv[1]
