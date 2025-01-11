@@ -767,7 +767,7 @@ def fig_satellite_noise(satellite:str, wave:int, min_Rrs:float=-0.03):
 def fig_pace_noise(outfile:str='fig_pace_noise.png'):
 
     # Load up the data
-    pace_file = files('oceancolor').joinpath(os.path.join(
+    pace_file = files('ocpy').joinpath(os.path.join(
         'data', 'satellites', 'PACE_error.csv'))
     actual_PACE_error = pandas.read_csv(pace_file)
     acut = (actual_PACE_error['wave'] < 700.) & (actual_PACE_error['wave'] > 400.)
@@ -1991,8 +1991,8 @@ def main(flg):
         #fig_satellite_noise('SeaWiFS', 443)
         #fig_satellite_noise('SeaWiFS', 670)
         #fig_satellite_noise('MODIS_Aqua', 443)
-        fig_satellite_noise('MODIS_Aqua', 667)
-        #fig_pace_noise()
+        #fig_satellite_noise('MODIS_Aqua', 667)
+        fig_pace_noise()
 
 
     if flg == 13:
@@ -2201,6 +2201,8 @@ if __name__ == '__main__':
         # flg = 3 :: Figure 3; BIC
         
         # flg = 10 :: Supp 1; fig_u
+
+        # flg = 12 :: Satellite noise
 
         # New PACE figures
         # flg = 34 :: Rrs, anw, bbnw on high Chla
