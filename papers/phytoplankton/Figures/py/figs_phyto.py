@@ -1451,15 +1451,16 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     ax_ph.set_ylabel(r'$a_{\rm ph}^{\rm '+f'{model_names[0]}'+r'}'+f'({int(aph_wv)})'+r'$')
 
     def calc_stats(x, y, sigy):
-        bias = np.median(y/x)
+        bias = np.nanmedian(y/x)
         diff = x - y
-        std = np.std(diff/x)
-        mae = np.mean(np.abs(diff)/x)
+        std = np.nanstd(diff/x)
+        mae = np.nanmean(np.abs(diff)/x)
         #
         return std, bias, np.median(sigy/y), mae
 
     # Stats 
     std, bias, err, mae = calc_stats(l23_aph, g_aph, sig_aph)
+    #embed(header='fig_aph_and_bbnw 1463')
     print(f'aph stats: bias={bias:0.2f}, std={std:0.2f}')
 
     high_aph = l23_aph > 0.01
@@ -1850,6 +1851,11 @@ def fig_multi_model(ps, lbls, idx:int, outfile:str,
         adgs.append(adg_mean)
         aphs.append(aph_mean)
 
+        # Stats
+        i440 = np.argmin(np.abs(model_wave-440.))
+        aph440 = aph_mean[i440]
+        print(f'{p.model_names[0]}: a_ph(440)={aph440:0.3f}')
+
         # One more
         if ss == 0:
             Rrs_true=dict(wave=model_wave, spec=d['obs_Rrs'], var=d['varRrs'])
@@ -2016,11 +2022,14 @@ def main(flg):
         #fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, add_noise=True,
         #                 scl_noise='PACE',
         #                 outfile='fig_aph_and_bbnw_GIOP_PACE_noise.png')
-        fig_aph_and_bbnw(['ExpBricaud', 'Pow'], PACE=True, 
-                         add_noise=True, 
-                         BING_file='../Analysis/BING_L23_results_ExpBricaudPow.csv',
-                         scl_noise='PACE',
-                         outfile='fig_aph_and_bbnw_k5_PACE.png')
+        #fig_aph_and_bbnw(['ExpBricaud', 'Pow'], PACE=True, 
+        #                 BING_file='../Analysis/BING_L23_results_ExpBricaudPow.csv',
+        #                 add_noise=True, scl_noise='PACE',
+        #                 outfile='fig_aph_and_bbnw_k5_PACE.png')
+        fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, 
+                         BING_file='../Analysis/BING_L23_results_GIOPLee.csv',
+                         add_noise=True, scl_noise='PACE',
+                         outfile='fig_aph_and_bbnw_GIOP_PACE.png')
 
 
     # BIC/AIC for MODIS+L23
@@ -2104,7 +2113,7 @@ def main(flg):
         #fig_multi_fits(indices=[170,2590])
         fig_multi_fits(indices=[605,2951])
 
-    # Individual High Chla
+    # Individual 
     if flg == 34:
         # ExpBricaud, Pow
         if True:
@@ -2141,7 +2150,7 @@ def main(flg):
     if flg == 36:
         fig_pace_chi2()
 
-    # Low Chl
+    # Low Chl, 4 panel
     if flg == 37:
         idx = 170
         model_names=['ExpBricaud', 'Pow']
@@ -2204,8 +2213,13 @@ if __name__ == '__main__':
 
         # flg = 12 :: Satellite noise
 
+        # flg = 14 :: a_ph(440), bbp(440) scatter fig_aph_and_bbnw
+
         # New PACE figures
         # flg = 34 :: Rrs, anw, bbnw on high Chla
+        # flg = 37 :: Low Chl, 4-panel :: fig_four_panel_fit
+        # flg = 38 :: High Chl, 4-panel :: fig_four_panel_fit
+        # flg = 39 :: Multi-model, 4-panel
 
     else:
         flg = sys.argv[1]
