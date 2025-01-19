@@ -25,7 +25,7 @@ def log_prob(params, models:list, Rrs:np.ndarray, varRrs:np.ndarray):
     Returns:
         float: The logarithm of the probability.
     """
-    # Unpack for convenience
+    # Unpack for convenienceHigh Chla
     aparams = params[:models[0].nparam]
     bparams = params[models[0].nparam:]
 

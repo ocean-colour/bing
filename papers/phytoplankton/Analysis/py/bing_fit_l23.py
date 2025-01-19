@@ -25,6 +25,8 @@ import param as param20
 import dev_fits
 import prep_for_fits
 
+import single_bing_fits
+
 from IPython import embed
 
 
@@ -136,26 +138,15 @@ def batch_fit(p, n_batch:int=5, n_cores:int=15, debug:bool=False,
 def main(flg):
     flg = int(flg)
 
-    # Testing
+    # ExpBricaud Pow
     if flg == 1:
-
-        # Priors
-        apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*3
-        bpriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*2
-
-        # Uniform for Sdg from 0.01 - 0.02
-        apriors[1]=dict(flavor='uniform', pmin=0.01, pmax=0.02)
-
-        # Uniform for beta from 0. - 2. (positive here means negative slope)
-        bpriors[1]=dict(flavor='uniform', pmin=0., pmax=2.)
-
-        p = param20.p_ntuple(['ExpBricaud', 'Pow'], 
-            set_Sdg=False, sSdg=0.002, apriors=apriors, bpriors=bpriors,
-            scl_noise='PACE', nsteps=40000,
-            add_noise=True, wv_min=400., wv_max=700.)
-
+        p = single_bing_fits.standard_expb_pow()
         batch_fit(p, seed=54321)#, debug=True)
 
+    # GIOP
+    if flg == 2:
+        p = single_bing_fits.standard_giop()
+        batch_fit(p, seed=54321)#, debug=True)
 
     
 
@@ -165,9 +156,6 @@ if __name__ == '__main__':
 
     if len(sys.argv) == 1:
         flg = 0
-        #flg += 2 ** 0  # 1 -- Testing
-        #flg += 2 ** 1  # 2 -- No priors
-        #flg += 2 ** 2  # 4 -- bb_water
 
     else:
         flg = sys.argv[1]

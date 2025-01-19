@@ -767,7 +767,7 @@ def fig_satellite_noise(satellite:str, wave:int, min_Rrs:float=-0.03):
 def fig_pace_noise(outfile:str='fig_pace_noise.png'):
 
     # Load up the data
-    pace_file = files('oceancolor').joinpath(os.path.join(
+    pace_file = files('ocpy').joinpath(os.path.join(
         'data', 'satellites', 'PACE_error.csv'))
     actual_PACE_error = pandas.read_csv(pace_file)
     acut = (actual_PACE_error['wave'] < 700.) & (actual_PACE_error['wave'] > 400.)
@@ -1323,8 +1323,9 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph',
 def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
                 scl_noise:float=0.02, add_noise:bool=False, 
                 SeaWiFS:bool=False, MODIS:bool=False,
-                bb_wv:int=443, # Wave for bbnw
-                aph_wv:int=443, # Wave for bbnw
+                bb_wv:int=440, # Wave for bbnw
+                aph_wv:int=440, # Wave for bbnw
+                BING_file:str=None,
                 PACE:bool=False,
                 no_errorbars:bool=True, outfile:str=None):
 
@@ -1338,8 +1339,10 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     l23_wave = ds.Lambda.data
     aph = ds.aph.data
     iawv_l23 = np.argmin(np.abs(l23_wave-aph_wv))
+    ibwv_l23 = np.argmin(np.abs(l23_wave-bb_wv))
     l23_aph = aph[:,iawv_l23]
     l23_bbnw = ds.bbnw.data
+    l23_bbnw = l23_bbnw[:,ibwv_l23]
 
     if add_noise:
         error_text = 'Observational error'
@@ -1358,50 +1361,66 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
         raise IOError("Bad satellite")
         
 
-
     # Load
-    chain_file = anly_utils.chain_filename(
-        model_names, scl_noise, add_noise,
-        MODIS=MODIS, SeaWiFS=SeaWiFS, PACE=PACE)
-    chain_file = chain_file.replace('BING', 'BING_LM')
-    # Load up
-    print(f'Loading {chain_file}')
-    d = np.load(chain_file)
+    if BING_file is None:
+        chain_file = anly_utils.chain_filename(
+            model_names, scl_noise, add_noise,
+            MODIS=MODIS, SeaWiFS=SeaWiFS, PACE=PACE)
+        chain_file = chain_file.replace('BING', 'BING_LM')
+        # Load up
+        print(f'Loading {chain_file}')
+        d = np.load(chain_file)
 
-    models = model_utils.init(model_names, d['wave'])
+        models = model_utils.init(model_names, d['wave'])
 
-    # More
-    ibbnw = np.argmin(np.abs(d['wave']-models[1].pivot))
-    l23_bbnw = l23_bbnw[:,ibbnw]
+        # More
+        ibbnw = np.argmin(np.abs(d['wave']-models[1].pivot))
+        l23_bbnw = l23_bbnw[:,ibbnw]
 
-    # Specifics
-    if model_names[1] == 'Lee':
-        Y = d['Y']
+        # Specifics
+        if model_names[1] == 'Lee':
+            Y = d['Y']
+        else:
+            Y = None
+
+        # aph
+        perrs = [np.sqrt(np.diag(item)) for item in d['cov']]
+        perrs = np.array(perrs)
+
+        if models[0].name in ['ExpBricaud', 'ExpBricaudFix']:
+            aph_idx = 2
+        else:
+            aph_idx = 1
+        g_aph, sig_aph = anly_utils.calc_aph(
+            models, d['Chl'], d['ans'], perrs, aph_idx,
+            wave=aph_wv)
+
+        # bbnw
+        if models[1].name == 'Pow':
+            bbnw_idx = d['ans'].shape[1]-2
+            nbbnw = 2
+        else:
+            bbnw_idx = d['ans'].shape[1]-1
+            nbbnw = 2
+
+        bbnw = anly_utils.calc_bbnw(
+            models, d['ans'], perrs, bbnw_idx, nbbnw, bb_wv, Y=Y)
     else:
-        Y = None
+        # Load
+        df_bing = pandas.read_csv(BING_file)
+        # Extract
+        g_aph = df_bing['aph_440'].values
+        sig_aph = df_bing['sig_aph_440'].values
 
-    # aph
-    perrs = [np.sqrt(np.diag(item)) for item in d['cov']]
-    perrs = np.array(perrs)
+        bbnw = df_bing['bbp_440'].values
+        sig_bbnw = df_bing['sig_bbp_440'].values
 
-    if models[0].name in ['ExpBricaud', 'ExpBricaudFix']:
-        aph_idx = 2
-    else:
-        aph_idx = 1
-    g_aph, sig_aph = anly_utils.calc_aph(
-        models, d['Chl'], d['ans'], perrs, aph_idx,
-        wave=aph_wv)
+        # REMOVE THIS!
+        #ds = loisel23.load_ds(4,0)
+        #iwave = np.argmin(np.abs(ds.Lambda.data - 440))
+        #bbw_440=ds.bb.data[0,iwave]-ds.bbnw.data[0,iwave]
+        #bbnw -= bbw_440
 
-    # bbnw
-    if models[1].name == 'Pow':
-        bbnw_idx = d['ans'].shape[1]-2
-        nbbnw = 2
-    else:
-        bbnw_idx = d['ans'].shape[1]-1
-        nbbnw = 2
-
-    bbnw = anly_utils.calc_bbnw(
-        models, d['ans'], perrs, bbnw_idx, nbbnw, bb_wv, Y=Y)
 
     def plot_lines(ax, xmin, xmax, scl):
         ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
@@ -1416,7 +1435,13 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     # aph
     ax_ph = plt.subplot(gs[0])
 
-    ax_ph.scatter(l23_aph, g_aph, s=1, color='b')#, label=model)
+    # Non detections
+    non_d = g_aph < 3*sig_aph
+    ax_ph.scatter(l23_aph[~non_d], g_aph[~non_d], s=1, color='b')#, label=model)
+    ax_ph.scatter(l23_aph[non_d], g_aph[non_d], s=1, edgecolors='b',
+                    facecolors='none', alpha=0.3)#, label=model)
+
+
     xmin_aph, xmax_aph = 1e-4, 1
     plot_lines(ax_ph, xmin_aph, xmax_aph, scl)
     ax_ph.set_ylim(xmin_aph, xmax_aph)
@@ -1426,15 +1451,16 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     ax_ph.set_ylabel(r'$a_{\rm ph}^{\rm '+f'{model_names[0]}'+r'}'+f'({int(aph_wv)})'+r'$')
 
     def calc_stats(x, y, sigy):
-        bias = np.median(y/x)
+        bias = np.nanmedian(y/x)
         diff = x - y
-        std = np.std(diff/x)
-        mae = np.mean(np.abs(diff)/x)
+        std = np.nanstd(diff/x)
+        mae = np.nanmean(np.abs(diff)/x)
         #
         return std, bias, np.median(sigy/y), mae
 
     # Stats 
     std, bias, err, mae = calc_stats(l23_aph, g_aph, sig_aph)
+    #embed(header='fig_aph_and_bbnw 1463')
     print(f'aph stats: bias={bias:0.2f}, std={std:0.2f}')
 
     high_aph = l23_aph > 0.01
@@ -1463,7 +1489,7 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     ax_bb.set_xlabel(r'$b_{\rm b,nw}^{\rm L23} '+f'({int(bb_wv)})'+r'$')
     ax_bb.set_ylabel(r'$b_{\rm b,nw}^{\rm '+f'{model_names[0]}'+r'}'+f' ({int(bb_wv)})'+r'$')
 
-    std, bias, err, mae = calc_stats(l23_bbnw, bbnw, sig_aph)
+    std, bias, err, mae = calc_stats(l23_bbnw, bbnw, sig_bbnw)
     print(f'bb stats: bias={bias:0.2f}, std={std:0.2f}')
 
     ax_bb.text(0.95, 0.10, 
@@ -1825,6 +1851,11 @@ def fig_multi_model(ps, lbls, idx:int, outfile:str,
         adgs.append(adg_mean)
         aphs.append(aph_mean)
 
+        # Stats
+        i440 = np.argmin(np.abs(model_wave-440.))
+        aph440 = aph_mean[i440]
+        print(f'{p.model_names[0]}: a_ph(440)={aph440:0.3f}')
+
         # One more
         if ss == 0:
             Rrs_true=dict(wave=model_wave, spec=d['obs_Rrs'], var=d['varRrs'])
@@ -1966,8 +1997,8 @@ def main(flg):
         #fig_satellite_noise('SeaWiFS', 443)
         #fig_satellite_noise('SeaWiFS', 670)
         #fig_satellite_noise('MODIS_Aqua', 443)
-        fig_satellite_noise('MODIS_Aqua', 667)
-        #fig_pace_noise()
+        #fig_satellite_noise('MODIS_Aqua', 667)
+        fig_pace_noise()
 
 
     if flg == 13:
@@ -1988,13 +2019,17 @@ def main(flg):
                          outfile='fig_aph_and_bbnw_GSM_noise.png')
         '''
         # PACE
-        fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, add_noise=True,
-                         scl_noise='PACE',
-                         outfile='fig_aph_and_bbnw_GIOP_PACE_noise.png')
-        fig_aph_and_bbnw(['ExpBricaud', 'Pow'], PACE=True, 
-                         add_noise=True,
-                         scl_noise='PACE',
-                         outfile='fig_aph_and_bbnw_k5_PACE.png')
+        #fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, add_noise=True,
+        #                 scl_noise='PACE',
+        #                 outfile='fig_aph_and_bbnw_GIOP_PACE_noise.png')
+        #fig_aph_and_bbnw(['ExpBricaud', 'Pow'], PACE=True, 
+        #                 BING_file='../Analysis/BING_L23_results_ExpBricaudPow.csv',
+        #                 add_noise=True, scl_noise='PACE',
+        #                 outfile='fig_aph_and_bbnw_k5_PACE.png')
+        fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, 
+                         BING_file='../Analysis/BING_L23_results_GIOPLee.csv',
+                         add_noise=True, scl_noise='PACE',
+                         outfile='fig_aph_and_bbnw_GIOP_PACE.png')
 
 
     # BIC/AIC for MODIS+L23
@@ -2078,7 +2113,7 @@ def main(flg):
         #fig_multi_fits(indices=[170,2590])
         fig_multi_fits(indices=[605,2951])
 
-    # Individual High Chla
+    # Individual 
     if flg == 34:
         # ExpBricaud, Pow
         if True:
@@ -2115,7 +2150,7 @@ def main(flg):
     if flg == 36:
         fig_pace_chi2()
 
-    # Low Chl
+    # Low Chl, 4 panel
     if flg == 37:
         idx = 170
         model_names=['ExpBricaud', 'Pow']
@@ -2176,8 +2211,15 @@ if __name__ == '__main__':
         
         # flg = 10 :: Supp 1; fig_u
 
+        # flg = 12 :: Satellite noise
+
+        # flg = 14 :: a_ph(440), bbp(440) scatter fig_aph_and_bbnw
+
         # New PACE figures
         # flg = 34 :: Rrs, anw, bbnw on high Chla
+        # flg = 37 :: Low Chl, 4-panel :: fig_four_panel_fit
+        # flg = 38 :: High Chl, 4-panel :: fig_four_panel_fit
+        # flg = 39 :: Multi-model, 4-panel
 
     else:
         flg = sys.argv[1]

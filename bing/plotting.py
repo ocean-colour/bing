@@ -218,8 +218,7 @@ def show_anw_fits(models:list, prep_chains:np.ndarray,
     wave = models[0].wave
 
     # Calc
-    a_dg, a_ph = models[0].eval_anw(prep_chains[..., :models[0].nparam],
-                           retsub_comps=True)
+    a_dg, a_ph = models[0].eval_anw(prep_chains[..., :models[0].nparam], retsub_comps=True)
     adg_mean = np.median(a_dg, axis=0)
     adg_low, adg_high = np.percentile(a_dg, perc, axis=0)
     aph_mean = np.median(a_ph, axis=0)
