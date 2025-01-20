@@ -23,6 +23,7 @@ def fit_exp_to_adg(ag, ad, wvmin:float=400., wvmax:float=525.):
     ad_fits = []
     adg_fits = []
     adg_idx = []
+    ag_idx = []
 
     # Loop on the datasets
     for ss, adict in enumerate([ag, ad]):
@@ -52,6 +53,7 @@ def fit_exp_to_adg(ag, ad, wvmin:float=400., wvmax:float=525.):
                                 full_output=False)
                     adg_fits.append(ans)
                     adg_idx.append(iadg)
+                    ag_idx.append(int(mt[0]))
 
                 else:
                     warnings.warn("Multiple matches")
@@ -63,7 +65,7 @@ def fit_exp_to_adg(ag, ad, wvmin:float=400., wvmax:float=525.):
                               Sd=[ad_fit[1] for ad_fit in ad_fits])) 
     adg_tbl = pandas.DataFrame(dict(Adg=[adg_fit[0] for adg_fit in adg_fits], 
                               Sdg=[adg_fit[1] for adg_fit in adg_fits],
-                              ad_idx = adg_idx)) 
+                              ad_idx = adg_idx, ag_idx=ag_idx)) 
 
     # Return
     return ag_tbl, ad_tbl, adg_tbl
