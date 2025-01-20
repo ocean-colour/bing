@@ -101,6 +101,21 @@ def process_one(idx, pdict=None, perc=(16, 84), burn:int=7000, thin:int=1,
     # Return
     return standard, extras
 
+def replace_one(p, outfile:str, idx:int):
+    # Load originals
+    df = pandas.read_csv(outfile)
+
+    # Run
+    standard, extras = process_one(idx, pdict=p._asdict(), verbose=True)
+    for key in standard.keys():
+        df.loc[idx, key] = standard[key]
+    for key in extras.keys():
+        df.loc[idx, key] = extras[key]
+
+    # Write
+    df.to_csv(outfile, index=False)
+    print(f'Replaced: {idx} in {outfile}')
+
 
 def process_all(p, outfile:str, n_cores:int=15, debug:bool=False):
 
@@ -146,7 +161,7 @@ def main(flg):
         standard, extras = process_one(170, pdict=p._asdict(), verbose=True)
         embed(header='119 of process')
 
-    # Run em all
+    # Run em all for ExpBricaud
     if flg == 2:
         p = single_bing_fits.standard_expb_pow()
         process_all(p, 'BING_L23_results_ExpBricaudPow.csv')#, debug=True)
@@ -155,6 +170,14 @@ def main(flg):
     if flg == 3:
         p = single_bing_fits.standard_giop()
         process_all(p, 'BING_L23_results_GIOPLee.csv')#, debug=True)
+
+    # Replace one
+    if flg == 4:
+        idx = 2773
+        p = single_bing_fits.standard_expb_pow()
+        replace_one(p, 'BING_L23_results_ExpBricaudPow.csv', idx)#, debug=True)
+        p = single_bing_fits.standard_giop()
+        replace_one(p, 'BING_L23_results_GIOPLee.csv', idx)
 
 # Command line execution
 if __name__ == '__main__':

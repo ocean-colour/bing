@@ -1327,7 +1327,7 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
                 aph_wv:int=440, # Wave for bbnw
                 BING_file:str=None,
                 PACE:bool=False,
-                no_errorbars:bool=True, outfile:str=None):
+                outfile:str=None):
 
 
     # Outfile
@@ -1346,7 +1346,10 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
 
     if add_noise:
         error_text = 'Observational error'
-        scl = 10.
+        if PACE:
+            scl = 3.
+        else:
+            scl = 10.
     else:
         error_text = 'No observational error'
         scl = 2.
@@ -1424,8 +1427,8 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
 
     def plot_lines(ax, xmin, xmax, scl):
         ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
-        ax.plot([xmin, xmax], [scl*xmin, scl*xmax], 'k:', label=f'{scl} to {scl}')
-        ax.plot([xmin, xmax], [xmin/scl, xmax/scl], 'k-.', label=f'{1./scl:0.1f} to {1./scl:0.1f}')
+        ax.plot([xmin, xmax], [scl*xmin, scl*xmax], 'k:', label=f'{scl} to 1')
+        ax.plot([xmin, xmax], [xmin/scl, xmax/scl], 'k-.', label=f'{1./scl:0.1f} to 1')
 
     # Figures
     fig = plt.figure(figsize=(12,6))
@@ -1447,8 +1450,9 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     ax_ph.set_ylim(xmin_aph, xmax_aph)
     ax_ph.grid()
 
+    aph_lbl = model_names[0] if model_names[0] != 'ExpBricaud' else '[k=5]'
     ax_ph.set_xlabel(r'$a_{\rm ph}^{\rm L23}$'+f'({int(aph_wv)})')
-    ax_ph.set_ylabel(r'$a_{\rm ph}^{\rm '+f'{model_names[0]}'+r'}'+f'({int(aph_wv)})'+r'$')
+    ax_ph.set_ylabel(r'$a_{\rm ph}^{\rm '+f'{aph_lbl}'+r'}'+f'({int(aph_wv)})'+r'$')
 
     def calc_stats(x, y, sigy):
         bias = np.nanmedian(y/x)
@@ -1461,7 +1465,7 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     # Stats 
     std, bias, err, mae = calc_stats(l23_aph, g_aph, sig_aph)
     #embed(header='fig_aph_and_bbnw 1463')
-    print(f'aph stats: bias={bias:0.2f}, std={std:0.2f}')
+    print(f'aph stats: bias={bias:0.2f}, std={std:0.2f}, mae={mae:0.2f}')
 
     high_aph = l23_aph > 0.01
     std2, bias2, _, mae2 = calc_stats(l23_aph[high_aph], 
@@ -1471,7 +1475,7 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
 
     # Text
     ax_ph.text(0.95, 0.10, 
-               f'{model_names[0]}/{sat}\n {error_text}\n  bias={int(100*bias)-100}%, MAE={int(100*mae)}%',
+               f'{sat}\n bias={int(100*bias)-100}%\n MAE={int(100*mae)}% \nRMS={int(100*std)}%',
                fontsize=17,
                transform=ax_ph.transAxes, ha='right')
 
@@ -1487,13 +1491,13 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     ax_bb.grid()
 
     ax_bb.set_xlabel(r'$b_{\rm b,nw}^{\rm L23} '+f'({int(bb_wv)})'+r'$')
-    ax_bb.set_ylabel(r'$b_{\rm b,nw}^{\rm '+f'{model_names[0]}'+r'}'+f' ({int(bb_wv)})'+r'$')
+    ax_bb.set_ylabel(r'$b_{\rm b,nw}^{\rm '+f'{aph_lbl}'+r'}'+f' ({int(bb_wv)})'+r'$')
 
     std, bias, err, mae = calc_stats(l23_bbnw, bbnw, sig_bbnw)
     print(f'bb stats: bias={bias:0.2f}, std={std:0.2f}')
 
     ax_bb.text(0.95, 0.10, 
-               f'\n\nbias={int(100*bias)-100}%, MAE={int(100*mae)}%',
+               f'\n\n bias={int(100*bias)-100}%\n MAE={int(100*mae)}% \nRMS={int(100*std)}%',
                fontsize=17,
                transform=ax_bb.transAxes, ha='right')
 
@@ -1551,6 +1555,7 @@ def fig_bing_figs(p, outroot:str, idx:int=2773,
     burn = 7000
     thin = 1
     coeff = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+    print(f'There are {coeff.shape[0]} samples in the corner plot')
 
     # Corner plot
     if make_corner:
@@ -1575,10 +1580,10 @@ def fig_bing_figs(p, outroot:str, idx:int=2773,
         for ax in fig.get_axes():
             if len(ax.get_title()) > 0:
                 # Calculate the percntile
-                p_5, p_95 = np.percentile(coeff[:,ss], [5, 95], axis=0)
+                p_16, p_84 = np.percentile(coeff[:,ss], [16, 84], axis=0)
                 # Plot a vertical line
-                ax.axvline(p_5, color='b', linestyle=':')
-                ax.axvline(p_95, color='b', linestyle=':')
+                ax.axvline(p_16, color='b', linestyle=':')
+                ax.axvline(p_84, color='b', linestyle=':')
                 ss += 1
         plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
 
@@ -2022,10 +2027,10 @@ def main(flg):
         #fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, add_noise=True,
         #                 scl_noise='PACE',
         #                 outfile='fig_aph_and_bbnw_GIOP_PACE_noise.png')
-        #fig_aph_and_bbnw(['ExpBricaud', 'Pow'], PACE=True, 
-        #                 BING_file='../Analysis/BING_L23_results_ExpBricaudPow.csv',
-        #                 add_noise=True, scl_noise='PACE',
-        #                 outfile='fig_aph_and_bbnw_k5_PACE.png')
+        fig_aph_and_bbnw(['ExpBricaud', 'Pow'], PACE=True, 
+                         BING_file='../Analysis/BING_L23_results_ExpBricaudPow.csv',
+                         add_noise=True, scl_noise='PACE',
+                         outfile='fig_aph_and_bbnw_k5_PACE.png')
         fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, 
                          BING_file='../Analysis/BING_L23_results_GIOPLee.csv',
                          add_noise=True, scl_noise='PACE',
@@ -2116,25 +2121,24 @@ def main(flg):
     # Individual 
     if flg == 34:
         # ExpBricaud, Pow
-        if True:
+        if False:
             model_names=['ExpBricaud', 'Pow']
             p = param20.p_ntuple(model_names,
                 set_Sdg=False, sSdg=0.002, 
                 scl_noise='PACE', 
                 add_noise=True, wv_min=400., wv_max=700)
 
-            fig_bing_figs(p, 'ExpBPow_170', make_fit=True, make_corner=True,
-                          idx=170)
+            fig_bing_figs(p, 'ExpBPow_170', make_fit=True, make_corner=True, idx=170)
 
         # GIOP, Lee
-        if False:
+        if True:
             model_names=['GIOP', 'Lee']
             p = param20.p_ntuple(model_names,
                 set_Sdg=False, sSdg=0.002, 
                 scl_noise='PACE', 
                 add_noise=True, wv_min=400., wv_max=700.)
 
-            fig_bing_on_high_chl(p, 'GIOP', make_fit=True, make_corner=True)
+            fig_bing_figs(p, 'GIOP_2773', make_fit=True, make_corner=True)
 
         # GSM
         if False:

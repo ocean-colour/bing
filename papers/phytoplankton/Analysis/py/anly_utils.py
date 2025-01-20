@@ -204,7 +204,7 @@ def prep_l23_data(idx:int, step:int=1, scl_noise:float=0.02,
 
     # For bp: Lee+2002 prescription
     #rrs = Rrs / (bing_rt.A_Rrs + bing_rt.B_Rrs*Rrs)
-    #i440 = np.argmin(np.abs(true_wave-440))
+    i440 = np.argmin(np.abs(true_wave-440))
     #i555 = np.argmin(np.abs(true_wave-555))
     #Y = 2.2 * (1 - 1.2 * np.exp(-0.9 * rrs[i440]/rrs[i555]))
     Y = zlee.Y_from_Rrs(true_wave, Rrs)
