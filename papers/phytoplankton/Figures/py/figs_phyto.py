@@ -1090,13 +1090,14 @@ def fig_bic_modis_pace(use_LM:bool=True,
                 fs2n = int(1./float(s2n))
                 color = None
                 ls = ':'
-                lw = 1
+                lw = 2
             except ValueError:
                 fs2n = s2n
                 color = 'k'
                 ls = '-'
                 lw = 3
-            ax.plot(srt, yvals, label=f'S/N={fs2n}', color=color, linewidth=lw, ls=ls)
+            ax.plot(srt, yvals, label=f'S/N={fs2n}', color=color, 
+                    linewidth=lw, ls=ls)
             # Stats
             print(f'{subset}, {fs2n} -------------')
             print(f'% with BIC > 0: {100*np.sum(srt > 0)/srt.size}')
