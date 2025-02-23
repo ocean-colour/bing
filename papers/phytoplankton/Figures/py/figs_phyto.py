@@ -18,6 +18,7 @@ import seaborn as sns
 
 import corner
 
+from ocpy.water import absorption
 from ocpy.utils import plotting 
 from ocpy.hydrolight import loisel23
 from ocpy.satellites import pace as sat_pace
@@ -261,6 +262,125 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
         fontsize=15.,
         )
     
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+
+
+# ############################################################
+def fig_degenerate_fits(model_names:list, idx:int=170, chain_file=None,
+                 outroot='fig_deg_', 
+                 add_noise:bool=False, 
+                 full_LM:bool=True,
+                 MODIS:bool=False, 
+                 PACE:bool=False, 
+                 SeaWiFS:bool=False,
+                 max_wave:float=None,
+                 use_LM:bool=False,
+                 scl_noise:float=0.02): 
+
+    # Load the fits
+    chain_file = '../Analysis/Fits/BING_LM_ExpBricaudPow_170_nP.npz'
+    #chain_file = anly_utils.chain_filename(
+    #    model_names, scl_noise, add_noise, idx=idx, 
+    #    MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
+    #print(f'Loading: {chain_file}')
+    d = np.load(chain_file)
+    wave = d['wave']
+    Rrs_true=dict(wave=d['wave'], spec=d['obs_Rrs'],
+                      var=d['varRrs'])
+
+    # Data
+    odict = anly_utils.prep_l23_data(idx, scl_noise=scl_noise,
+                                     max_wave=max_wave)
+
+    gd_wave = (odict['true_wave'] >= 400.) & (odict['true_wave'] <= 750.) 
+    anw_true=dict(wave=odict['true_wave'][gd_wave], spec=odict['anw'][gd_wave])
+    bbnw_true=dict(wave=odict['true_wave'][gd_wave], spec=odict['bbnw'][gd_wave])
+
+    # Outfile
+    outfile = outroot + f'{idx}.png'
+
+    # Water
+    a_w = absorption.a_water(wave, data='IOCCG')
+    # TODO -- FIX THIS!
+    # THIS IS A HACK UNTIL I CAN RESOLVE bbw
+    ds = loisel23.load_ds(4,0)
+    l23_wave = ds.Lambda.data
+    idx = 170 # Random choie
+    l23_bb = ds.bb.data[idx] 
+    l23_bbnw = ds.bbnw.data[idx] 
+    l23_bbw = l23_bb - l23_bbnw
+    # Interpolate
+    bb_w = np.interp(wave, l23_wave, l23_bbw)
+    bb_true = bb_w + bbnw_true['spec']
+
+    a_true = anw_true['spec'] + a_w
+
+    # #########################################################
+    # Plot the solution
+    lgsz = 14.
+    figsize:tuple=(14,6)
+
+    fig = plt.figure(figsize=figsize)
+    plt.clf()
+    gs = gridspec.GridSpec(1,3)
+    
+
+    # #########################################################
+    # a without water
+
+    ax_anw = plt.subplot(gs[1])
+    ax_anw.plot(anw_true['wave'], anw_true['spec'], 'ko', label='True', zorder=1)
+
+    sv_anws = []
+    sv_bbnws = []
+    #scales = [0.01, 0.1, 0.3, 1., 3., 10., 100]
+    lw = 3
+    scales = [0.85, 1., 3., 10., 100]
+    for ss, scale in enumerate(scales):
+        scaled_anw = anw_true['spec'] * scale
+        lbl = 'Retrieval' if ss == 0 else None
+        ax_anw.plot(anw_true['wave'], scaled_anw, ':', label=lbl, lw=lw)
+        # Calculate bbnw
+        scaled_a = a_true - anw_true['spec'] + scaled_anw
+        sv_anws.append(scaled_anw)
+        bbnw = scaled_a * (bb_true/a_true) - bb_w
+        sv_bbnws.append(bbnw)
+        
+    ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
+
+
+    # #########################################################
+    # bb nw
+    ax_bb = plt.subplot(gs[2])
+    ax_bb.plot(bbnw_true['wave'], bbnw_true['spec'], 'ko', label='True', zorder=1)
+    for ss, scale in enumerate(scales):
+        lbl = 'Retrieval' if ss == 0 else None
+        ax_bb.plot(wave, sv_bbnws[ss], ':', label=lbl, lw=lw)
+    ax_bb.set_ylabel(r'$b_{b,nw}(\lambda) \; [{\rm m}^{-1}]$')
+    #ax_bb.set_ylim(0., 0.001)
+
+    # #########################################################
+    # Rs
+    ax_R = plt.subplot(gs[0])
+    ax_R.plot(Rrs_true['wave'], Rrs_true['spec'], 'k+', label='True', zorder=1)
+    ax_R.plot(Rrs_true['wave'], Rrs_true['spec'], 'b-', label='Retrieval')
+    ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
+
+    # Log scale y-axis
+    #ax_R.set_yscale('log')
+    
+    # axes
+    fontsize:float=12.
+    axes = [ax_anw, ax_R, ax_bb]
+    for ss, ax in enumerate(axes):
+        plotting.set_fontsize(ax, fontsize)
+        ax.set_xlabel('Wavelength (nm)')
+        ax.legend(fontsize=15.)
+        if ss < 3:
+            ax.set_yscale('log')
+
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
@@ -1559,10 +1679,14 @@ def main(flg):
 
     # Degenerate solutions
     if flg == 17:
+        # Actual fits
         #fig_mcmc_fit(['Every', 'Every'], idx=170, full_LM=False,
         #    use_LM=False)
-        fig_mcmc_fit(['Every', 'GSM'], idx=170, full_LM=False,
-            use_LM=False)
+        #fig_mcmc_fit(['Every', 'GSM'], idx=170, full_LM=False,
+        #    use_LM=False)
+        # Degenerates
+        fig_degenerate_fits(['Every', 'Every'], idx=170, 
+                           full_LM=False, use_LM=False)
 
 
     # Fits
