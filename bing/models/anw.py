@@ -9,7 +9,7 @@ from scipy.interpolate import interp1d
 from ocpy.water import absorption as water_abs
 from ocpy.ph import absorption as ph_absorption
 
-from bing import priors as bing_priors
+from bing.priors import priors as bing_priors
 from bing.models import functions
 
 from IPython import embed

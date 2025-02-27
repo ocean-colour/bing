@@ -9,7 +9,7 @@ from ocpy.hydrolight import loisel23
 from abc import ABCMeta
 
 from bing.models import functions
-from bing import priors as bing_priors
+from bing.priors import priors as bing_priors
 
 def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
     """
