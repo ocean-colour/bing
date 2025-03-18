@@ -1566,10 +1566,11 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
                     facecolors='none', alpha=0.3)#, label=model)
 
 
-    xmin_aph, xmax_aph = 1e-4, 1
+    xmin_aph, xmax_aph = 5e-4, 1
+    ymin_aph, ymax_aph = 2e-5, 1
     plot_lines(ax_ph, xmin_aph, xmax_aph, scl)
     ax_ph.set_xlim(xmin_aph, xmax_aph)
-    ax_ph.set_ylim(xmin_aph, xmax_aph)
+    ax_ph.set_ylim(ymin_aph, ymax_aph)
     ax_ph.grid()
 
     aph_lbl = model_names[0] if model_names[0] != 'ExpBricaud' else '[k=5]'
@@ -1597,16 +1598,17 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
 
     # Text
     ax_ph.text(0.95, 0.10, 
-               f'{sat}\n bias={int(100*bias)-100}%\n MAE={int(100*mae)}% \nRMS={int(100*std)}%',
+               f'{sat}\n bias={int(100*bias)-100}%\n MAE={int(100*mae)}%\nRMS={int(100*std)}%',
                fontsize=17,
                transform=ax_ph.transAxes, ha='right')
 
     # Label the top x-axis with Chl
     ax2 = ax_ph.twiny()
-    ax2.set_xlim(ax_ph.get_xlim())
-    ax2.set_xticks([0.01, 0.1, 1])
-    ax2.set_xticklabels([0.01, 0.1, 1])
-    ax2.set_xlabel(r'$\rm Chl \; [mg \, m^{-3}]$')
+    Chl_lim = np.array([xmin_aph, xmax_aph])/0.05582
+    ax2.set_xlim(Chl_lim)
+    #ax2.set_xticks([0.01, 0.1, 1])
+    #ax2.set_xticklabels([0.01, 0.1, 1])
+    ax2.set_xlabel('Chl [mg '+r'$\rm m^{-3}]$')
     
 
     
@@ -1615,7 +1617,7 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     ax_bb = plt.subplot(gs[1])
 
     ax_bb.scatter(l23_bbnw, bbnw, s=1, color='r')#, label=model)
-    xmin_bb, xmax_bb = 1e-5, 3e-2
+    xmin_bb, xmax_bb = 4e-5, 3e-2
     plot_lines(ax_bb, xmin_bb, xmax_bb, scl)
     ax_bb.set_ylim(xmin_bb, xmax_bb)
     ax_bb.grid()
@@ -1627,12 +1629,12 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     print(f'bb stats: bias={bias:0.2f}, std={std:0.2f}')
 
     ax_bb.text(0.95, 0.10, 
-               f'\n\n bias={int(100*bias)-100}%\n MAE={int(100*mae)}% \nRMS={int(100*std)}%',
+               f'\n\n bias={int(100*bias)-100}%\n MAE={int(100*mae)}%\nRMS={int(100*std)}%',
                fontsize=17,
                transform=ax_bb.transAxes, ha='right')
 
     
-    for ss, ax in enumerate([ax_ph, ax_bb]):
+    for ss, ax in enumerate([ax_ph, ax_bb, ax2]):
         plotting.set_fontsize(ax, 17)
         ax.set_xscale('log')
         ax.set_yscale('log')
