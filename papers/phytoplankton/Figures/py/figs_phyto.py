@@ -1568,6 +1568,7 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
 
     xmin_aph, xmax_aph = 1e-4, 1
     plot_lines(ax_ph, xmin_aph, xmax_aph, scl)
+    ax_ph.set_xlim(xmin_aph, xmax_aph)
     ax_ph.set_ylim(xmin_aph, xmax_aph)
     ax_ph.grid()
 
@@ -1599,6 +1600,14 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
                f'{sat}\n bias={int(100*bias)-100}%\n MAE={int(100*mae)}% \nRMS={int(100*std)}%',
                fontsize=17,
                transform=ax_ph.transAxes, ha='right')
+
+    # Label the top x-axis with Chl
+    ax2 = ax_ph.twiny()
+    ax2.set_xlim(ax_ph.get_xlim())
+    ax2.set_xticks([0.01, 0.1, 1])
+    ax2.set_xticklabels([0.01, 0.1, 1])
+    ax2.set_xlabel(r'$\rm Chl \; [mg \, m^{-3}]$')
+    
 
     
     # #####################################################################
@@ -2343,6 +2352,7 @@ if __name__ == '__main__':
         # flg = 12 :: Satellite noise
 
         # flg = 14 :: a_ph(440), bbp(440) scatter fig_aph_and_bbnw
+            # PACE and GIOP
 
         # New PACE figures
         # flg = 34 :: Rrs, anw, bbnw on high Chla
