@@ -23,7 +23,7 @@ from IPython import embed
 
 import anly_utils 
 
-def fit_one(model_names:list, idx:int, n_cores=20, 
+def fit_one(model_names:list, idx:int, 
             nsteps:int=10000, nburn:int=1000, 
             scl_noise:float=0.02, use_chisq:bool=False,
             add_noise:bool=False,
@@ -32,6 +32,26 @@ def fit_one(model_names:list, idx:int, n_cores=20,
             MODIS:bool=False,
             SeaWiFS:bool=False,
             PACE:bool=False):
+    """
+    Fits a model to the data for a given index.
+
+    Args:
+        model_names (list): List of model names.
+        idx (int): Index of the data.
+        n_cores (int, optional): Number of cores to use. Defaults to 20.
+        nsteps (int, optional): Number of steps for MCMC. Defaults to 10000.
+        nburn (int, optional): Number of burn-in steps for MCMC. Defaults to 1000.
+        scl_noise (float, optional): Scaling factor for noise. Defaults to 0.02.
+        use_chisq (bool, optional): Flag to use chi-square fitting. Defaults to False.
+        add_noise (bool, optional): Flag to add noise to the data. Defaults to False.
+        max_wave (float, optional): Maximum wavelength. Defaults to None.
+        show (bool, optional): Flag to show the fit. Defaults to False.
+        MODIS (bool, optional): Flag for MODIS data. Defaults to False.
+        SeaWiFS (bool, optional): Flag for SeaWiFS data. Defaults to False.
+        PACE (bool, optional): Flag for PACE data. Defaults to False.
+    Returns:
+        tuple: Tuple containing the fitted parameters and covariance matrix.
+    """
 
     odict = anly_utils.prep_l23_data(idx, scl_noise=scl_noise,
                                      max_wave=max_wave)

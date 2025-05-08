@@ -1,4 +1,4 @@
-# The Bayesian INferences with Gordon coefficents (BING) package 
+# The Bayesian INferences with Gordon coefficients (BING) package 
 
 ## This public, Python based package has been built for the retrieval of inherent optical properties (IOPs).  We recommend its usage for exploring the power/limitations of a given dataset but caution that the radiative transfer approximation with Gordon coefficients bears significant errors.
 

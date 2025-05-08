@@ -4,6 +4,8 @@ import numpy as np
 
 from abc import ABCMeta
 
+default = dict(flavor='uniform', pmin=-6, pmax=5)
+
 class Prior:
     """
     Abstract base class for a prior
