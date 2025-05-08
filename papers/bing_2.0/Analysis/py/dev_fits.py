@@ -11,8 +11,8 @@ import corner
 from bing import inference as bing_inf
 from bing import plotting as bing_plot
 
-from xqaa.params import XQAAParams
-from xqaa import retrieve
+#from xqaa.params import XQAAParams
+#from xqaa import retrieve
 
 from IPython import embed
 

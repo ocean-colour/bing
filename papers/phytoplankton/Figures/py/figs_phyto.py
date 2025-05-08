@@ -897,6 +897,14 @@ def fig_pace_noise(outfile:str='fig_pace_noise.png'):
     l23_PACE_error = sat_pace.gen_noise_vector(l23_wave)
     lcut = (l23_wave < 700.) & (l23_wave > 400.)
 
+    # Load a random Rrs
+    idx = 170 # Random choice
+    Rrs = ds.Rrs.data[idx]
+    Rrs = Rrs[lcut]
+
+    # S/N
+    s2n = Rrs / l23_PACE_error[lcut]
+
     #embed(header='fig_all_bic 660')
 
     fig = plt.figure(figsize=(10,6))
@@ -911,6 +919,7 @@ def fig_pace_noise(outfile:str='fig_pace_noise.png'):
               label='Median PACE Noise')
     ax_c.plot(l23_wave[lcut], l23_PACE_error[lcut], 'ko', label='Re-sampled PACE Noise')
 
+
     # Labels
     ax_c.set_xlabel('Wavelength (nm)')
     ax_c.set_ylabel('Noise [sr$^{-1}$]')
@@ -921,9 +930,18 @@ def fig_pace_noise(outfile:str='fig_pace_noise.png'):
     ax_c.set_yscale('log')
 
     ax_c.legend(fontsize=15)
+
+    # New axis for S/N
+    ax_s2n = ax_c.twinx()
+    ax_s2n.plot(l23_wave[lcut], s2n, 'r*', label='Example S/N')
+    ax_s2n.set_ylabel('S/N', color='red')
+    ax_s2n.set_ylim(0., None)
+    # Color the axis font
+    for label in ax_s2n.get_yticklabels():
+        label.set_color('red')
     
     # axes
-    for ax in [ax_c]:
+    for ax in [ax_c, ax_s2n]:
         plotting.set_fontsize(ax, 19)
 
     # Finish
@@ -2355,6 +2373,8 @@ if __name__ == '__main__':
 
         # flg = 14 :: a_ph(440), bbp(440) scatter fig_aph_and_bbnw
             # PACE and GIOP
+
+        # flg = 17 :: arbitrary IOP model
 
         # New PACE figures
         # flg = 34 :: Rrs, anw, bbnw on high Chla

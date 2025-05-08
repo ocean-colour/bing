@@ -5,7 +5,7 @@ from ocpy.satellites import seawifs as sat_seawifs
 
 from bing import rt as bing_rt
 from bing.models import utils as model_utils
-from bing import priors as bing_priors
+from bing.priors import priors as bing_priors
 from bing import inference as bing_inf
 
 import anly_utils_20
