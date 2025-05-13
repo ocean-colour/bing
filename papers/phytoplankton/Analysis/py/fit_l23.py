@@ -263,7 +263,9 @@ def main(flg):
         fit(['GSM', 'GSM'], **param)
         fit(['GSM', 'Pow'], **param)
 
-    
+    # Full L23 with LM; constant relative error
+    if flg == 99:
+        fit(['Bricaud', 'Cst'], use_chisq=True, max_wave=700., min_wave=400.)
 
 # Command line execution
 if __name__ == '__main__':

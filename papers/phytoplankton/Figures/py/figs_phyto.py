@@ -287,7 +287,8 @@ def fig_degenerate_fits(model_names:list, idx:int=170, chain_file=None,
                  scl_noise:float=0.02): 
 
     # Load the fits
-    chain_file = '../Analysis/Fits/BING_LM_ExpBricaudPow_170_nP.npz'
+    #chain_file = '../Analysis/Fits/BING_LM_ExpBricaudPow_170_nP.npz'
+    chain_file = '../Analysis/Fits/BING20_EveryEvery_170_P_n02_UV400_SdgU.npz'
     #chain_file = anly_utils.chain_filename(
     #    model_names, scl_noise, add_noise, idx=idx, 
     #    MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
@@ -301,7 +302,7 @@ def fig_degenerate_fits(model_names:list, idx:int=170, chain_file=None,
     odict = anly_utils.prep_l23_data(idx, scl_noise=scl_noise,
                                      max_wave=max_wave)
 
-    gd_wave = (odict['true_wave'] >= 400.) & (odict['true_wave'] <= 750.) 
+    gd_wave = (odict['true_wave'] >= 400.) & (odict['true_wave'] <= 700.) 
     anw_true=dict(wave=odict['true_wave'][gd_wave], spec=odict['anw'][gd_wave])
     bbnw_true=dict(wave=odict['true_wave'][gd_wave], spec=odict['bbnw'][gd_wave])
 
@@ -320,7 +321,8 @@ def fig_degenerate_fits(model_names:list, idx:int=170, chain_file=None,
     l23_bbw = l23_bb - l23_bbnw
     # Interpolate
     bb_w = np.interp(wave, l23_wave, l23_bbw)
-    bb_true = bb_w + bbnw_true['spec']
+    #embed(header='figs 324')
+    bb_true = bb_w + bbnw_true['spec']#[gd_wave]
 
     a_true = anw_true['spec'] + a_w
 
@@ -344,10 +346,11 @@ def fig_degenerate_fits(model_names:list, idx:int=170, chain_file=None,
     sv_bbnws = []
     #scales = [0.01, 0.1, 0.3, 1., 3., 10., 100]
     lw = 3
-    scales = [0.85, 1., 3., 10., 100]
+    scales = [0.9, 1., 3., 10., 100]
     for ss, scale in enumerate(scales):
         scaled_anw = anw_true['spec'] * scale
-        lbl = 'Retrieval' if ss == 0 else None
+        #lbl = 'Retrieval' if ss == 0 else None
+        lbl = f'{scale:0.1f}'
         ax_anw.plot(anw_true['wave'], scaled_anw, ':', label=lbl, lw=lw)
         # Calculate bbnw
         scaled_a = a_true - anw_true['spec'] + scaled_anw
@@ -356,6 +359,7 @@ def fig_degenerate_fits(model_names:list, idx:int=170, chain_file=None,
         sv_bbnws.append(bbnw)
         
     ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
+    ax_anw.set_ylim(2e-4,3.)
 
 
     # #########################################################
@@ -2374,6 +2378,7 @@ if __name__ == '__main__':
         # flg = 14 :: a_ph(440), bbp(440) scatter fig_aph_and_bbnw
             # PACE and GIOP
 
+        # flg = 17 :: Every, Every degenerate fit
         # flg = 17 :: arbitrary IOP model
 
         # New PACE figures

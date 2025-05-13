@@ -148,6 +148,11 @@ def main(flg):
         p = single_bing_fits.standard_giop()
         batch_fit(p, seed=54321)#, debug=True)
 
+    # k=2b
+    if flg == 3:
+        p = single_bing_fits.p_k2b()
+        batch_fit(p, seed=54321)#, debug=True)
+
     
 
 # Command line execution
