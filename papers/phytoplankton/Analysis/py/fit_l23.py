@@ -6,6 +6,7 @@ import numpy as np
 from ocpy.hydrolight import loisel23
 from ocpy.satellites import modis as sat_modis
 from ocpy.satellites import pace as sat_pace
+from ocpy.satellites import pace as sat_sbg
 from ocpy.satellites import seawifs as sat_seawifs
 
 from bing.models import anw as bing_anw
@@ -29,6 +30,7 @@ def fit(model_names:list,
         max_wave:float=None,
         reduce_by_in_situ:float=None,
         MODIS:bool=False, PACE:bool=False, SeaWiFS:bool=False,
+        SBG:bool=False,
         scl_noise:float=0.02, add_noise:bool=False,
         n_cores:int=20, debug:bool=False,
         seed:bool=None): 
@@ -65,6 +67,9 @@ def fit(model_names:list,
     elif PACE:
         model_wave = anly_utils.PACE_wave
         PACE_error = sat_pace.gen_noise_vector(model_wave)
+    elif SBG:
+        model_wave = anly_utils.SBG_wave
+        SBG_error = sat_sbg.gen_noise_vector(model_wave)
     elif SeaWiFS:
         model_wave = sat_seawifs.seawifs_wave
     else:
@@ -145,7 +150,8 @@ def fit(model_names:list,
     # Output file
     outfile = anly_utils.chain_filename(
         model_names, scl_noise, add_noise, 
-        MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
+        MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS,
+        SBG=SBG)
 
     # Fit
     if use_chisq:

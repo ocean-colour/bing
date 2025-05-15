@@ -6,13 +6,12 @@ from scipy.interpolate import interp1d
 
 from ocpy.hydrolight import loisel23
 from ocpy.satellites import pace as sat_pace
+from ocpy.satellites import pace as sat_sbg
 from ocpy.satellites import modis as sat_modis
 from ocpy.satellites import seawifs as sat_seawifs
 from ocpy.iop import zlee
 
 from bing import rt as bing_rt
-from bing.models import anw as bing_anw
-from bing.models import bbnw as bing_bbnw
 from bing.models import functions
 from bing.models import utils as model_utils
 from bing import stats as bing_stats
@@ -22,6 +21,7 @@ from bing import chisq_fit
 from IPython import embed
 
 PACE_wave = np.arange(400, 701, 5)
+SBG_wave = PACE_wave
 
 kdict = {2: ['Cst', 'Cst'],
             3: ['Exp', 'Cst'],
@@ -38,7 +38,8 @@ MODIS_reduce = np.sqrt(2)
 
 def chain_filename(model_names:list, scl_noise, add_noise,
                        idx:int=None, MODIS:bool=False, use_LM:bool=False,
-                       PACE:bool=False, SeaWiFS:bool=False): 
+                       PACE:bool=False, SeaWiFS:bool=False,
+                       SBG:bool=False): 
     outfile = f'../Analysis/Fits/BING_{model_names[0]}{model_names[1]}'
 
     if idx is not None:
@@ -47,6 +48,8 @@ def chain_filename(model_names:list, scl_noise, add_noise,
             outfile += '_M'
         elif PACE:
             outfile += '_P'
+        elif SBG:
+            outfile += '_B'
         elif SeaWiFS:
             outfile += '_S'
     else:
@@ -54,6 +57,8 @@ def chain_filename(model_names:list, scl_noise, add_noise,
             outfile += '_M23'
         elif PACE:
             outfile += '_P23'
+        elif SBG:
+            outfile += '_B23'
         elif SeaWiFS:
             outfile += '_S23'
         else:
@@ -70,6 +75,8 @@ def chain_filename(model_names:list, scl_noise, add_noise,
         outfile += 'M'
     elif scl_noise == 'PACE':
         outfile += 'P'
+    elif scl_noise == 'SBG':
+        outfile += 'B'
     elif scl_noise is None:
         outfile += f'{int(100*0.02):02d}'
     else:
@@ -375,6 +382,9 @@ def scale_noise(scl_noise, model_Rrs:np.ndarray, model_wave:np.ndarray,
     elif scl_noise == 'PACE':
         PACE_error = sat_pace.gen_noise_vector(model_wave)
         model_varRrs = PACE_error**2
+    elif scl_noise == 'SBG':
+        SBG_error = sat_sbg.gen_noise_vector(model_wave)
+        model_varRrs = SBG_error**2
     else:
         model_varRrs = (scl_noise * model_Rrs)**2
 
@@ -501,6 +511,12 @@ def add_noise(Rs, perc:int=None, abs_sig:float=None,
         use_Rs += (perc/100.) * use_Rs * r_sig
     elif isinstance(abs_sig, (float,int,np.ndarray)):
         use_Rs += r_sig * abs_sig
+    elif abs_sig  == 'SBG':
+        if wave is None:
+            raise ValueError("Need wavelength array for SBG noise.")
+        # Add it in
+        sbg_sig = calc_sbg_sig(wave)
+        use_Rs += r_sig * sbg_sig
     elif abs_sig  == 'PACE':
         if wave is None:
             raise ValueError("Need wavelength array for PACE noise.")
