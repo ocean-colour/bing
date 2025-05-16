@@ -33,7 +33,8 @@ def fit(model_names:list,
         SBG:bool=False,
         scl_noise:float=0.02, add_noise:bool=False,
         n_cores:int=20, debug:bool=False,
-        seed:bool=None): 
+        seed:bool=None,
+        outroot:str=None): 
     """
     Fits the data with or without considering any errors.
 
@@ -151,7 +152,7 @@ def fit(model_names:list,
     outfile = anly_utils.chain_filename(
         model_names, scl_noise, add_noise, 
         MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS,
-        SBG=SBG)
+        SBG=SBG, root=outroot)
 
     # Fit
     if use_chisq:
@@ -187,7 +188,7 @@ def fit(model_names:list,
             prev_cov = cov
         # Save
         outfile = outfile.replace('BING', 'BING_LM')
-        #embed(header='165 of fits')
+        #embed(header='190 of fits')
         np.savez(outfile, ans=all_ans, cov=all_cov,
               wave=model_wave, obs_Rrs=Rrs, varRrs=varRrs,
               idx=all_idx, Chl=Chls, Y=Ys, flags=flags)

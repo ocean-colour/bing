@@ -2,7 +2,7 @@ import os, sys
 
 
 # Local
-sys.path.append(os.path.abspath("../papers/phytoplankton/Analysis/py"))
+sys.path.append(os.path.abspath("../../papers/phytoplankton/Analysis/py"))
 import fit_l23
 
 
@@ -57,7 +57,9 @@ def main(flg):
         param = dict(use_chisq=True, PACE=PACE, SeaWiFS=SeaWiFS, 
                      MODIS=MODIS, SBG=SBG,
                      scl_noise=scl_noise, add_noise=add_noise,
-                     reduce_by_in_situ=reduce_by_in_situ)
+                     reduce_by_in_situ=reduce_by_in_situ,
+                     outroot='Fits/'
+                     )
         fit_l23.fit(['Cst', 'Cst'], **param)
         fit_l23.fit(['Exp', 'Cst'], **param)
         fit_l23.fit(['Exp', 'Pow'], **param)

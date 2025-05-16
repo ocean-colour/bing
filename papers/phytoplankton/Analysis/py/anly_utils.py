@@ -39,8 +39,8 @@ MODIS_reduce = np.sqrt(2)
 def chain_filename(model_names:list, scl_noise, add_noise,
                        idx:int=None, MODIS:bool=False, use_LM:bool=False,
                        PACE:bool=False, SeaWiFS:bool=False,
-                       SBG:bool=False): 
-    outfile = f'../Analysis/Fits/BING_{model_names[0]}{model_names[1]}'
+                       SBG:bool=False, root:str='../Analysis/Fits/'): 
+    outfile = os.path.join(root, f'BING_{model_names[0]}{model_names[1]}')
 
     if idx is not None:
         outfile += f'_{idx}'
