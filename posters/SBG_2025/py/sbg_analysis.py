@@ -1,10 +1,19 @@
 import os, sys
 
+from matplotlib import pyplot as plt
+
+from bing.parameters import standard
+from bing.fitting import l23
+from bing import plotting
 
 # Local
 sys.path.append(os.path.abspath("../../papers/phytoplankton/Analysis/py"))
 import fit_l23
 
+sys.path.append(os.path.abspath("../../papers/bing_2.0/Analysis/py"))
+import anly_utils_20
+
+from IPython import embed
 
 
 def main(flg):
@@ -56,6 +65,30 @@ def main(flg):
         fit_l23.fit(['GSM', 'GSM'], **param)
         fit_l23.fit(['GSM', 'Pow'], **param)
 
+    if flg == 20:
+        idx = 2773
+        # Do it
+        p = standard.expb_pow(satellite='SBG', add_noise=True)
+        outfile = anly_utils_20.chain_filename(p, idx=idx)
+        chains, models, prep_dict, idx, extras = l23.fit_one(p, idx)
+        
+
+        # Show
+        embed(header='main 75')
+        odict = prep_dict['odict']
+        pdict = prep_dict['pdict']
+        plotting.show_fits(
+            models, chains, 
+            extras['Chl'], extras['Y'],
+            Rrs_true=dict(wave=models[0].wave, spec=prep_dict['model_Rrs']),
+            anw_true=dict(wave=odict['true_wave'], spec=odict['anw']),
+            bbnw_true=dict(wave=odict['true_wave'], spec=odict['bbnw']),
+            perc=(16, 84),
+            )
+
+        # Save
+        anly_utils_20.save_chains(chains, idx, outfile,
+                                  extras=extras)
     
 
 # Command line execution

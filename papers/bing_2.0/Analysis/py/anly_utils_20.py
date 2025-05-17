@@ -3,18 +3,15 @@ import os
 from collections import namedtuple
 
 import numpy as np
-from scipy.interpolate import interp1d
 
-from ocpy.hydrolight import loisel23
 from ocpy.satellites import pace as sat_pace
 from ocpy.satellites import modis as sat_modis
 from ocpy.satellites import seawifs as sat_seawifs
 
 from bing import rt as bing_rt
-from bing.models import functions
 from bing.models import utils as model_utils
 from bing import stats as bing_stats
-from bing import chisq_fit
+from bing.fitting import chisq_fit
 
 
 from IPython import embed
@@ -33,10 +30,8 @@ kdict = {2: ['Cst', 'Cst'],
 
 MODIS_reduce = np.sqrt(2)
 
-def pace_wave(wv_min=400., wv_max=700., step=5.):
-    return np.arange(wv_min, wv_max+1, step)
-
-def chain_filename(p:namedtuple, idx:int=None, path:str='../Analysis/Fits/'): 
+def chain_filename(p:namedtuple, idx:int=None, 
+                   path:str='../Analysis/Fits/'): 
     outfile = os.path.join(path, f'BING20_{p.model_names[0]}{p.model_names[1]}')
 
     if idx is not None:
@@ -45,6 +40,8 @@ def chain_filename(p:namedtuple, idx:int=None, path:str='../Analysis/Fits/'):
             outfile += '_M'
         elif p.satellite == 'PACE':
             outfile += '_P'
+        elif p.satellite == 'SBG':
+            outfile += '_B'
         elif p.satellite == 'SeaWiFS':
             outfile += '_S'
     else:
@@ -52,6 +49,8 @@ def chain_filename(p:namedtuple, idx:int=None, path:str='../Analysis/Fits/'):
             outfile += '_M23'
         elif p.satellite == 'PACE':
             outfile += '_P23'
+        elif p.satellite == 'SBG':
+            outfile += '_B23'
         elif p.satellite == 'SeaWiFS':
             outfile += '_S23'
         else:
@@ -69,6 +68,8 @@ def chain_filename(p:namedtuple, idx:int=None, path:str='../Analysis/Fits/'):
         outfile += 'M'
     elif p.scl_noise == 'PACE':
         outfile += 'P'
+    elif p.scl_noise == 'SBG':
+        outfile += 'B'
     else:
         outfile += f'{int(100*p.scl_noise):02d}'
 
@@ -168,93 +169,9 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
     return Adict, Bdict
         
 
-def convert_to_satwave(wave:np.ndarray, spec:np.ndarray,
-                     sat_wave:np.ndarray):
-    """
-    Convert the spectrum to MODIS wavelengths
 
-    Parameters:
-        wave (np.ndarray): Wavelengths of the input Rrs
-        spec (np.ndarray): Spectrum. a, b, Rrs, etc. 
-        sat_wave (np.ndarray): Wavelengths of the satellite
 
-    Returns:
-        np.ndarray: Rrs at MODIS wavelengths
-    """
-    # Interpolate
-    f = interp1d(wave, spec, kind='linear', fill_value='extrapolate')
-    new_spec = f(sat_wave)
-
-    # Return
-    return new_spec
-
-def prep_l23_data(idx:int, step:int=1, 
-                  ds=None, 
-                  wv_max:float=None, 
-                  wv_min:float=None):
-    """ Prepare L23 the data for the fit """
-
-    # Load
-    if ds is None:
-        ds = loisel23.load_ds(4,0)
-
-    wave = ds.Lambda.data
-
-    gd_wave = np.ones_like(ds.Lambda.data, dtype=bool)
-    if wv_max is not None:
-        gd_wave &= ds.Lambda.data <= wv_max
-    if wv_min is not None:
-        gd_wave &= ds.Lambda.data >= wv_min
-    iwave = np.where(gd_wave)[0]
-
-    # Grab
-    Rrs = ds.Rrs.data[idx,iwave]
-    wave = wave[iwave]
-    true_Rrs = Rrs.copy()
-    true_wave = wave.copy()
-    a = ds.a.data[idx,iwave]
-    bb = ds.bb.data[idx,iwave]
-    adg = ds.ag.data[idx,iwave] + ds.ad.data[idx,iwave]
-    aph = ds.aph.data[idx,iwave]
-
-    # For bp: Lee+2002 prescription
-    rrs = Rrs / (bing_rt.A_Rrs + bing_rt.B_Rrs*Rrs)
-    i440 = np.argmin(np.abs(true_wave-440))
-    i555 = np.argmin(np.abs(true_wave-555))
-    Y = 2.2 * (1 - 1.2 * np.exp(-0.9 * rrs[i440]/rrs[i555]))
-
-    # For aph
-    aph = ds.aph.data[idx,iwave]
-    Chl = aph[i440] / 0.05582
-
-    # For adg
-    ans, cov = functions.fit_Sdg(wave, adg,
-                                 wv_min=wv_min)
-
-    # Cut down to 40 bands
-    Rrs = Rrs[::step]
-    wave = wave[::step]
-
-    # Gordon
-    gordon_Rrs = bing_rt.calc_Rrs(a, bb)
-
-    # Error
-    #varRrs = (scl_noise * Rrs)**2
-
-    # Dict me
-    odict = dict(wave=wave, Rrs=Rrs, a=a, bb=bb, 
-                 true_wave=true_wave, true_Rrs=true_Rrs,
-                 gordon_Rrs=gordon_Rrs,
-                 bbw=ds.bb.data[idx,iwave]-ds.bbnw.data[idx,iwave],
-                 bbnw=ds.bbnw.data[idx,iwave],
-                 aw=ds.a.data[idx,iwave]-ds.anw.data[idx,iwave],
-                 anw=ds.anw.data[idx,iwave],
-                 adg=adg, aph=aph, Sdg=float(ans[1]),
-                 Y=Y, Chl=Chl)
-
-    return odict
-
-def save_fits(all_samples, all_idx, outfile, 
+def save_chains(all_samples, all_idx, outfile, 
               extras:dict=None):
     """
     Save the fitting results to a file.
@@ -370,34 +287,7 @@ def recon_one(model_names:list, idx:int,
     return rdict
 
 
-def scale_noise(scl_noise, model_Rrs:np.ndarray, model_wave:np.ndarray,
-                reduce_by_in_situ:float=None):
-    """
-    Calculate the scaled noise for the given model Rrs and wave.
 
-    Parameters:
-    scl_noise (str or float): The type of noise scaling to be applied. Can be one of 'SeaWiFS', 'MODIS_Aqua', 'PACE', or a float value.
-    model_Rrs (np.ndarray): The model Rrs values.
-    model_wave (np.ndarray): The wave values corresponding to the model Rrs.
-
-    Returns:
-    np.ndarray: The scaled noise values.
-
-    """
-    if scl_noise == 'SeaWiFS':
-        err_dict = sat_seawifs.calc_errors()
-        model_varRrs = np.array([err_dict[wv][0] for wv in sat_seawifs.seawifs_wave])**2
-    elif scl_noise == 'MODIS_Aqua':
-        err_dict = sat_modis.calc_errors(reduce_by_in_situ=reduce_by_in_situ)
-        model_varRrs = np.array([err_dict[wv][0] for wv in sat_modis.modis_wave])**2
-    elif scl_noise == 'PACE':
-        PACE_error = sat_pace.gen_noise_vector(model_wave)
-        model_varRrs = PACE_error**2
-    else:
-        model_varRrs = (scl_noise * model_Rrs)**2
-
-    # Return
-    return model_varRrs
 
 def calc_aph(models, Chl, params, sig_params, aph_idx, wave:float=443.):
     iwv_g = np.argmin(np.abs(models[0].wave-wave))
@@ -469,72 +359,3 @@ def calc_bbnw(models, params, sig_params, bbnw_idx, pwave,
     #sig_a440 = (aphhi_fits[:, i440_g] - aphlow_fits[:, i440_g])/2.
 
     return bbnw_i
-
-def add_noise(Rs, perc:int=None, abs_sig:float=None,
-              wave:np.ndarray=None, correlate:bool=False):
-    """
-    Add random noise to the input array Rs.
-
-    Parameters:
-        Rs (np.ndarray): Input array.
-        perc (int, optional): Percentage of noise to be added as a fraction of Rs. Default is None.
-        abs_sig (float, str, optional): Absolute value of noise to be added. Default is None.
-        correlate (bool, optional): Whether to correlate the noise. Default is False.
-
-    Returns:
-        ndarray: Array with noise added.
-    """
-    use_Rs = Rs.copy()
-
-    # Random draws
-    if correlate:
-        npix = Rs.shape[1]
-        # Genearte the covariance matrix
-        vals = {0: 1., 1: 0.5, 2: 0.3, 3: 0.1}
-        cov_m = np.zeros((npix,npix))
-        for jj in range(npix):
-            i0 = max(0, jj-3)
-            i1 = min(jj+4, npix)
-            for ii in range(i0, i1):
-                diff = int(np.abs(ii-jj))
-                cov_m[jj,ii] = vals[diff] 
-        # Generate the noise
-        r_sig = np.random.multivariate_normal(
-            np.zeros(npix), cov_m, size=use_Rs.shape[0])
-    else:
-        r_sig = np.random.normal(size=Rs.shape)
-
-    # Truncate to 3 sigma
-    r_sig = np.minimum(r_sig, 3.)
-    r_sig = np.maximum(r_sig, -3.)
-
-    if perc is not None:
-        use_Rs += (perc/100.) * use_Rs * r_sig
-    elif isinstance(abs_sig, (float,int,np.ndarray)):
-        use_Rs += r_sig * abs_sig
-    elif abs_sig  == 'PACE':
-        if wave is None:
-            raise ValueError("Need wavelength array for PACE noise.")
-        # Add it in
-        pace_sig = calc_pace_sig(wave)
-        use_Rs += r_sig * pace_sig
-    elif abs_sig  == 'PACE_CORR':
-        if wave is None:
-            raise ValueError("Need wavelength array for PACE noise.")
-        # Add it in
-        pace_sig = calc_pace_sig(wave)
-        use_Rs += r_sig * pace_sig
-    elif abs_sig  == 'PACE_TRUNC':
-        if wave is None:
-            raise ValueError("Need wavelength array for PACE noise.")
-        pace_sig = calc_pace_sig(wave)
-        # Boost the noise at the edges
-        ok_wv = (wave > 380.) & (wave < 700.)
-        pace_sig[~ok_wv] *= 100.   
-        # Add it in
-        use_Rs += r_sig * pace_sig
-    else:
-        raise ValueError("Bad abs_sig")
-    
-    # Return
-    return use_Rs

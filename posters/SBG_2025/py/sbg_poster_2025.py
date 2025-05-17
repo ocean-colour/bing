@@ -158,6 +158,165 @@ def fig_bic_sbg_pace(use_LM:bool=True,
     print(f"Saved: {outfile}")
 
 
+
+# ############################################################
+def fig_multi_model(ps, lbls, idx:int, outfile:str,
+             perc:tuple=(5,95), fontsize=12.):
+
+    ls = ['-', '--', ':']
+
+    # Load up
+    odict = anly_utils_20.prep_l23_data(
+        idx, wv_min=ps[0].wv_min, wv_max=ps[0].wv_max)
+    l23_wave = odict['true_wave']
+
+    model_wave = anly_utils_20.pace_wave(
+        wv_min=ps[0].wv_min, wv_max=ps[0].wv_max)
+
+    # Pack up
+    anw_true=dict(wave=l23_wave, spec=odict['anw'])
+    bbnw_true=dict(wave=l23_wave, spec=odict['bbnw'])
+    wave = model_wave
+
+    # Reconstruct the models
+
+    bb_means = []
+    all_chains = []
+    model_Rrss = []
+    adgs = []
+    aphs = []
+    for ss, p in enumerate(ps):
+        models = model_utils.init(p.model_names, model_wave)
+        # Load chains
+        chain_file = anly_utils_20.chain_filename(
+            p, idx=idx, path='Fits/')
+                                                #path='../../bing_2.0/Analysis/Fits')
+        d = np.load(chain_file)
+
+        # Init the other stuff..
+        _ = model_utils.init_other_bits(models, Chl=d['Chl'], Y=d['Y'])
+
+        # Reconstruct
+        chains = d['chains']
+        a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
+                model_Rrs, sigRs = evaluate.reconstruct_from_chains(
+                models, chains, perc=perc)
+
+        # adg, aph
+        burn = 7000
+        thin = 1
+        prep_chains = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+        a_dg, a_ph = models[0].eval_anw(prep_chains[..., :models[0].nparam],
+                            retsub_comps=True)
+        adg_mean = np.median(a_dg, axis=0)
+        aph_mean = np.median(a_ph, axis=0)
+        # Save
+        bb_means.append(bb_mean)
+        all_chains.append(chains)
+        model_Rrss.append(model_Rrs)
+        adgs.append(adg_mean)
+        aphs.append(aph_mean)
+
+        # Stats
+        i440 = np.argmin(np.abs(model_wave-440.))
+        aph440 = aph_mean[i440]
+        print(f'{p.model_names[0]}: a_ph(440)={aph440:0.3f}')
+
+        # One more
+        if ss == 0:
+            Rrs_true=dict(wave=model_wave, spec=d['obs_Rrs'], var=d['varRrs'])
+
+    # THIS IS A HACK UNTIL I CAN RESOLVE bbw
+    ds = loisel23.load_ds(4,0)
+    l23_wave = ds.Lambda.data
+    idx = 170 # Random choice
+    l23_bb = ds.bb.data[idx] 
+    l23_bbnw = ds.bbnw.data[idx] 
+    l23_bbw = l23_bb - l23_bbnw
+    # Interpolate
+    bb_w = np.interp(wave, l23_wave, l23_bbw)
+
+    fig = plt.figure(figsize=(10,8))
+    plt.clf()
+    gs = gridspec.GridSpec(2,2)
+
+
+    # #########################################################
+    # bb nw
+    bb_clr = 'red'
+    ax_bb = plt.subplot(gs[2])
+    ax_bb.plot(bbnw_true['wave'], bbnw_true['spec'], 'ko', label='True', zorder=1)
+
+    # Loop on the models
+    for p, lbl, bb_mean, l in zip(ps, lbls, bb_means, ls):
+        ax_bb.plot(wave, bb_mean-bb_w, l, color=bb_clr, label=lbl)
+
+    #ax_bb.set_xlabel('Wavelength (nm)')
+    ax_bb.set_ylabel(r'$b_{b,nw}(\lambda) \; [{\rm m}^{-1}]$')
+
+
+    # #########################################################
+    # Rs
+    R_clr = 'orange'
+    ax_R = plt.subplot(gs[0])
+
+    Rsig=np.sqrt(Rrs_true['var'])
+    ax_R.errorbar(Rrs_true['wave'], Rrs_true['spec'], 
+            yerr=Rsig, color='k', fmt='o', capsize=5,
+            label='Obs')
+
+    # Loop on the models
+    for model_Rrs, lbl, l in zip(model_Rrss, lbls, ls):
+        # Calcualte chi^2
+        f = interp1d(wave, model_Rrs)
+        mod_R = f(Rrs_true['wave'])
+        chi2 = np.sum((Rrs_true['spec']-mod_R)**2 / Rsig**2)
+        nparam = models[0].nparam + models[1].nparam
+        red_chi2 = chi2 / (Rsig.size-nparam)
+            #
+        ax_R.plot(wave, model_Rrs, l, color=R_clr, zorder=10,
+                label=lbl+r': $\chi^2_\nu = '+f'{red_chi2:0.2f}'+r'$') 
+
+    ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
+
+    # Log scale y-axis
+    ax_R.set_yscale('log')
+
+    # #########################################################
+    # aph
+    aph_clr = 'green'
+    ax_aph = plt.subplot(gs[1])
+    ax_aph.plot(odict['wave'], odict['aph'], 'ko', label='True', zorder=1)
+
+    # Loop on the models
+    for p, lbl, aph, l in zip(ps, lbls, aphs, ls):
+        ax_aph.plot(wave, aph, l, color=aph_clr, label=lbl)
+    ax_aph.set_ylabel(r'$a_{ph}(\lambda) \; [{\rm m}^{-1}]$')
+
+    # #########################################################
+    # adg
+    adg_clr = 'blue'
+    ax_adg = plt.subplot(gs[3])
+    ax_adg.plot(odict['wave'], odict['adg'], 'ko', label='True', zorder=1)
+
+    # Loop on the models
+    for p, lbl, adg, l in zip(ps, lbls, adgs, ls):
+        ax_adg.plot(wave, adg, l, color=adg_clr, label=lbl)
+    ax_adg.set_ylabel(r'$a_{dg}(\lambda) \; [{\rm m}^{-1}]$')
+
+    # axes
+    axes = [ax_aph, ax_bb, ax_R, ax_adg]
+    for ss, ax in enumerate(axes):
+        plotting.set_fontsize(ax, fontsize)
+        ax.set_xlabel('Wavelength (nm)')
+        ax.legend(fontsize=15.)
+
+
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+        
+
 def main(flg):
     if flg== 'all':
         flg= np.sum(np.array([2 ** ii for ii in range(25)]))
@@ -166,8 +325,35 @@ def main(flg):
 
     # BIC/AIC for MODIS+L23
     if flg == 1:
-
         fig_bic_sbg_pace()
+
+    # Multi model fit to one example
+    if flg == 2:
+        idx = 2773
+        wv_min=400.
+        wv_max=700.
+        lbls = []
+        # Model 1
+        p1 = param20.p_ntuple(['ExpBricaud', 'Pow'],
+                set_Sdg=False, sSdg=0.002, 
+                scl_noise='SBG', 
+                add_noise=True, wv_min=wv_min, wv_max=wv_max)
+        lbls.append('[k=5]')
+        # Model 2
+        p2 = param20.p_ntuple(['GIOP', 'Lee'],
+                set_Sdg=False, sSdg=0.002, 
+                scl_noise='SBG', 
+                add_noise=True, wv_min=wv_min, wv_max=wv_max)
+        lbls.append('GIOP')
+        # Model 3
+        p3 = param20.p_ntuple(['GSM', 'GSM'],
+                set_Sdg=False, sSdg=0.002, 
+                scl_noise='SBG', 
+                add_noise=True, wv_min=wv_min, wv_max=wv_max)
+        lbls.append('GSM')
+        #
+        fig_multi_model([p1, p2, p3], lbls, idx, 'fig_multi_model.png')
+
 
 
 # Command line execution

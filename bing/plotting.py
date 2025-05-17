@@ -12,7 +12,6 @@ from ocpy.water import absorption
 from ocpy.hydrolight import loisel23
 from ocpy.utils import plotting
 
-from bing import chisq_fit
 from bing import evaluate
 
 from IPython import embed

@@ -9,12 +9,10 @@ from ocpy.satellites import pace as sat_pace
 from ocpy.satellites import pace as sat_sbg
 from ocpy.satellites import seawifs as sat_seawifs
 
-from bing.models import anw as bing_anw
-from bing.models import bbnw as bing_bbnw
 from bing.models import utils as model_utils
-from bing import inference as bing_inf
+from bing.fitting import inference as bing_inf
 from bing import rt as bing_rt
-from bing import chisq_fit
+from bing.fitting import chisq_fit
 
 
 import anly_utils 

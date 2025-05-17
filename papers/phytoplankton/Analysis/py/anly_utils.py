@@ -15,7 +15,7 @@ from bing import rt as bing_rt
 from bing.models import functions
 from bing.models import utils as model_utils
 from bing import stats as bing_stats
-from bing import chisq_fit
+from bing.fitting import chisq_fit
 
 
 from IPython import embed
@@ -383,6 +383,7 @@ def scale_noise(scl_noise, model_Rrs:np.ndarray, model_wave:np.ndarray,
     np.ndarray: The scaled noise values.
 
     """
+    raise DeprecationWarning("This function is deprecated. Use the new one in noise.py instead.")
     if scl_noise == 'SeaWiFS':
         err_dict = sat_seawifs.calc_errors()
         model_varRrs = np.array([err_dict[wv][0] for wv in sat_seawifs.seawifs_wave])**2
