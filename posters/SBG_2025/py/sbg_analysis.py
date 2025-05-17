@@ -22,27 +22,12 @@ def main(flg):
     if flg == 1:
         fit(['Exp', 'Pow'], Nspec=50, nsteps=10000, nburn=1000)
 
-    # Full L23
-    if flg == 2:
-        fit(['Exp', 'Pow'], nsteps=50000, nburn=5000)
-
-    # Full L23 with LM; constant relative error
-    if flg == 3:
-        fit(['Cst', 'Cst'], use_chisq=True, max_wave=700., min_wave=400.)
-        fit(['Exp', 'Cst'], use_chisq=True, max_wave=700., min_wave=400.)
-        fit(['Exp', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
-        fit(['ExpBricaud', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
-        #fit(['ExpNMF', 'Pow'], use_chisq=True, max_wave=700., min_wave=400.)
-        fit(['GIOP', 'Lee'], use_chisq=True, max_wave=700., min_wave=400.)
-        fit(['GSM', 'GSM'], use_chisq=True, max_wave=700., min_wave=400.)
-
-
     SBG = True
 
-    if flg in [10,11,12]:
+    if flg == 10:
         add_noise = True
 
-    if flg in [7,8,9,10,11,12]:
+    if flg in [9,10]:
         if MODIS:
             scl_noise = 'MODIS_Aqua'
         elif SeaWiFS:
@@ -87,3 +72,7 @@ if __name__ == '__main__':
         flg = sys.argv[1]
 
     main(flg)
+
+
+# python py/sbg_analysis.py 9
+# python py/sbg_analysis.py 10

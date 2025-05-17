@@ -39,7 +39,9 @@ MODIS_reduce = np.sqrt(2)
 def chain_filename(model_names:list, scl_noise, add_noise,
                        idx:int=None, MODIS:bool=False, use_LM:bool=False,
                        PACE:bool=False, SeaWiFS:bool=False,
-                       SBG:bool=False, root:str='../Analysis/Fits/'): 
+                       SBG:bool=False, root:str=None):
+    if root is None:
+        root='../Analysis/Fits/'
     outfile = os.path.join(root, f'BING_{model_names[0]}{model_names[1]}')
 
     if idx is not None:
@@ -88,8 +90,10 @@ def chain_filename(model_names:list, scl_noise, add_noise,
     return outfile
 
 
-def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
-             MODIS:bool=False, PACE:bool=False, SeaWiFS:bool=False):
+def calc_ICs(ks:list, s2ns:list, scl_noise:float=None, use_LM:bool=False,
+             MODIS:bool=False, PACE:bool=False, 
+             SeaWiFS:bool=False, SBG:bool=False,
+             chainroot:str=None): 
     """
     Calculate the AIC and BIC values for different models and signal-to-noise ratios.
 
@@ -100,6 +104,8 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
     - MODIS (bool): Flag indicating whether to use MODIS data.
     - PACE (bool): Flag indicating whether to use PACE data.
     - SeaWiFS (bool): Flag indicating whether to use SeaWiFS data.
+    - SBG (bool): Flag indicating whether to use SBG data.
+    - chainroot (str): Root directory for the chain files.
 
     Returns:
         tuple
@@ -116,8 +122,9 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
         model_names = kdict[k]
 
         chain_file = chain_filename(
-            model_names, 0.02, False, use_LM=use_LM,
-            MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
+            model_names, scl_noise, False, use_LM=use_LM,
+            MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS,
+            SBG=SBG, root=chainroot)
         d_chains = np.load(chain_file)
         print(f'Loaded: {chain_file}')
         wave = d_chains['wave']
@@ -131,8 +138,9 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
             sv_idx = []
         for s2n in s2ns:
             if PACE and (s2n == 'OCI/PACE'):
-                noise_vector = sat_pace.gen_noise_vector(
-                    models[0].wave)
+                noise_vector = sat_pace.gen_noise_vector(models[0].wave)
+            elif SBG and (s2n == 'SBG'):
+                noise_vector = sat_sbg.gen_noise_vector(models[0].wave)
             elif MODIS and (s2n == 'MODIS/Aqua'):
                 err_dict = sat_modis.calc_errors(reduce_by_in_situ=MODIS_reduce)
                 noise_vector = np.array([err_dict[wv][0] for wv in sat_modis.modis_wave])
