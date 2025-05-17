@@ -6,6 +6,9 @@ from IPython import embed
 
 
 def expb_pow(**kwargs):
+    """ Parameters for ExpBricaud and Pow models.
+    """
+
 
     # Priors
     apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*3
@@ -27,6 +30,9 @@ def expb_pow(**kwargs):
     return p_ntuple.gen(**params)
 
 def giop(**kwargs):
+    """ Parameters for GIOP model
+    """
+    
     # Priors
     apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*2
     bpriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*1
@@ -41,6 +47,9 @@ def giop(**kwargs):
     return p_ntuple.gen(**params)
 
 def gsm(**kwargs):
+    """ Parameters for GSM model
+    """
+
     # Priors
     apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*2
     bpriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*1

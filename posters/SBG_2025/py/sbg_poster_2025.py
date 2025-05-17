@@ -19,18 +19,15 @@ import seaborn as sns
 
 import corner
 
-from ocpy.water import absorption
 from ocpy.utils import plotting 
 from ocpy.hydrolight import loisel23
 from ocpy.satellites import pace as sat_pace
-from ocpy.satellites import seawifs as sat_seawifs
-from ocpy.satellites import modis as sat_modis
-from ocpy.water import absorption
+from ocpy.satellites import sbg as sat_sbg
 
-from bing import plotting as bing_plot
 from bing.models import utils as model_utils
-from bing.models import functions
 from bing import evaluate
+from bing.parameters import standard
+from bing.fitting import l23
 
 #from bing.models import anw as bing_anw
 #from bing.models import bbnw as bing_bbnw
@@ -40,7 +37,6 @@ from bing import evaluate
 # Local
 sys.path.append(os.path.abspath("../../papers/bing_2.0/Analysis/py"))
 import anly_utils_20
-import param as param20
 
 sys.path.append(os.path.abspath("../../papers/phytoplankton/Analysis/py"))
 import anly_utils
@@ -158,7 +154,6 @@ def fig_bic_sbg_pace(use_LM:bool=True,
     print(f"Saved: {outfile}")
 
 
-
 # ############################################################
 def fig_multi_model(ps, lbls, idx:int, outfile:str,
              perc:tuple=(5,95), fontsize=12.):
@@ -166,11 +161,11 @@ def fig_multi_model(ps, lbls, idx:int, outfile:str,
     ls = ['-', '--', ':']
 
     # Load up
-    odict = anly_utils_20.prep_l23_data(
+    odict = l23.load_one_l23(
         idx, wv_min=ps[0].wv_min, wv_max=ps[0].wv_max)
     l23_wave = odict['true_wave']
 
-    model_wave = anly_utils_20.pace_wave(
+    model_wave = sat_pace.wave(
         wv_min=ps[0].wv_min, wv_max=ps[0].wv_max)
 
     # Pack up
@@ -315,7 +310,217 @@ def fig_multi_model(ps, lbls, idx:int, outfile:str,
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
+
+
+# ############################################################
+def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
+                scl_noise:float=0.02, add_noise:bool=False, 
+                SeaWiFS:bool=False, MODIS:bool=False,
+                bb_wv:int=440, # Wave for bbnw
+                aph_wv:int=440, # Wave for bbnw
+                BING_file:str=None,
+                PACE:bool=False,
+                SBG:bool=False,
+                outfile:str=None):
+
+
+    # Outfile
+    if outfile is None:
+        outfile = outroot + f'_{model_names[0]}{model_names[1]}.png'
+
+    # Load
+    ds = loisel23.load_ds(4,0)
+    l23_wave = ds.Lambda.data
+    aph = ds.aph.data
+    iawv_l23 = np.argmin(np.abs(l23_wave-aph_wv))
+    ibwv_l23 = np.argmin(np.abs(l23_wave-bb_wv))
+    l23_aph = aph[:,iawv_l23]
+    l23_bbnw = ds.bbnw.data
+    l23_bbnw = l23_bbnw[:,ibwv_l23]
+
+    if add_noise:
+        error_text = 'Observational error'
+        if PACE or SBG:
+            scl = 3.
+        else:
+            scl = 10.
+    else:
+        error_text = 'No observational error'
+        scl = 2.
+
+    if MODIS:
+        sat = 'MODIS'
+    elif SeaWiFS:
+        sat = 'SeaWiFS'
+    elif PACE:
+        sat = 'PACE'
+    elif SBG:
+        sat = 'SBG'
+    else:
+        raise IOError("Bad satellite")
         
+
+    # Load
+    if BING_file is None:
+        chain_file = anly_utils.chain_filename(
+            model_names, scl_noise, add_noise,
+            MODIS=MODIS, SeaWiFS=SeaWiFS, PACE=PACE)
+        chain_file = chain_file.replace('BING', 'BING_LM')
+        # Load up
+        print(f'Loading {chain_file}')
+        d = np.load(chain_file)
+
+        models = model_utils.init(model_names, d['wave'])
+
+        # More
+        ibbnw = np.argmin(np.abs(d['wave']-models[1].pivot))
+        l23_bbnw = l23_bbnw[:,ibbnw]
+
+        # Specifics
+        if model_names[1] == 'Lee':
+            Y = d['Y']
+        else:
+            Y = None
+
+        # aph
+        perrs = [np.sqrt(np.diag(item)) for item in d['cov']]
+        perrs = np.array(perrs)
+
+        if models[0].name in ['ExpBricaud', 'ExpBricaudFix']:
+            aph_idx = 2
+        else:
+            aph_idx = 1
+        g_aph, sig_aph = anly_utils.calc_aph(
+            models, d['Chl'], d['ans'], perrs, aph_idx,
+            wave=aph_wv)
+
+        # bbnw
+        if models[1].name == 'Pow':
+            bbnw_idx = d['ans'].shape[1]-2
+            nbbnw = 2
+        else:
+            bbnw_idx = d['ans'].shape[1]-1
+            nbbnw = 2
+
+        bbnw = anly_utils.calc_bbnw(
+            models, d['ans'], perrs, bbnw_idx, nbbnw, bb_wv, Y=Y)
+    else:
+        # Load
+        df_bing = pandas.read_csv(BING_file)
+        # Extract
+        g_aph = df_bing['aph_440'].values
+        sig_aph = df_bing['sig_aph_440'].values
+
+        bbnw = df_bing['bbp_440'].values
+        sig_bbnw = df_bing['sig_bbp_440'].values
+
+        # REMOVE THIS!
+        #ds = loisel23.load_ds(4,0)
+        #iwave = np.argmin(np.abs(ds.Lambda.data - 440))
+        #bbw_440=ds.bb.data[0,iwave]-ds.bbnw.data[0,iwave]
+        #bbnw -= bbw_440
+
+
+    def plot_lines(ax, xmin, xmax, scl):
+        ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
+        ax.plot([xmin, xmax], [scl*xmin, scl*xmax], 'k:', label=f'{scl} to 1')
+        ax.plot([xmin, xmax], [xmin/scl, xmax/scl], 'k-.', label=f'{1./scl:0.1f} to 1')
+
+    # Figures
+    fig = plt.figure(figsize=(12,6))
+    gs = gridspec.GridSpec(1,2)
+
+    # ########################################################
+    # aph
+    ax_ph = plt.subplot(gs[0])
+
+    # Non detections
+    non_d = g_aph < 3*sig_aph
+    ax_ph.scatter(l23_aph[~non_d], g_aph[~non_d], s=1, color='b')#, label=model)
+    ax_ph.scatter(l23_aph[non_d], g_aph[non_d], s=1, edgecolors='b',
+                    facecolors='none', alpha=0.3)#, label=model)
+
+
+    xmin_aph, xmax_aph = 5e-4, 1
+    ymin_aph, ymax_aph = 2e-5, 1
+    plot_lines(ax_ph, xmin_aph, xmax_aph, scl)
+    ax_ph.set_xlim(xmin_aph, xmax_aph)
+    ax_ph.set_ylim(ymin_aph, ymax_aph)
+    ax_ph.grid()
+
+    aph_lbl = model_names[0] if model_names[0] != 'ExpBricaud' else '[k=5]'
+    ax_ph.set_xlabel(r'$a_{\rm ph}^{\rm L23}$'+f'({int(aph_wv)})')
+    ax_ph.set_ylabel(r'$a_{\rm ph}^{\rm '+f'{aph_lbl}'+r'}'+f'({int(aph_wv)})'+r'$')
+
+    def calc_stats(x, y, sigy):
+        bias = np.nanmedian(y/x)
+        diff = x - y
+        std = np.nanstd(diff/x)
+        mae = np.nanmean(np.abs(diff)/x)
+        #
+        return std, bias, np.median(sigy/y), mae
+
+    # Stats 
+    std, bias, err, mae = calc_stats(l23_aph, g_aph, sig_aph)
+    #embed(header='fig_aph_and_bbnw 1463')
+    print(f'aph stats: bias={bias:0.2f}, std={std:0.2f}, mae={mae:0.2f}')
+
+    high_aph = l23_aph > 0.01
+    std2, bias2, _, mae2 = calc_stats(l23_aph[high_aph], 
+                                      g_aph[high_aph], 
+                                      sig_aph[high_aph])
+    print(f'aph stats with l23_aph>0.01: bias={bias2:0.2f}, mae={mae2:0.2f}')
+
+    # Text
+    ax_ph.text(0.95, 0.10, 
+               f'{sat}\n bias={int(100*bias)-100}%\n MAE={int(100*mae)}%\nRMS={int(100*std)}%',
+               fontsize=17,
+               transform=ax_ph.transAxes, ha='right')
+
+    # Label the top x-axis with Chl
+    ax2 = ax_ph.twiny()
+    Chl_lim = np.array([xmin_aph, xmax_aph])/0.05582
+    ax2.set_xlim(Chl_lim)
+    #ax2.set_xticks([0.01, 0.1, 1])
+    #ax2.set_xticklabels([0.01, 0.1, 1])
+    ax2.set_xlabel('Chl [mg '+r'$\rm m^{-3}]$')
+    
+
+    
+    # #####################################################################
+    # bbnw
+    ax_bb = plt.subplot(gs[1])
+
+    ax_bb.scatter(l23_bbnw, bbnw, s=1, color='r')#, label=model)
+    xmin_bb, xmax_bb = 4e-5, 3e-2
+    plot_lines(ax_bb, xmin_bb, xmax_bb, scl)
+    ax_bb.set_ylim(xmin_bb, xmax_bb)
+    ax_bb.grid()
+
+    ax_bb.set_xlabel(r'$b_{\rm b,nw}^{\rm L23} '+f'({int(bb_wv)})'+r'$')
+    ax_bb.set_ylabel(r'$b_{\rm b,nw}^{\rm '+f'{aph_lbl}'+r'}'+f' ({int(bb_wv)})'+r'$')
+
+    std, bias, err, mae = calc_stats(l23_bbnw, bbnw, sig_bbnw)
+    print(f'bb stats: bias={bias:0.2f}, std={std:0.2f}')
+
+    ax_bb.text(0.95, 0.10, 
+               f'\n\n bias={int(100*bias)-100}%\n MAE={int(100*mae)}%\nRMS={int(100*std)}%',
+               fontsize=17,
+               transform=ax_bb.transAxes, ha='right')
+
+    
+    for ss, ax in enumerate([ax_ph, ax_bb, ax2]):
+        plotting.set_fontsize(ax, 17)
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        #
+        if ss == 0:
+            ax.legend(fontsize=15.)
+
+    # Write
+    plt.tight_layout()
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")        
 
 def main(flg):
     if flg== 'all':
@@ -333,27 +538,24 @@ def main(flg):
         wv_min=400.
         wv_max=700.
         lbls = []
+
         # Model 1
-        p1 = param20.p_ntuple(['ExpBricaud', 'Pow'],
-                set_Sdg=False, sSdg=0.002, 
-                scl_noise='SBG', 
-                add_noise=True, wv_min=wv_min, wv_max=wv_max)
+        p_expb = standard.expb_pow(satellite='SBG', add_noise=True)
+        p_giop = standard.giop(satellite='SBG', add_noise=True)
+        p_gsm = standard.gsm(satellite='SBG', add_noise=True)
+
         lbls.append('[k=5]')
-        # Model 2
-        p2 = param20.p_ntuple(['GIOP', 'Lee'],
-                set_Sdg=False, sSdg=0.002, 
-                scl_noise='SBG', 
-                add_noise=True, wv_min=wv_min, wv_max=wv_max)
         lbls.append('GIOP')
-        # Model 3
-        p3 = param20.p_ntuple(['GSM', 'GSM'],
-                set_Sdg=False, sSdg=0.002, 
-                scl_noise='SBG', 
-                add_noise=True, wv_min=wv_min, wv_max=wv_max)
         lbls.append('GSM')
         #
-        fig_multi_model([p1, p2, p3], lbls, idx, 'fig_multi_model.png')
+        fig_multi_model([p_expb, p_giop, p_gsm], 
+                        lbls, idx, 'fig_SBG_multi_model.png')
 
+    if flg == 3:
+        fig_aph_and_bbnw(['GIOP', 'Lee'], SBG=True, 
+                         BING_file='../Analysis/BING_L23_results_GIOPLee.csv',
+                         add_noise=True, scl_noise='SBG',
+                         outfile='fig_aph_and_bbnw_GIOP_SBG.png')
 
 
 # Command line execution
