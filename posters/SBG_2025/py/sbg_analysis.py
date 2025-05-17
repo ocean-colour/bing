@@ -66,29 +66,35 @@ def main(flg):
         fit_l23.fit(['GSM', 'Pow'], **param)
 
     if flg == 20:
-        idx = 2773
-        # Do it
-        p = standard.expb_pow(satellite='SBG', add_noise=True)
-        outfile = anly_utils_20.chain_filename(p, idx=idx)
-        chains, models, prep_dict, idx, extras = l23.fit_one(p, idx)
-        
-
         # Show
-        embed(header='main 75')
-        odict = prep_dict['odict']
-        pdict = prep_dict['pdict']
-        plotting.show_fits(
-            models, chains, 
-            extras['Chl'], extras['Y'],
-            Rrs_true=dict(wave=models[0].wave, spec=prep_dict['model_Rrs']),
-            anw_true=dict(wave=odict['true_wave'], spec=odict['anw']),
-            bbnw_true=dict(wave=odict['true_wave'], spec=odict['bbnw']),
-            perc=(16, 84),
-            )
+        show = False
+        idx = 2773
 
-        # Save
-        anly_utils_20.save_chains(chains, idx, outfile,
-                                  extras=extras)
+        # Do it
+        p_expb = standard.expb_pow(satellite='SBG', add_noise=True)
+        p_giop = standard.giop(satellite='SBG', add_noise=True)
+        p_gsm = standard.gsm(satellite='SBG', add_noise=True)
+
+        for p in [p_expb, p_giop, p_gsm]:
+            outfile = anly_utils_20.chain_filename(p, idx=idx, path='Fits/')
+            chains, models, prep_dict, idx, extras = l23.fit_one(p, idx)
+            
+            if show:
+                odict = prep_dict['odict']
+                pdict = prep_dict['pdict']
+                plotting.show_fits(
+                    models, chains, 
+                    extras['Chl'], extras['Y'],
+                    Rrs_true=dict(wave=models[0].wave, spec=prep_dict['model_Rrs']),
+                    anw_true=dict(wave=odict['true_wave'], spec=odict['anw']),
+                    bbnw_true=dict(wave=odict['true_wave'], spec=odict['bbnw']),
+                    perc=(16, 84),
+                    )
+                plt.show()
+
+            # Save
+            anly_utils_20.save_chains(chains, idx, outfile,
+                                    extras=extras)
     
 
 # Command line execution
