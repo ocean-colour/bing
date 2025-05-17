@@ -6,7 +6,7 @@ from scipy.interpolate import interp1d
 
 from ocpy.hydrolight import loisel23
 from ocpy.satellites import pace as sat_pace
-from ocpy.satellites import pace as sat_sbg
+from ocpy.satellites import sbg as sat_sbg
 from ocpy.satellites import modis as sat_modis
 from ocpy.satellites import seawifs as sat_seawifs
 from ocpy.iop import zlee
@@ -90,7 +90,8 @@ def chain_filename(model_names:list, scl_noise, add_noise,
     return outfile
 
 
-def calc_ICs(ks:list, s2ns:list, scl_noise:float=None, use_LM:bool=False,
+def calc_ICs(ks:list, s2ns:list, scl_noise:float=None, 
+             use_LM:bool=False, add_noise:bool=False,
              MODIS:bool=False, PACE:bool=False, 
              SeaWiFS:bool=False, SBG:bool=False,
              chainroot:str=None): 
@@ -122,7 +123,8 @@ def calc_ICs(ks:list, s2ns:list, scl_noise:float=None, use_LM:bool=False,
         model_names = kdict[k]
 
         chain_file = chain_filename(
-            model_names, scl_noise, False, use_LM=use_LM,
+            model_names, scl_noise, add_noise, 
+            use_LM=use_LM,
             MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS,
             SBG=SBG, root=chainroot)
         d_chains = np.load(chain_file)

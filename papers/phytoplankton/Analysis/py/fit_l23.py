@@ -117,8 +117,9 @@ def fit(model_names:list,
         model_bbnw = anly_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
 
         # Noise
-        model_varRrs = anly_utils.scale_noise(scl_noise, model_Rrs, model_wave,
-                                              reduce_by_in_situ=reduce_by_in_situ)
+        model_varRrs = anly_utils.scale_noise(
+            scl_noise, model_Rrs, model_wave, 
+            reduce_by_in_situ=reduce_by_in_situ)
 
         # Add noise?
         if add_noise:

@@ -61,14 +61,15 @@ def fig_bic_sbg_pace(use_LM:bool=True,
     gs = gridspec.GridSpec(1,2)
 
     MODIS = False
+    add_noise = True
     xlbl = 'BIC'
     for ss in range(2):
 
-        if ss==0:
+        if ss==1:
             s2ns = r_s2ns + ['SBG']
             SBG = True
             PACE = False
-            dataset = '(a) SBG (300m pixels)'
+            dataset = 'SBG (300m pixels)'
             ks = [4,5]
             scl_noise = 'SBG'
             chainroot='Fits/'
@@ -76,14 +77,16 @@ def fig_bic_sbg_pace(use_LM:bool=True,
             s2ns = r_s2ns + ['OCI/PACE']
             PACE = True
             SBG = False
-            dataset = '(b) PACE (1km pixels)'
+            dataset = 'PACE (1km pixels)'
             ks = [4,5]
             scl_noise = 'PACE'
             chainroot='../../papers/phytoplankton/Analysis/Fits/'
 
         #embed(header='fig_all_ic 571')
         Adict, Bdict = anly_utils.calc_ICs(
-            ks, s2ns, use_LM=use_LM, MODIS=MODIS, PACE=PACE,
+            ks, s2ns, add_noise=add_noise,
+            use_LM=use_LM, MODIS=MODIS, 
+            PACE=PACE,
             SBG=SBG, 
             chainroot=chainroot,
             scl_noise=scl_noise)
@@ -120,10 +123,8 @@ def fig_bic_sbg_pace(use_LM:bool=True,
             # Stats
             print(f'{subset}, {fs2n} -------------')
             print(f'% with BIC > 0: {100*np.sum(srt > 0)/srt.size}')
-        if log_x:
-            ax.set_xlabel(r'$\log_{10}(\Delta \, \rm '+xlbl+'_{'+f'{subset}'+r'} + 6)$')
-        else:
-            ax.set_xlabel(r'$\Delta \, \rm '+xlbl+'_{'+f'{subset}'+r'}$')
+
+        ax.set_xlabel(r'$\Delta \, \rm '+xlbl+'$'+'  (without vs. with phytoplankton)')
 
         # Make it pretty
         # Title
