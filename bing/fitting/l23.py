@@ -2,6 +2,11 @@
 from collections import namedtuple
 
 import numpy as np
+import pandas
+
+from functools import partial
+from concurrent.futures import ProcessPoolExecutor
+from tqdm import tqdm
 
 from ocpy.satellites import modis as sat_modis
 from ocpy.satellites import seawifs as sat_seawifs
@@ -271,3 +276,310 @@ def fit_one(p:namedtuple, idx:int,
 
     # Return
     return chains, models, prep_dict, idx, extras
+
+
+
+def batch_fit(p, n_batch:int=5, n_cores:int=15, debug:bool=False,
+        seed:bool=None): 
+    """
+    Fits the data with or without considering any errors.
+
+    Args:
+        edict (dict): A dictionary containing the necessary information for fitting.
+        Nspec (int): The number of spectra to fit. Default is None = all
+        abs_sig (float): The absolute value of the error to consider. Default is None.
+            if None, use no error!
+        debug (bool): Whether to run in debug mode. Default is False.
+        n_cores (int): The number of CPU cores to use for parallel processing. Default is 1.
+        max_wv (float): The maximum wavelength to consider. Default is None.
+        use_log_ab (bool): Whether to use log(ab) in the priors. Default is False.
+        use_NMF_pos (bool): Whether to use positive priors for NMF. Default is False.
+
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    # Load L23
+    ds = loisel23.load_ds(4,0)
+    # Prep
+    all_idx = np.arange(ds.Rrs.shape[0]).tolist()
+    if debug:
+        #idx = idx[0:2]
+        all_idx = [170, 180, 200, 250]
+        #idx = [2706]
+
+    Rrs = []
+    varRrs = []
+    params = []
+    Chls = []
+    Ys = []
+    for idx in all_idx:
+        if idx % 50 == 0:
+            print("Working on {:d}".format(idx))
+        prep_dict = prep_one_l23(p, idx)
+
+        # Others
+        varRrs.append(prep_dict['model_varRrs'])
+        Rrs.append(prep_dict['model_Rrs'])
+        Chls.append(prep_dict['odict']['Chl'])
+        Ys.append(prep_dict['odict']['Y'])
+        params.append(prep_dict['p0'])
+
+    # Arrays
+    Rrs = np.array(Rrs)
+    params = np.array(params)
+    varRrs = np.array(varRrs)
+
+    # Add to pdict
+    pdict = prep_dict['pdict']
+    max_idx = np.max(all_idx)
+    # Brutal kludge for multi-processing
+    pdict['Chl'] = np.zeros(max_idx+1)
+    pdict['Y'] = np.zeros(max_idx+1)
+    for ss, idx in enumerate(all_idx):
+        pdict['Chl'][idx] = Chls[ss]
+        pdict['Y'][idx] = Ys[ss]
+
+    # Models
+    models = prep_dict['models']
+
+    i0 = 0
+    while i0 < len(all_idx):
+        # Batch
+        i1 = i0 + n_batch*n_cores
+        i1 = min(i1, len(all_idx))
+        print("Working on {:d} to {:d}".format(i0, i1))
+
+        # Build the items
+        items = []
+        for idx in all_idx[i0:i1]:
+            ss = all_idx.index(idx)
+            item = (Rrs[ss], varRrs[ss], params[ss], idx)
+            items.append(item)
+
+        # Fit
+        all_samples, sub_idx = bing_inf.fit_batch(
+            models, pdict, items, n_cores=n_cores)
+
+        # Check
+        assert np.all([item[3] for item in items] == sub_idx)
+
+        # Output
+        for ss, item in enumerate(items):
+            # Unpack
+            iRrs, ivarRrs, iparams, idx = item
+            chains = all_samples[ss]
+            outfile = chain_filename(p, idx=idx)
+            save_chains(chains, idx, outfile, 
+                            extras=dict(wave=models[0].wave, 
+                                        obs_Rrs=iRrs, 
+                                        varRrs=ivarRrs, 
+                                        Chl=pdict['Chl'][idx],
+                                        Y=pdict['Y'][idx]))
+
+        # Update i0
+        i0 = i1
+
+    print("Done!")
+
+
+def process_one(idx, pdict=None, perc=(16, 84), burn:int=7000, thin:int=1,
+                verbose:bool=False):
+
+    MyNamedTuple = namedtuple('BING20_tuple', pdict.keys())
+    p = MyNamedTuple(**pdict)
+
+    # Load up
+    odict = load_one_l23(
+        idx, wv_min=p.wv_min, wv_max=p.wv_max)
+
+    model_wave = sat_pace.wave(
+        wv_min=p.wv_min, wv_max=p.wv_max)
+    models = model_utils.init(p.model_names, model_wave)
+
+    # Load chains
+    chain_file = anly_utils_20.chain_filename(p, idx=idx)
+    if verbose:
+        print(f"Loading chains from {chain_file}")
+                                              #path='../../bing_2.0/Analysis/Fits')
+    d = np.load(chain_file)
+    chains = d['chains']
+
+    # Init the other stuff..
+    _ = model_utils.init_other_bits(models, Chl=d['Chl'], Y=d['Y'])
+
+
+    # Reconstruct
+    a_mean, bb_mean, a_low, anw_high, bb_low, bb_high,\
+            model_Rrs, sigRs = evaluate.reconstruct_from_chains(
+            models, chains, perc=perc)
+
+    # a_ph, a_dg
+    prep_chains = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+
+    a_dg, a_ph = models[0].eval_anw(prep_chains[..., :models[0].nparam], retsub_comps=True)
+    adg_mean = np.median(a_dg, axis=0)
+    adg_low, adg_high = np.percentile(a_dg, perc, axis=0)
+    aph_mean = np.median(a_ph, axis=0)
+    aph_low, aph_high = np.percentile(a_ph, perc, axis=0)
+
+    # Stats
+    i440 = np.argmin(np.abs(models[0].wave - 440))
+
+    bbp_440 = bb_mean[i440] - bbw_440
+    sig_bbp_440 = 0.5*(bb_high[i440] - bb_low[i440])
+
+    aph_440 = aph_mean[i440]
+    sig_aph_440 = 0.5*(aph_high[i440] - aph_low[i440])
+
+    adg_440 = adg_mean[i440]
+    sig_adg_440 = 0.5*(adg_high[i440] - adg_low[i440])
+
+    # Generate a simple dict
+    standard = dict(bbp_440=bbp_440, sig_bbp_440=sig_bbp_440,
+                    aph_440=aph_440, sig_aph_440=sig_aph_440,
+                    adg_440=adg_440, sig_adg_440=sig_adg_440)
+
+    # Extras
+    extras = {}
+    if 'Sdg' in models[0].pnames:
+        iSdg = models[0].pnames.index('Sdg')
+        extras['Sdg'] = np.median(prep_chains[:, iSdg])
+        Sdg_low, Sdg_high = np.percentile(prep_chains[:, iSdg], perc)
+        extras['sig_Sdg'] = 0.5*(Sdg_high - Sdg_low)
+    if 'beta' in models[1].pnames:
+        ibeta = models[1].pnames.index('beta')
+        extras['beta'] = np.median(prep_chains[:, models[0].nparam+ibeta])
+        beta_low, beta_high = np.percentile(prep_chains[:, models[0].nparam+ibeta], perc)
+        extras['sig_beta'] = 0.5*(beta_high - beta_low)
+
+    # Return
+    return standard, extras
+
+
+
+def process_all(p, outfile:str, n_cores:int=15, debug:bool=False):
+
+    map_fn = partial(process_one, pdict=p._asdict())
+
+    # Item me
+    items = np.arange(0, 3320)
+    if debug:
+        items = np.arange(0, 30)
+
+    with ProcessPoolExecutor(max_workers=n_cores) as executor:
+        chunksize = len(items) // n_cores if len(items) // n_cores > 0 else 1
+        answers = list(tqdm(executor.map(map_fn, items,
+                                            chunksize=chunksize), total=len(items)))
+
+    # Unpack
+    big_dict = {}
+    for ss in items:
+        # Unpack
+        standard, extras = answers[ss]
+        # Save
+        for key in standard.keys():
+            if key not in big_dict.keys():
+                big_dict[key] = []
+            big_dict[key].append(standard[key])
+        for key in extras.keys():
+            if key not in big_dict.keys():
+                big_dict[key] = []
+            big_dict[key].append(extras[key])
+
+    # Save as CSV
+    df = pandas.DataFrame(big_dict)
+    df.to_csv(outfile, index=False)
+    print(f'Saved: {outfile}')
+
+
+
+def chain_filename(p:namedtuple, idx:int=None, 
+                   path:str='../Analysis/Fits/'): 
+    outfile = os.path.join(path, f'BING20_{p.model_names[0]}{p.model_names[1]}')
+
+    if idx is not None:
+        outfile += f'_{idx}'
+        if p.satellite == 'MODIS':
+            outfile += '_M'
+        elif p.satellite == 'PACE':
+            outfile += '_P'
+        elif p.satellite == 'SBG':
+            outfile += '_B'
+        elif p.satellite == 'SeaWiFS':
+            outfile += '_S'
+    else:
+        if p.satellite == 'MODIS':
+            outfile += '_M23'
+        elif p.satellite == 'PACE':
+            outfile += '_P23'
+        elif p.satellite == 'SBG':
+            outfile += '_B23'
+        elif p.satellite == 'SeaWiFS':
+            outfile += '_S23'
+        else:
+            outfile += '_L23'
+    # Added?
+    if p.add_noise:
+        outfile += '_N'
+    else:
+        outfile += '_n'
+
+    # Value
+    if p.scl_noise == 'SeaWiFS':
+        outfile += 'S'
+    elif p.scl_noise == 'MODIS_Aqua':
+        outfile += 'M'
+    elif p.scl_noise == 'PACE':
+        outfile += 'P'
+    elif p.scl_noise == 'SBG':
+        outfile += 'B'
+    else:
+        outfile += f'{int(100*p.scl_noise):02d}'
+
+    # UV fussing
+    if p.wv_min is not None:
+        outfile += f'_UV{int(p.wv_min)}'
+
+    # Sdg
+    if p.set_Sdg: 
+        outfile += f'_Sdg{int(1000*p.sSdg)}'
+    else:
+        outfile += f'_SdgU'
+
+    # beta
+    if p.beta is not None:
+        outfile += f'_b{p.beta:0.1f}'
+
+    # Monte Carlo?
+    if p.nMC is not None:
+        outfile += f'_MC'
+
+    outfile += '.npz'
+    return outfile
+
+
+
+def save_chains(all_samples, all_idx, outfile, 
+              extras:dict=None):
+    """
+    Save the fitting results to a file.
+
+    Parameters:
+        all_samples (numpy.ndarray): Array of fitting chains.
+        all_idx (numpy.ndarray): Array of indices.
+        Rs (numpy.ndarray): Array of Rs values.
+        use_Rs (numpy.ndarray): Array of observed Rs values.
+        outroot (str): Root name for the output file.
+    """  
+    # Outdict
+    outdict = dict()
+    outdict['chains'] = all_samples
+    outdict['idx'] = all_idx
+    
+    # Extras
+    if extras is not None:
+        for key in extras.keys():
+            outdict[key] = extras[key]
+    np.savez(outfile, **outdict)
+    print(f"Saved: {outfile}")

@@ -30,70 +30,6 @@ kdict = {2: ['Cst', 'Cst'],
 
 MODIS_reduce = np.sqrt(2)
 
-def chain_filename(p:namedtuple, idx:int=None, 
-                   path:str='../Analysis/Fits/'): 
-    outfile = os.path.join(path, f'BING20_{p.model_names[0]}{p.model_names[1]}')
-
-    if idx is not None:
-        outfile += f'_{idx}'
-        if p.satellite == 'MODIS':
-            outfile += '_M'
-        elif p.satellite == 'PACE':
-            outfile += '_P'
-        elif p.satellite == 'SBG':
-            outfile += '_B'
-        elif p.satellite == 'SeaWiFS':
-            outfile += '_S'
-    else:
-        if p.satellite == 'MODIS':
-            outfile += '_M23'
-        elif p.satellite == 'PACE':
-            outfile += '_P23'
-        elif p.satellite == 'SBG':
-            outfile += '_B23'
-        elif p.satellite == 'SeaWiFS':
-            outfile += '_S23'
-        else:
-            outfile += '_L23'
-    # Added?
-    if p.add_noise:
-        outfile += '_N'
-    else:
-        outfile += '_n'
-
-    # Value
-    if p.scl_noise == 'SeaWiFS':
-        outfile += 'S'
-    elif p.scl_noise == 'MODIS_Aqua':
-        outfile += 'M'
-    elif p.scl_noise == 'PACE':
-        outfile += 'P'
-    elif p.scl_noise == 'SBG':
-        outfile += 'B'
-    else:
-        outfile += f'{int(100*p.scl_noise):02d}'
-
-    # UV fussing
-    if p.wv_min is not None:
-        outfile += f'_UV{int(p.wv_min)}'
-
-    # Sdg
-    if p.set_Sdg: 
-        outfile += f'_Sdg{int(1000*p.sSdg)}'
-    else:
-        outfile += f'_SdgU'
-
-    # beta
-    if p.beta is not None:
-        outfile += f'_b{p.beta:0.1f}'
-
-    # Monte Carlo?
-    if p.nMC is not None:
-        outfile += f'_MC'
-
-    outfile += '.npz'
-    return outfile
-
 
 def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
              MODIS:bool=False, PACE:bool=False, SeaWiFS:bool=False):
@@ -171,29 +107,6 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
 
 
 
-def save_chains(all_samples, all_idx, outfile, 
-              extras:dict=None):
-    """
-    Save the fitting results to a file.
-
-    Parameters:
-        all_samples (numpy.ndarray): Array of fitting chains.
-        all_idx (numpy.ndarray): Array of indices.
-        Rs (numpy.ndarray): Array of Rs values.
-        use_Rs (numpy.ndarray): Array of observed Rs values.
-        outroot (str): Root name for the output file.
-    """  
-    # Outdict
-    outdict = dict()
-    outdict['chains'] = all_samples
-    outdict['idx'] = all_idx
-    
-    # Extras
-    if extras is not None:
-        for key in extras.keys():
-            outdict[key] = extras[key]
-    np.savez(outfile, **outdict)
-    print(f"Saved: {outfile}")
 
 # #############################################################################
 def recon_one(model_names:list, idx:int, 

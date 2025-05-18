@@ -95,7 +95,15 @@ def main(flg):
             # Save
             anly_utils_20.save_chains(chains, idx, outfile,
                                     extras=extras)
-    
+
+    # Run em all on GIOP
+    if flg == 30:
+        p_giop = standard.giop(satellite='SBG', add_noise=True)
+        # Fit
+        l23.batch_fit(p_giop, seed=54321)#, debug=True)
+        # Process
+        l23.process_all(p, 'BING_L23_results_GIOPLee.csv')#, debug=True)
+
 
 # Command line execution
 if __name__ == '__main__':
