@@ -1,5 +1,6 @@
 
 from collections import namedtuple
+import os
 
 import numpy as np
 import pandas
@@ -280,20 +281,27 @@ def fit_one(p:namedtuple, idx:int,
 
 
 def batch_fit(p, n_batch:int=5, n_cores:int=15, debug:bool=False,
-        seed:bool=None): 
+        seed:bool=None, out_dir:str='../Analysis/Fits/'): 
     """
     Fits the data with or without considering any errors.
 
     Args:
-        edict (dict): A dictionary containing the necessary information for fitting.
-        Nspec (int): The number of spectra to fit. Default is None = all
-        abs_sig (float): The absolute value of the error to consider. Default is None.
-            if None, use no error!
+        p (namedtuple): Parameters for the fit.
+            Required attributes:
+                - model_names (list): List of model names.
+                - satellite (str): Satellite name.
+                - add_noise (bool): Whether to add noise.
+                - scl_noise (float): Scale of the noise.
+                - wv_min (int or None): Minimum wavelength.
+                - set_Sdg (bool): Whether to set Sdg.
+                - sSdg (float): Sdg value.
+                - beta (float or None): Beta value.
+                - nMC (int or None): Number of Monte Carlo simulations.
+        n_batch (int): Number of batches to process in parallel.
+        seed (int): Random seed for reproducibility.
         debug (bool): Whether to run in debug mode. Default is False.
         n_cores (int): The number of CPU cores to use for parallel processing. Default is 1.
-        max_wv (float): The maximum wavelength to consider. Default is None.
-        use_log_ab (bool): Whether to use log(ab) in the priors. Default is False.
-        use_NMF_pos (bool): Whether to use positive priors for NMF. Default is False.
+        out_dir (str): The directory to save the output files. Default is '../Analysis/Fits/'.
 
     """
     if seed is not None:
@@ -369,7 +377,7 @@ def batch_fit(p, n_batch:int=5, n_cores:int=15, debug:bool=False,
             # Unpack
             iRrs, ivarRrs, iparams, idx = item
             chains = all_samples[ss]
-            outfile = chain_filename(p, idx=idx)
+            outfile = chain_filename(p, idx=idx, path=out_dir)
             save_chains(chains, idx, outfile, 
                             extras=dict(wave=models[0].wave, 
                                         obs_Rrs=iRrs, 
@@ -385,6 +393,41 @@ def batch_fit(p, n_batch:int=5, n_cores:int=15, debug:bool=False,
 
 def process_one(idx, pdict=None, perc=(16, 84), burn:int=7000, thin:int=1,
                 verbose:bool=False):
+    """
+    Processes a single dataset by reconstructing model parameters and computing statistics.
+
+    Args:
+        idx (int): Index of the dataset to process.
+        pdict (dict, optional): Dictionary of parameters used for processing. Keys should match 
+            the expected attributes of the named tuple `BING20_tuple`.
+        perc (tuple, optional): Percentile range for uncertainty estimation (default is (16, 84)).
+        burn (int, optional): Number of initial samples to discard from the chains (default is 7000).
+        thin (int, optional): Thinning factor for the chains (default is 1).
+        verbose (bool, optional): If True, prints additional information during processing (default is False).
+
+    Returns:
+        tuple:
+            - standard (dict): A dictionary containing standard statistics for the dataset, including:
+                - `bbp_440` (float): Backscattering coefficient at 440 nm.
+                - `sig_bbp_440` (float): Uncertainty of `bbp_440`.
+                - `aph_440` (float): Phytoplankton absorption coefficient at 440 nm.
+                - `sig_aph_440` (float): Uncertainty of `aph_440`.
+                - `adg_440` (float): Detrital and gelbstoff absorption coefficient at 440 nm.
+                - `sig_adg_440` (float): Uncertainty of `adg_440`.
+            - extras (dict): A dictionary containing additional statistics, if available, including:
+                - `Sdg` (float): Median value of the Sdg parameter (if present in the model).
+                - `sig_Sdg` (float): Uncertainty of `Sdg`.
+                - `beta` (float): Median value of the beta parameter (if present in the model).
+                - `sig_beta` (float): Uncertainty of `beta`.
+
+    Notes:
+        - The function loads model chains from a file, reconstructs model parameters, and computes
+            statistics such as medians and percentiles for key parameters.
+        - The function assumes that the input `pdict` contains all necessary keys for initializing
+            the named tuple and models.
+        - The function uses the `burn` and `thin` parameters to preprocess the chains before
+            computing statistics.
+    """
 
     MyNamedTuple = namedtuple('BING20_tuple', pdict.keys())
     p = MyNamedTuple(**pdict)
@@ -459,6 +502,24 @@ def process_one(idx, pdict=None, perc=(16, 84), burn:int=7000, thin:int=1,
 
 
 def process_all(p, outfile:str, n_cores:int=15, debug:bool=False):
+    """
+    Processes a range of items in parallel, aggregates the results, and saves them to a CSV file.
+
+    Args:
+        p: A parameter object containing necessary data for processing. It should have a `_asdict()` method.
+        outfile (str): The path to the output CSV file where the results will be saved.
+        n_cores (int, optional): The number of CPU cores to use for parallel processing. Defaults to 15.
+        debug (bool, optional): If True, processes a smaller range of items for debugging purposes. Defaults to False.
+
+    Returns:
+        None
+
+    Notes:
+        - The function uses a `ProcessPoolExecutor` to process items in parallel.
+        - The `process_one` function is expected to return a tuple containing two dictionaries: 
+            `standard` and `extras`. These are aggregated into a single dictionary (`big_dict`).
+        - The aggregated results are saved as a CSV file at the specified `outfile` location.
+    """
 
     map_fn = partial(process_one, pdict=p._asdict())
 
@@ -494,8 +555,32 @@ def process_all(p, outfile:str, n_cores:int=15, debug:bool=False):
 
 
 
-def chain_filename(p:namedtuple, idx:int=None, 
-                   path:str='../Analysis/Fits/'): 
+def chain_filename(p:namedtuple, idx:int=None, path:str='../Analysis/Fits/'): 
+    """
+    Generate a filename for saving chain data based on the parameters provided.
+
+    Args:
+        p (namedtuple): A namedtuple containing the following attributes:
+            - model_names (list): A list of model names (at least two elements).
+            - satellite (str): The satellite name, one of 'MODIS', 'PACE', 'SBG', or 'SeaWiFS'.
+            - add_noise (bool): Whether noise is added to the data.
+            - scl_noise (str or float): Noise scaling factor or satellite name ('SeaWiFS', 'MODIS_Aqua', 'PACE', 'SBG').
+            - wv_min (int or None): Minimum wavelength value for UV fussing.
+            - set_Sdg (bool): Whether Sdg is set.
+            - sSdg (float): Sdg value (used if set_Sdg is True).
+            - beta (float or None): Beta value.
+            - nMC (int or None): Number of Monte Carlo simulations (if applicable).
+        idx (int, optional): Index to append to the filename. Defaults to None.
+        path (str, optional): Base directory path for the file. Defaults to '../Analysis/Fits/'.
+
+    Returns:
+        str: The generated filename with the appropriate suffixes based on the input parameters.
+
+    Notes:
+        - The filename is constructed using the model names, satellite type, noise settings, 
+          UV fussing, Sdg, beta, and Monte Carlo simulation flag.
+        - The file extension is '.npz'.
+    """
     outfile = os.path.join(path, f'BING20_{p.model_names[0]}{p.model_names[1]}')
 
     if idx is not None:
