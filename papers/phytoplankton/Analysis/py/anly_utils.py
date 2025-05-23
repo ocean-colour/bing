@@ -6,22 +6,22 @@ from scipy.interpolate import interp1d
 
 from ocpy.hydrolight import loisel23
 from ocpy.satellites import pace as sat_pace
+from ocpy.satellites import sbg as sat_sbg
 from ocpy.satellites import modis as sat_modis
 from ocpy.satellites import seawifs as sat_seawifs
 from ocpy.iop import zlee
 
 from bing import rt as bing_rt
-from bing.models import anw as bing_anw
-from bing.models import bbnw as bing_bbnw
 from bing.models import functions
 from bing.models import utils as model_utils
 from bing import stats as bing_stats
-from bing import chisq_fit
+from bing.fitting import chisq_fit
 
 
 from IPython import embed
 
 PACE_wave = np.arange(400, 701, 5)
+SBG_wave = PACE_wave
 
 kdict = {2: ['Cst', 'Cst'],
             3: ['Exp', 'Cst'],
@@ -38,8 +38,11 @@ MODIS_reduce = np.sqrt(2)
 
 def chain_filename(model_names:list, scl_noise, add_noise,
                        idx:int=None, MODIS:bool=False, use_LM:bool=False,
-                       PACE:bool=False, SeaWiFS:bool=False): 
-    outfile = f'../Analysis/Fits/BING_{model_names[0]}{model_names[1]}'
+                       PACE:bool=False, SeaWiFS:bool=False,
+                       SBG:bool=False, root:str=None):
+    if root is None:
+        root='../Analysis/Fits/'
+    outfile = os.path.join(root, f'BING_{model_names[0]}{model_names[1]}')
 
     if idx is not None:
         outfile += f'_{idx}'
@@ -47,6 +50,8 @@ def chain_filename(model_names:list, scl_noise, add_noise,
             outfile += '_M'
         elif PACE:
             outfile += '_P'
+        elif SBG:
+            outfile += '_B'
         elif SeaWiFS:
             outfile += '_S'
     else:
@@ -54,6 +59,8 @@ def chain_filename(model_names:list, scl_noise, add_noise,
             outfile += '_M23'
         elif PACE:
             outfile += '_P23'
+        elif SBG:
+            outfile += '_B23'
         elif SeaWiFS:
             outfile += '_S23'
         else:
@@ -70,6 +77,8 @@ def chain_filename(model_names:list, scl_noise, add_noise,
         outfile += 'M'
     elif scl_noise == 'PACE':
         outfile += 'P'
+    elif scl_noise == 'SBG':
+        outfile += 'B'
     elif scl_noise is None:
         outfile += f'{int(100*0.02):02d}'
     else:
@@ -81,8 +90,11 @@ def chain_filename(model_names:list, scl_noise, add_noise,
     return outfile
 
 
-def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
-             MODIS:bool=False, PACE:bool=False, SeaWiFS:bool=False):
+def calc_ICs(ks:list, s2ns:list, scl_noise:float=None, 
+             use_LM:bool=False, add_noise:bool=False,
+             MODIS:bool=False, PACE:bool=False, 
+             SeaWiFS:bool=False, SBG:bool=False,
+             chainroot:str=None): 
     """
     Calculate the AIC and BIC values for different models and signal-to-noise ratios.
 
@@ -93,6 +105,8 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
     - MODIS (bool): Flag indicating whether to use MODIS data.
     - PACE (bool): Flag indicating whether to use PACE data.
     - SeaWiFS (bool): Flag indicating whether to use SeaWiFS data.
+    - SBG (bool): Flag indicating whether to use SBG data.
+    - chainroot (str): Root directory for the chain files.
 
     Returns:
         tuple
@@ -109,8 +123,10 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
         model_names = kdict[k]
 
         chain_file = chain_filename(
-            model_names, 0.02, False, use_LM=use_LM,
-            MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
+            model_names, scl_noise, add_noise, 
+            use_LM=use_LM,
+            MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS,
+            SBG=SBG, root=chainroot)
         d_chains = np.load(chain_file)
         print(f'Loaded: {chain_file}')
         wave = d_chains['wave']
@@ -124,8 +140,9 @@ def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
             sv_idx = []
         for s2n in s2ns:
             if PACE and (s2n == 'OCI/PACE'):
-                noise_vector = sat_pace.gen_noise_vector(
-                    models[0].wave)
+                noise_vector = sat_pace.gen_noise_vector(models[0].wave)
+            elif SBG and (s2n == 'SBG'):
+                noise_vector = sat_sbg.gen_noise_vector(models[0].wave)
             elif MODIS and (s2n == 'MODIS/Aqua'):
                 err_dict = sat_modis.calc_errors(reduce_by_in_situ=MODIS_reduce)
                 noise_vector = np.array([err_dict[wv][0] for wv in sat_modis.modis_wave])
@@ -366,6 +383,7 @@ def scale_noise(scl_noise, model_Rrs:np.ndarray, model_wave:np.ndarray,
     np.ndarray: The scaled noise values.
 
     """
+    raise DeprecationWarning("This function is deprecated. Use the new one in noise.py instead.")
     if scl_noise == 'SeaWiFS':
         err_dict = sat_seawifs.calc_errors()
         model_varRrs = np.array([err_dict[wv][0] for wv in sat_seawifs.seawifs_wave])**2
@@ -375,6 +393,9 @@ def scale_noise(scl_noise, model_Rrs:np.ndarray, model_wave:np.ndarray,
     elif scl_noise == 'PACE':
         PACE_error = sat_pace.gen_noise_vector(model_wave)
         model_varRrs = PACE_error**2
+    elif scl_noise == 'SBG':
+        SBG_error = sat_sbg.gen_noise_vector(model_wave)
+        model_varRrs = SBG_error**2
     else:
         model_varRrs = (scl_noise * model_Rrs)**2
 
@@ -501,6 +522,12 @@ def add_noise(Rs, perc:int=None, abs_sig:float=None,
         use_Rs += (perc/100.) * use_Rs * r_sig
     elif isinstance(abs_sig, (float,int,np.ndarray)):
         use_Rs += r_sig * abs_sig
+    elif abs_sig  == 'SBG':
+        if wave is None:
+            raise ValueError("Need wavelength array for SBG noise.")
+        # Add it in
+        sbg_sig = calc_sbg_sig(wave)
+        use_Rs += r_sig * sbg_sig
     elif abs_sig  == 'PACE':
         if wave is None:
             raise ValueError("Need wavelength array for PACE noise.")

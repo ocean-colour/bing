@@ -3,7 +3,7 @@
 import numpy as np
 
 from bing import rt as bing_rt
-from bing import chisq_fit
+from bing.fitting import chisq_fit
 
 from IPython import embed
 

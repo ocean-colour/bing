@@ -6,14 +6,13 @@ import numpy as np
 from ocpy.hydrolight import loisel23
 from ocpy.satellites import modis as sat_modis
 from ocpy.satellites import pace as sat_pace
+from ocpy.satellites import pace as sat_sbg
 from ocpy.satellites import seawifs as sat_seawifs
 
-from bing.models import anw as bing_anw
-from bing.models import bbnw as bing_bbnw
 from bing.models import utils as model_utils
-from bing import inference as bing_inf
+from bing.fitting import inference as bing_inf
 from bing import rt as bing_rt
-from bing import chisq_fit
+from bing.fitting import chisq_fit
 
 
 import anly_utils 
@@ -29,9 +28,11 @@ def fit(model_names:list,
         max_wave:float=None,
         reduce_by_in_situ:float=None,
         MODIS:bool=False, PACE:bool=False, SeaWiFS:bool=False,
+        SBG:bool=False,
         scl_noise:float=0.02, add_noise:bool=False,
         n_cores:int=20, debug:bool=False,
-        seed:bool=None): 
+        seed:bool=None,
+        outroot:str=None): 
     """
     Fits the data with or without considering any errors.
 
@@ -65,6 +66,9 @@ def fit(model_names:list,
     elif PACE:
         model_wave = anly_utils.PACE_wave
         PACE_error = sat_pace.gen_noise_vector(model_wave)
+    elif SBG:
+        model_wave = anly_utils.SBG_wave
+        SBG_error = sat_sbg.gen_noise_vector(model_wave)
     elif SeaWiFS:
         model_wave = sat_seawifs.seawifs_wave
     else:
@@ -111,8 +115,9 @@ def fit(model_names:list,
         model_bbnw = anly_utils.convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
 
         # Noise
-        model_varRrs = anly_utils.scale_noise(scl_noise, model_Rrs, model_wave,
-                                              reduce_by_in_situ=reduce_by_in_situ)
+        model_varRrs = anly_utils.scale_noise(
+            scl_noise, model_Rrs, model_wave, 
+            reduce_by_in_situ=reduce_by_in_situ)
 
         # Add noise?
         if add_noise:
@@ -145,7 +150,8 @@ def fit(model_names:list,
     # Output file
     outfile = anly_utils.chain_filename(
         model_names, scl_noise, add_noise, 
-        MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
+        MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS,
+        SBG=SBG, root=outroot)
 
     # Fit
     if use_chisq:
@@ -181,7 +187,7 @@ def fit(model_names:list,
             prev_cov = cov
         # Save
         outfile = outfile.replace('BING', 'BING_LM')
-        #embed(header='165 of fits')
+        #embed(header='190 of fits')
         np.savez(outfile, ans=all_ans, cov=all_cov,
               wave=model_wave, obs_Rrs=Rrs, varRrs=varRrs,
               idx=all_idx, Chl=Chls, Y=Ys, flags=flags)
