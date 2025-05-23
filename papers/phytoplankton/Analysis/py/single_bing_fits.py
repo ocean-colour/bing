@@ -55,7 +55,7 @@ def main(flg):
 
         p = param20.p_ntuple(['ExpBricaud', 'Pow'], 
             set_Sdg=False, sSdg=0.002, apriors=apriors, bpriors=bpriors,
-            scl_noise='PACE', nsamps=40000,
+            scl_noise='PACE', nsteps=40000,
             add_noise=True, wv_min=400., wv_max=700.)
 
         # Do it
@@ -66,6 +66,19 @@ def main(flg):
         p = p_every_every(nsteps=40000)
         dev_fits.fit(p, 170, show=True, seed=54321) 
     
+    # k=2b
+    if flg == 6:
+        # Priors
+        apriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*1
+        bpriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*1
+
+        p = param20.p_ntuple(['Bricaud', 'Cst'], 
+            set_Sdg=False, apriors=apriors, bpriors=bpriors,
+            scl_noise='PACE', nsteps=40000,
+            add_noise=True, wv_min=400., wv_max=700.)
+
+        # Do it
+        dev_fits.fit(p, 170, show=True, seed=54321) 
 
 # Command line execution
 if __name__ == '__main__':

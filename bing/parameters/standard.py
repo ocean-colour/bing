@@ -62,6 +62,16 @@ def gsm(**kwargs):
     # Generate and return parameters
     return p_ntuple.gen(**params)
 
+def k2b(**kwargs):
+    """ Parameters for K2B model
+    """
+    params = dict(model_names=['Bricaud', 'Cst'], nsteps=500000,
+        apriors=None, bpriors=None, add_noise=True,
+                  sSdg=0.002, set_Sdg=False)
+    params.update(kwargs)
+
+    # Generate and return parameters
+    return p_ntuple.gen(**params)
 
 #def every_every(nsteps:int=500000):
 #

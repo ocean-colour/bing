@@ -42,6 +42,7 @@ def init_model(model_name:str, wave:np.ndarray,
                   'GSM': aNWGSM, 'Every': aNWEvery,
                   'ExpB': aNWExp, 'Chase2017': aNWChase, 
                   'Chase2017Mini': aNWChaseMini,
+                  'Bricaud': aNWBricaud,
                   }
     if model_name not in model_dict.keys():
         raise ValueError(f"Unknown model: {model_name}")
@@ -141,6 +142,8 @@ class aNWModel:
 
             Cst:
                 params[...,0] = log10(Anw)
+            Bricaud:
+                params[...,0] = log10(Aph) 
             Exp:
                 params[...,0] = log10(Anw)
                 params[...,1] = log10(Snw)
@@ -161,6 +164,14 @@ class aNWModel:
             return functions.exponential(self.wave, params, pivot=self.pivot)
         elif self.name == 'ExpFix':
             return functions.exponential(self.wave, params, pivot=self.pivot, S=self.Sdg)
+        elif self.name == 'Bricaud':
+            Chl = 10**params[...,-1:] / 0.05582
+            self.set_aph(Chl)
+            if len(params.shape) == 2:
+                a_ph = (10**params[...,-1:]) * self.a_ph
+            else:
+                a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
+            return a_ph
         elif self.name in ['ExpBricaudFix', 'ExpBricaud']:
             # a_dg
             a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
@@ -347,18 +358,18 @@ class aNWExp(aNWModel):
         # Return
         return p0_a
 
-class aNWExpBricaud(aNWModel):
+
+class aNWBricaud(aNWModel):
     """
-    Exponential model + Bricaud aph for non-water absorption
-        adg = Adg * exp(-Sdg*(wave-400))
+    Bricaud aph for non-water absorption
         aph = a_ph(440) * A_B * chlA**B_B
 
     Attributes:
 
     """
-    name = 'ExpBricaud'
-    nparam = 3
-    pnames = ['Adg', 'Sdg', 'Aph']
+    name = 'Bricaud'
+    nparam = 1
+    pnames = ['Aph']
     pivot = 400.
     uses_Chl = True
     fix_Chl = False
@@ -393,6 +404,41 @@ class aNWExpBricaud(aNWModel):
             wv_ext = self.wave < 400.
             self.a_ph[wv_ext] = scl_400*a400 + (
                 self.wave[wv_ext]-350) * a400 * (1-scl_400) / 50.
+
+    def init_guess(self, a_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            a_nw (np.ndarray): The non-water absorption coefficient
+
+        Returns:
+            np.ndarray: The initial guess for the parameters
+        """
+        i400 = np.argmin(np.abs(self.wave-400))
+        p0_a = np.array([a_nw[i400]/2.])
+        assert p0_a.size == self.nparam
+        # Return
+        return p0_a
+
+class aNWExpBricaud(aNWBricaud):
+    """
+    Exponential model + Bricaud aph for non-water absorption
+        adg = Adg * exp(-Sdg*(wave-400))
+        aph = a_ph(440) * A_B * chlA**B_B
+
+    Attributes:
+
+    """
+    name = 'ExpBricaud'
+    nparam = 3
+    pnames = ['Adg', 'Sdg', 'Aph']
+    pivot = 400.
+    uses_Chl = True
+    fix_Chl = False
+
+    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
+        aNWBricaud.__init__(self, wave, prior_dicts)
 
     def init_guess(self, a_nw:np.ndarray):
         """
