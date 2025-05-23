@@ -100,10 +100,10 @@ def main(flg):
     if flg == 30:
         p_giop = standard.giop(satellite='SBG', add_noise=True)
         # Fit
-        l23.batch_fit(p_giop, seed=54321, out_dir='Fits/')
+        #l23.batch_fit(p_giop, seed=54321, out_dir='Fits/')
                       
         # Process
-        l23.process_all(p, 'BING_L23_results_GIOPLee.csv')#, debug=True)
+        l23.process_all(p_giop, 'BING_L23_SBG_results_GIOPLee.csv')#, debug=True)
 
 
 # Command line execution
