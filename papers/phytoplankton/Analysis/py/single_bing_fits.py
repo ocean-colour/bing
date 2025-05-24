@@ -96,6 +96,20 @@ def main(flg):
         # Do it
         dev_fits.fit(p, 170, show=True, seed=54321) 
 
+    # k=6
+    if flg == 7:
+
+        # Do it
+        idx = 2773
+        p = standard.expbf_pow(scl_noise='PACE', nsteps=40000, add_noise=True)
+        # Do it
+        chains, models, prep_dict, idx, extras = l23.fit_one(p, idx)
+        outfile = l23.chain_filename(p, idx=idx, path='Fits/')
+        l23.save_chains(chains, idx, outfile, extras=extras)
+        # Show
+        show(prep_dict, extras, models, chains)
+
+
 # Command line execution
 if __name__ == '__main__':
     import sys
