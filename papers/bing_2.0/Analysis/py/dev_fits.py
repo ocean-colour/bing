@@ -7,7 +7,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import corner
 
-from bing import inference as bing_inf
+from bing.fitting import inference as bing_inf
 from bing import plotting as bing_plot
 
 #from xqaa.params import XQAAParams
@@ -16,7 +16,6 @@ from bing import plotting as bing_plot
 from IPython import embed
 
 import anly_utils_20 
-import param
 import prep_for_fits
 
 

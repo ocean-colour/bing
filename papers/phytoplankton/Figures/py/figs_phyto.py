@@ -31,6 +31,8 @@ from bing import plotting as bing_plot
 from bing.models import utils as model_utils
 from bing.models import functions
 from bing import evaluate
+from bing.parameters import standard 
+from bing.fitting import l23
 
 #from bing.models import anw as bing_anw
 #from bing.models import bbnw as bing_bbnw
@@ -40,7 +42,6 @@ from bing import evaluate
 # Local
 sys.path.append(os.path.abspath("../../bing_2.0/Analysis/py"))
 import anly_utils_20
-import param as param20
 
 sys.path.append(os.path.abspath("../Analysis/py"))
 import anly_utils
@@ -473,7 +474,7 @@ def compare_models(models:list, idx:int, axes:list,
             ax_anw.plot(wave_true, a_true-aw, 'ko', label='True', zorder=1)
             ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
 
-        ax_anw.plot(wave, a_mean-aw, clr, label='Retreival')
+        ax_anw.plot(wave, a_mean-aw, clr, label='Retrieval')
 
 
         # #########################################################
@@ -933,7 +934,7 @@ def fig_pace_noise(outfile:str='fig_pace_noise.png'):
     # Log
     ax_c.set_yscale('log')
 
-    ax_c.legend(fontsize=15)
+    #ax_c.legend(fontsize=15)
 
     # New axis for S/N
     ax_s2n = ax_c.twinx()
@@ -947,6 +948,14 @@ def fig_pace_noise(outfile:str='fig_pace_noise.png'):
     # axes
     for ax in [ax_c, ax_s2n]:
         plotting.set_fontsize(ax, 19)
+
+    # Legend
+    # Get handles and labels from both axes
+    lines1, labels1 = ax_c.get_legend_handles_labels()
+    lines2, labels2 = ax_s2n.get_legend_handles_labels()
+
+    # Create combined legend on first axis
+    ax_c.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=15)
 
     # Finish
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
@@ -1676,17 +1685,15 @@ def fig_bing_figs(p, outroot:str, idx:int=2773,
                          make_anw:bool=True,
                          ):
 
-    odict = anly_utils_20.prep_l23_data(
-        idx, wv_min=p.wv_min, wv_max=p.wv_max)
+    odict = l23.load_one_l23(idx, wv_min=p.wv_min, wv_max=p.wv_max)
     l23_wave = odict['true_wave']
 
-    model_wave = anly_utils_20.pace_wave(
-        wv_min=p.wv_min, wv_max=p.wv_max)
+    model_wave = sat_pace.wave(wv_min=p.wv_min, wv_max=p.wv_max)
     use_model_names = p.model_names.copy()
     models = model_utils.init(use_model_names, model_wave)
 
     # Load chains
-    chain_file = anly_utils_20.chain_filename(p, idx=idx)
+    chain_file = l23.chain_filename(p, idx=idx)
                                               #path='../../bing_2.0/Analysis/Fits')
     d = np.load(chain_file)
 
@@ -1819,17 +1826,15 @@ def fig_four_panel_fit(p, idx, outfile:str,
              perc:tuple=(16,84), fontsize=12.):
 
     # Load up
-    odict = anly_utils_20.prep_l23_data(
-        idx, wv_min=p.wv_min, wv_max=p.wv_max)
+    odict = l23.load_one_l23(idx, wv_min=p.wv_min, wv_max=p.wv_max)
     l23_wave = odict['true_wave']
 
-    model_wave = anly_utils_20.pace_wave(
-        wv_min=p.wv_min, wv_max=p.wv_max)
+    model_wave = sat_pace.wave(wv_min=p.wv_min, wv_max=p.wv_max)
     use_model_names = p.model_names.copy()
     models = model_utils.init(use_model_names, model_wave)
 
     # Load chains
-    chain_file = anly_utils_20.chain_filename(p, idx=idx)
+    chain_file = l23.chain_filename(p, idx=idx)
                                               #path='../../bing_2.0/Analysis/Fits')
     d = np.load(chain_file)
 
@@ -1877,7 +1882,7 @@ def fig_four_panel_fit(p, idx, outfile:str,
     ax_anw = plt.subplot(gs[1])
     if anw_true is not None:
         ax_anw.plot(anw_true['wave'], anw_true['spec'], 'ko', label='True', zorder=1)
-    ax_anw.plot(wave, a_mean-a_w, '-', color=anw_clr, label='Retreival')
+    ax_anw.plot(wave, a_mean-a_w, '-', color=anw_clr, label='Retrieval')
 
     ax_anw.fill_between(wave, a_5-a_w, a_95-a_w, 
             color=anw_clr, alpha=0.5, label='Uncertainty') 
@@ -2121,6 +2126,7 @@ def main(flg):
     if flg == 1:
         fig_spectra(170)#, bbscl=20)
 
+    # Low chl-a
     if flg == 2:
         fig_multi_fits()#[('Cst','Cst'), ('Exp','Cst'), ('Exp','Pow'), ('ExpBricaud','Pow')], 
                        #[170, 1032])
@@ -2278,15 +2284,6 @@ def main(flg):
 
     # Individual 
     if flg == 34:
-        # ExpBricaud, Pow
-        if False:
-            model_names=['ExpBricaud', 'Pow']
-            p = param20.p_ntuple(model_names,
-                set_Sdg=False, sSdg=0.002, 
-                scl_noise='PACE', 
-                add_noise=True, wv_min=400., wv_max=700)
-
-            fig_bing_figs(p, 'ExpBPow_170', make_fit=True, make_corner=True, idx=170)
 
         # GIOP, Lee
         if True:
@@ -2315,21 +2312,13 @@ def main(flg):
     # Low Chl, 4 panel
     if flg == 37:
         idx = 170
-        model_names=['ExpBricaud', 'Pow']
-        p = param20.p_ntuple(model_names,
-                set_Sdg=False, sSdg=0.002, 
-                scl_noise='PACE', 
-                add_noise=True, wv_min=400., wv_max=700)
+        p = standard.expb_pow(scl_noise='PACE', add_noise=True)
         fig_four_panel_fit(p, idx, 'fig_low_chl_4panel.png')
 
     # High Chl, 4-panel
     if flg == 38:
         idx = 2773
-        model_names=['ExpBricaud', 'Pow']
-        p = param20.p_ntuple(model_names,
-                set_Sdg=False, sSdg=0.002, 
-                scl_noise='PACE', 
-                add_noise=True, wv_min=400., wv_max=700)
+        p = standard.expb_pow(scl_noise='PACE', add_noise=True)
         fig_four_panel_fit(p, idx, 'fig_high_chl_4panel.png')
 
     # Multi-model, 4-panel
@@ -2359,6 +2348,17 @@ def main(flg):
         #
         fig_multi_model([p1, p2, p3], lbls, idx, 'fig_multi_model.png')
 
+    if flg == 40:
+        # ExpBricaud, Pow
+        #model_names=['ExpBricaud', 'Pow']
+        #p = param20.p_ntuple(model_names,
+        #    set_Sdg=False, sSdg=0.002, 
+        #    scl_noise='PACE', 
+        #    add_noise=True, wv_min=400., wv_max=700)
+        p = standard.expb_pow(scl_noise='PACE')
+
+        fig_bing_figs(p, 'ExpBPow_170', make_fit=True, make_corner=True, idx=170)
+
 
 # Command line execution
 if __name__ == '__main__':
@@ -2368,7 +2368,7 @@ if __name__ == '__main__':
         flg = 0
 
         # flg = 1 :: Figure 1; Spectra of water and non-water
-        # flg = 2 :: Figure 2; Fits to example Rrs
+        # flg = 2 :: Figure 2; k=2,5 fits
         # flg = 3 :: Figure 3; BIC
         
         # flg = 10 :: Supp 1; fig_u
@@ -2378,14 +2378,15 @@ if __name__ == '__main__':
         # flg = 14 :: a_ph(440), bbp(440) scatter fig_aph_and_bbnw
             # PACE and GIOP
 
-        # flg = 17 :: Every, Every degenerate fit
-        # flg = 17 :: arbitrary IOP model
+        # flg = 17 :: Every, Every degenerate fit; arbitrary IOP model
 
         # New PACE figures
         # flg = 34 :: Rrs, anw, bbnw on high Chla
-        # flg = 37 :: Low Chl, 4-panel :: fig_four_panel_fit
+        # flg = 37 :: Figure 7 Low Chl, 4-panel :: fig_four_panel_fit
         # flg = 38 :: High Chl, 4-panel :: fig_four_panel_fit
         # flg = 39 :: Multi-model, 4-panel
+
+        # flg = 40 :: k=5, ExpBricaud, Pow; fig_bing_figs
 
     else:
         flg = sys.argv[1]

@@ -30,7 +30,54 @@ def load_one_l23(idx:int, step:int=1,
                   ds=None, 
                   wv_max:float=None, 
                   wv_min:float=None):
-    """ Prepare L23 the data for the fit """
+    """
+    Load and process data for a single index from the Loisel 2023 dataset.
+
+    This function extracts and processes various oceanographic parameters 
+    such as remote sensing reflectance (Rrs), absorption coefficients, 
+    backscattering coefficients, and other related properties for a given 
+    index. It also computes derived quantities like chlorophyll concentration 
+    and spectral slope of dissolved and detrital absorption (Sdg).
+
+    Parameters:
+        idx (int): Index of the dataset to process.
+        step (int, optional): Step size for downsampling the wavelength bands. 
+                                Defaults to 1 (no downsampling).
+        ds (xarray.Dataset, optional): Dataset to load the data from. If None, 
+                                        the function will load the default 
+                                        Loisel 2023 dataset. Defaults to None.
+        wv_max (float, optional): Maximum wavelength to include in the 
+                                    processing. Defaults to None.
+        wv_min (float, optional): Minimum wavelength to include in the 
+                                    processing. Defaults to None.
+
+    Returns:
+        dict: A dictionary containing the following keys:
+            - wave (numpy.ndarray): Processed wavelengths after downsampling.
+            - Rrs (numpy.ndarray): Remote sensing reflectance values.
+            - a (numpy.ndarray): Absorption coefficients.
+            - bb (numpy.ndarray): Backscattering coefficients.
+            - true_wave (numpy.ndarray): Original wavelengths before processing.
+            - true_Rrs (numpy.ndarray): Original Rrs values before processing.
+            - gordon_Rrs (numpy.ndarray): Rrs values computed using Gordon's model.
+            - bbw (numpy.ndarray): Backscattering coefficients of water.
+            - bbnw (numpy.ndarray): Backscattering coefficients of non-water components.
+            - aw (numpy.ndarray): Absorption coefficients of water.
+            - anw (numpy.ndarray): Absorption coefficients of non-water components.
+            - adg (numpy.ndarray): Combined absorption of dissolved and detrital matter.
+            - aph (numpy.ndarray): Phytoplankton absorption coefficients.
+            - Sdg (float): Spectral slope of dissolved and detrital absorption.
+            - Y (float): Spectral slope parameter for backscattering.
+            - Chl (float): Chlorophyll concentration.
+
+    Notes:
+        - The function uses the Lee et al. (2002) prescription for computing 
+            the spectral slope parameter (Y).
+        - Chlorophyll concentration is estimated using the absorption at 
+            440 nm and a predefined coefficient.
+        - The function fits the spectral slope of dissolved and detrital 
+            absorption (Sdg) using a custom fitting function.
+    """
 
     # Load
     if ds is None:
@@ -183,7 +230,7 @@ def prep_one_l23(p, idx, chk:bool=False):
     return ret_dict
     
 
-def fit_one(p:namedtuple, idx:int, 
+def fit_one(p:namedtuple, idx:int,
         debug:bool=False):
     """
     Fits a model to the data for a given index.

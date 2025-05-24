@@ -106,7 +106,7 @@ def show_fits(models:list, inputs:np.ndarray,
     ax_anw = plt.subplot(gs[1])
     if anw_true is not None:
         ax_anw.plot(anw_true['wave'], anw_true['spec'], 'ko', label='True', zorder=1)
-    ax_anw.plot(wave, a_mean-a_w, 'r-', label='Retreival')
+    ax_anw.plot(wave, a_mean-a_w, 'r-', label='Retrieval')
 
     if not use_LM:
         ax_anw.fill_between(wave, a_5-a_w, a_95-a_w, 
@@ -250,9 +250,9 @@ def show_anw_fits(models:list, prep_chains:np.ndarray,
                     anw_true[key], marker, color=clr, 
                     label=f'True {key}', zorder=1)
     # 
-    ax_anw.plot(wave, adg_mean, '-', color=adg_clr, label='a_dg Retreival')
+    ax_anw.plot(wave, adg_mean, '-', color=adg_clr, label='a_dg Retrieval')
     ax_anw.fill_between(wave, adg_low, adg_high, color=adg_clr, alpha=0.5) 
-    ax_anw.plot(wave, aph_mean, '-', color=aph_clr, label='a_ph Retreival')
+    ax_anw.plot(wave, aph_mean, '-', color=aph_clr, label='a_ph Retrieval')
     ax_anw.fill_between(wave, aph_low, aph_high, color=aph_clr, alpha=0.5) 
 
     ax_anw.set_ylabel(r'$a(\lambda) \; [{\rm m}^{-1}]$')

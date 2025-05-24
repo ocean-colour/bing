@@ -16,6 +16,7 @@ from bing.models import functions
 from bing.models import utils as model_utils
 from bing import stats as bing_stats
 from bing.fitting import chisq_fit
+from bing.noise import scale_noise
 
 
 from IPython import embed
@@ -369,6 +370,7 @@ def recon_one(model_names:list, idx:int,
     return rdict
 
 
+'''
 def scale_noise(scl_noise, model_Rrs:np.ndarray, model_wave:np.ndarray,
                 reduce_by_in_situ:float=None):
     """
@@ -401,6 +403,7 @@ def scale_noise(scl_noise, model_Rrs:np.ndarray, model_wave:np.ndarray,
 
     # Return
     return model_varRrs
+'''
 
 def calc_aph(models, Chl, params, sig_params, aph_idx, wave:float=443.):
     iwv_g = np.argmin(np.abs(models[0].wave-wave))
