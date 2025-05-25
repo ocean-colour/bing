@@ -1101,7 +1101,8 @@ def fig_bic_modis_pace(use_LM:bool=True,
             MODIS = False
             PACE = True
             dataset = '(b) Hyperspectral'
-            ks = [4,5]
+            #ks = [4,5]
+            ks = [4,6]
 
         #embed(header='fig_all_ic 571')
         Adict, Bdict = anly_utils.calc_ICs(
@@ -2369,7 +2370,9 @@ if __name__ == '__main__':
 
         # flg = 1 :: Figure 1; Spectra of water and non-water
         # flg = 2 :: Figure 2; k=2,5 fits
-        # flg = 3 :: Figure 3; BIC
+        # flg = 3 :: Figure 6; BIC
+        # flg = 37 :: Figure 7 Low Chl, 4-panel :: fig_four_panel_fit
+        # flg = 38 :: Fig 9 High Chl, 4-panel :: fig_four_panel_fit
         
         # flg = 10 :: Supp 1; fig_u
 
@@ -2382,8 +2385,6 @@ if __name__ == '__main__':
 
         # New PACE figures
         # flg = 34 :: Rrs, anw, bbnw on high Chla
-        # flg = 37 :: Figure 7 Low Chl, 4-panel :: fig_four_panel_fit
-        # flg = 38 :: High Chl, 4-panel :: fig_four_panel_fit
         # flg = 39 :: Multi-model, 4-panel
 
         # flg = 40 :: k=5, ExpBricaud, Pow; fig_bing_figs

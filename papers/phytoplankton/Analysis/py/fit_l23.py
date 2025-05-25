@@ -268,6 +268,7 @@ def main(flg):
         fit(['GIOP', 'Lee'], **param)
         fit(['GSM', 'GSM'], **param)
         fit(['GSM', 'Pow'], **param)
+        fit(['ExpBricaudFree', 'Pow'], **param)
 
     # Full L23 with LM; constant relative error
     if flg == 99:
@@ -279,9 +280,12 @@ if __name__ == '__main__':
 
     if len(sys.argv) == 1:
         flg = 0
-        #flg += 2 ** 0  # 1 -- Testing
-        #flg += 2 ** 1  # 2 -- No priors
-        #flg += 2 ** 2  # 4 -- bb_water
+        #flg == 1 -- Testing
+        #flg == 2 -- Full L23
+        #flg == 3 -- Full L23 with LM; constant relative error
+        #flg == 5 -- PACE with constant error
+        #flg == 8 -- PACE + scaled without add noise
+        #flg == 11 -- PACE with add noise
 
     else:
         flg = sys.argv[1]
