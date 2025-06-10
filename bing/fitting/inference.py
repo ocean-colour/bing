@@ -6,6 +6,7 @@ from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
 
 from bing import rt as bing_rt
+from bing.models import utils as model_utils 
 
 import emcee
 
@@ -24,7 +25,7 @@ def log_prob(params, models:list, Rrs:np.ndarray, varRrs:np.ndarray):
     Returns:
         float: The logarithm of the probability.
     """
-    # Unpack for convenience
+    # Unpack for convenienceHigh Chla
     aparams = params[:models[0].nparam]
     bparams = params[models[0].nparam:]
 
@@ -94,6 +95,13 @@ def fit_one(items:list, models:list=None, pdict:dict=None, chains_only:bool=Fals
     """
     # Unpack
     Rrs, varRrs, params, idx = items
+
+    Chl = pdict['Chl'][idx] if pdict['Chl'] is not None else None
+    Y = pdict['Y'][idx] if pdict['Y'] is not None else None
+
+    # Update the model as need be
+    _ = model_utils.init_other_bits(
+        models, Chl=Chl, Y=Y, Rrs=Rrs)
 
     # Run
     print(f"idx={idx}")

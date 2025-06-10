@@ -12,21 +12,22 @@ from ocpy.water import absorption
 from ocpy.hydrolight import loisel23
 from ocpy.utils import plotting
 
-from bing import chisq_fit
 from bing import evaluate
 
 from IPython import embed
 
 # ############################################################
-def show_fit(models:list, inputs:np.ndarray,
+def show_fits(models:list, inputs:np.ndarray,
              ex_a_params:np.ndarray, ex_bb_params:np.ndarray,
              outfile:str=None,
              figsize:tuple=(14,6),
              fontsize:float=12.,
              anw_true:dict=None, 
              bbnw_true:dict=None,
+             xqaa:dict=None,
              Rrs_true:dict=None,
              show_params:bool=False,
+             perc:tuple=(5,95),
              log_Rrs:bool=True):
     """
     Plots the fit results for the given models and inputs.
@@ -48,6 +49,7 @@ def show_fit(models:list, inputs:np.ndarray,
             spec: 
         show_params (bool, optional): Whether to show the parameters. Default is False.
         log_Rrs (bool, optional): Whether to use a logarithmic scale for the y-axis of `R_rs`. Default is True.
+        perc (tuple, optional): The percentiles to calculate. Default is (5, 95).
 
     Returns:
         axes (list): A list of the axes objects used in the plot.
@@ -70,7 +72,7 @@ def show_fit(models:list, inputs:np.ndarray,
     else:
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
             model_Rrs, sigRs = evaluate.reconstruct_from_chains(
-            models, chains)
+            models, chains, perc=perc)
         # Generate params just in case
         params = np.median(chains, axis=[0,1])
         #embed(header='show_fit 70')
@@ -104,10 +106,14 @@ def show_fit(models:list, inputs:np.ndarray,
     ax_anw = plt.subplot(gs[1])
     if anw_true is not None:
         ax_anw.plot(anw_true['wave'], anw_true['spec'], 'ko', label='True', zorder=1)
-    ax_anw.plot(wave, a_mean-a_w, 'r-', label='Retreival')
+    ax_anw.plot(wave, a_mean-a_w, 'r-', label='Retrieval')
+
     if not use_LM:
         ax_anw.fill_between(wave, a_5-a_w, a_95-a_w, 
             color='r', alpha=0.5, label='Uncertainty') 
+
+    if xqaa is not None:
+        ax_anw.plot(xqaa['wave'], xqaa['anw'], ':', color='orange', label='XQAA')
     
     ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
 
@@ -129,6 +135,9 @@ def show_fit(models:list, inputs:np.ndarray,
         ax_bb.fill_between(wave, bb_5-bb_w, bb_95-bb_w,
             color='g', alpha=0.5, label='Uncertainty') 
 
+    if xqaa is not None:
+        ax_bb.plot(xqaa['wave'], xqaa['bbnw'], ':', color='orange', label='XQAA')
+
     #ax_bb.set_xlabel('Wavelength (nm)')
     ax_bb.set_ylabel(r'$b_{b,nw}(\lambda) \; [{\rm m}^{-1}]$')
 
@@ -147,7 +156,7 @@ def show_fit(models:list, inputs:np.ndarray,
             mod_R = f(Rrs_true['wave'])
             chi2 = np.sum((Rrs_true['spec']-mod_R)**2 / Rsig**2)
             nparam = models[0].nparam + models[1].nparam
-            red_chi2 = chi2 / (nparam-1)
+            red_chi2 = chi2 / (Rsig.size-nparam)
             #
             ax_R.errorbar(Rrs_true['wave'], Rrs_true['spec'], 
                 yerr=Rsig, color='k', fmt='o', capsize=5,
@@ -192,4 +201,74 @@ def show_fit(models:list, inputs:np.ndarray,
         plt.savefig(outfile, dpi=300)
         print(f"Saved: {outfile}")
 
-    return axes
+    return axes, model_Rrs
+
+def show_anw_fits(models:list, prep_chains:np.ndarray,
+             outfile:str=None,
+             figsize:tuple=(9,6),
+             fontsize:float=12.,
+             perc:tuple=(5,95), 
+             ax_anw=None,
+             no_show:bool=False,
+             adg_clr = 'blue', aph_clr = 'green',
+             anw_true:dict=None): 
+
+    # Unpack a little
+    wave = models[0].wave
+
+    # Calc
+    a_dg, a_ph = models[0].eval_anw(prep_chains[..., :models[0].nparam], retsub_comps=True)
+    adg_mean = np.median(a_dg, axis=0)
+    adg_low, adg_high = np.percentile(a_dg, perc, axis=0)
+    aph_mean = np.median(a_ph, axis=0)
+    aph_low, aph_high = np.percentile(a_ph, perc, axis=0)
+
+    # Stats
+    i440 = np.argmin(np.abs(wave-440.))
+    #print(f'Fit: a_dg(440) = {adg_mean[i440]:0.3f} +/- {0.5*(adg_high[i440]-adg_low[i440]):0.3f}')
+    print(f'Fit: a_ph(440) = {aph_mean[i440]:0.4f} +/- {0.5*(aph_high[i440]-aph_low[i440]):0.4f}')
+    if anw_true is not None:
+        i440 = np.argmin(np.abs(anw_true['wave']-440.))
+        print(f'True: a_ph(440) = {anw_true["a_ph"][i440]:0.4f}')
+
+    # #########################################################
+    # Plot the solution
+    lgsz = 14.
+
+    if ax_anw is None:
+        fig = plt.figure(figsize=figsize)
+        plt.clf()
+        gs = gridspec.GridSpec(1,1)
+        ax_anw = plt.subplot(gs[0])
+    
+
+    # #########################################################
+    # a without water
+    if anw_true is not None:
+        for clr, key, marker in zip(['b','g'], ['a_dg', 'a_ph'], ['o','s']):
+            ax_anw.plot(anw_true['wave'], 
+                    anw_true[key], marker, color=clr, 
+                    label=f'True {key}', zorder=1)
+    # 
+    ax_anw.plot(wave, adg_mean, '-', color=adg_clr, label='a_dg Retrieval')
+    ax_anw.fill_between(wave, adg_low, adg_high, color=adg_clr, alpha=0.5) 
+    ax_anw.plot(wave, aph_mean, '-', color=aph_clr, label='a_ph Retrieval')
+    ax_anw.fill_between(wave, aph_low, aph_high, color=aph_clr, alpha=0.5) 
+
+    ax_anw.set_ylabel(r'$a(\lambda) \; [{\rm m}^{-1}]$')
+
+    # axes
+    axes = [ax_anw]
+    for ss, ax in enumerate(axes):
+        plotting.set_fontsize(ax, fontsize)
+        ax.set_xlabel('Wavelength (nm)')
+        ax.legend(fontsize=15.)
+
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    if outfile is not None:
+        plt.savefig(outfile, dpi=300)
+        print(f"Saved: {outfile}")
+    elif not no_show:
+        plt.show()
+
+    return ax_anw

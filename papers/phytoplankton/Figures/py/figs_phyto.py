@@ -6,6 +6,7 @@ import numpy as np
 
 from scipy.optimize import curve_fit
 from scipy.stats import sigmaclip
+from scipy.interpolate import interp1d
 import pandas
 
 
@@ -18,15 +19,20 @@ import seaborn as sns
 
 import corner
 
+from ocpy.water import absorption
 from ocpy.utils import plotting 
 from ocpy.hydrolight import loisel23
 from ocpy.satellites import pace as sat_pace
 from ocpy.satellites import seawifs as sat_seawifs
 from ocpy.satellites import modis as sat_modis
+from ocpy.water import absorption
 
 from bing import plotting as bing_plot
 from bing.models import utils as model_utils
 from bing.models import functions
+from bing import evaluate
+from bing.parameters import standard 
+from bing.fitting import l23
 
 #from bing.models import anw as bing_anw
 #from bing.models import bbnw as bing_bbnw
@@ -34,6 +40,9 @@ from bing.models import functions
 #from bing import stats as bing_stats
 
 # Local
+sys.path.append(os.path.abspath("../../bing_2.0/Analysis/py"))
+import anly_utils_20
+
 sys.path.append(os.path.abspath("../Analysis/py"))
 import anly_utils
 
@@ -267,6 +276,129 @@ def fig_mcmc_fit(model_names:list, idx:int=170, chain_file=None,
 
 
 # ############################################################
+def fig_degenerate_fits(model_names:list, idx:int=170, chain_file=None,
+                 outroot='fig_deg_', 
+                 add_noise:bool=False, 
+                 full_LM:bool=True,
+                 MODIS:bool=False, 
+                 PACE:bool=False, 
+                 SeaWiFS:bool=False,
+                 max_wave:float=None,
+                 use_LM:bool=False,
+                 scl_noise:float=0.02): 
+
+    # Load the fits
+    #chain_file = '../Analysis/Fits/BING_LM_ExpBricaudPow_170_nP.npz'
+    chain_file = '../Analysis/Fits/BING20_EveryEvery_170_P_n02_UV400_SdgU.npz'
+    #chain_file = anly_utils.chain_filename(
+    #    model_names, scl_noise, add_noise, idx=idx, 
+    #    MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
+    #print(f'Loading: {chain_file}')
+    d = np.load(chain_file)
+    wave = d['wave']
+    Rrs_true=dict(wave=d['wave'], spec=d['obs_Rrs'],
+                      var=d['varRrs'])
+
+    # Data
+    odict = anly_utils.prep_l23_data(idx, scl_noise=scl_noise,
+                                     max_wave=max_wave)
+
+    gd_wave = (odict['true_wave'] >= 400.) & (odict['true_wave'] <= 700.) 
+    anw_true=dict(wave=odict['true_wave'][gd_wave], spec=odict['anw'][gd_wave])
+    bbnw_true=dict(wave=odict['true_wave'][gd_wave], spec=odict['bbnw'][gd_wave])
+
+    # Outfile
+    outfile = outroot + f'{idx}.png'
+
+    # Water
+    a_w = absorption.a_water(wave, data='IOCCG')
+    # TODO -- FIX THIS!
+    # THIS IS A HACK UNTIL I CAN RESOLVE bbw
+    ds = loisel23.load_ds(4,0)
+    l23_wave = ds.Lambda.data
+    idx = 170 # Random choie
+    l23_bb = ds.bb.data[idx] 
+    l23_bbnw = ds.bbnw.data[idx] 
+    l23_bbw = l23_bb - l23_bbnw
+    # Interpolate
+    bb_w = np.interp(wave, l23_wave, l23_bbw)
+    #embed(header='figs 324')
+    bb_true = bb_w + bbnw_true['spec']#[gd_wave]
+
+    a_true = anw_true['spec'] + a_w
+
+    # #########################################################
+    # Plot the solution
+    lgsz = 14.
+    figsize:tuple=(14,6)
+
+    fig = plt.figure(figsize=figsize)
+    plt.clf()
+    gs = gridspec.GridSpec(1,3)
+    
+
+    # #########################################################
+    # a without water
+
+    ax_anw = plt.subplot(gs[1])
+    ax_anw.plot(anw_true['wave'], anw_true['spec'], 'ko', label='True', zorder=1)
+
+    sv_anws = []
+    sv_bbnws = []
+    #scales = [0.01, 0.1, 0.3, 1., 3., 10., 100]
+    lw = 3
+    scales = [0.9, 1., 3., 10., 100]
+    for ss, scale in enumerate(scales):
+        scaled_anw = anw_true['spec'] * scale
+        #lbl = 'Retrieval' if ss == 0 else None
+        lbl = f'{scale:0.1f}'
+        ax_anw.plot(anw_true['wave'], scaled_anw, ':', label=lbl, lw=lw)
+        # Calculate bbnw
+        scaled_a = a_true - anw_true['spec'] + scaled_anw
+        sv_anws.append(scaled_anw)
+        bbnw = scaled_a * (bb_true/a_true) - bb_w
+        sv_bbnws.append(bbnw)
+        
+    ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
+    ax_anw.set_ylim(2e-4,3.)
+
+
+    # #########################################################
+    # bb nw
+    ax_bb = plt.subplot(gs[2])
+    ax_bb.plot(bbnw_true['wave'], bbnw_true['spec'], 'ko', label='True', zorder=1)
+    for ss, scale in enumerate(scales):
+        lbl = 'Retrieval' if ss == 0 else None
+        ax_bb.plot(wave, sv_bbnws[ss], ':', label=lbl, lw=lw)
+    ax_bb.set_ylabel(r'$b_{b,nw}(\lambda) \; [{\rm m}^{-1}]$')
+    #ax_bb.set_ylim(0., 0.001)
+
+    # #########################################################
+    # Rs
+    ax_R = plt.subplot(gs[0])
+    ax_R.plot(Rrs_true['wave'], Rrs_true['spec'], 'k+', label='True', zorder=1)
+    ax_R.plot(Rrs_true['wave'], Rrs_true['spec'], 'b-', label='Retrieval')
+    ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
+
+    # Log scale y-axis
+    #ax_R.set_yscale('log')
+    
+    # axes
+    fontsize:float=12.
+    axes = [ax_anw, ax_R, ax_bb]
+    for ss, ax in enumerate(axes):
+        plotting.set_fontsize(ax, fontsize)
+        ax.set_xlabel('Wavelength (nm)')
+        ax.legend(fontsize=15.)
+        if ss < 3:
+            ax.set_yscale('log')
+
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+
+
+# ############################################################
 def fig_multi_fits(models:list=None, 
                    indices:list=None, 
                    min_wave:float=400.,
@@ -313,8 +445,8 @@ def compare_models(models:list, idx:int, axes:list,
             scl_noise=scl_noise, add_noise=add_noise, use_LM=use_LM,
             full_LM=full_LM, min_wave=min_wave, max_wave=max_wave)
         # Unpack what we need
-        noise_lbl = rdict['noise_lbl']
-        noises = rdict['noises']
+        #noise_lbl = rdict['noise_lbl']
+        #noises = rdict['noises']
         wave_true = rdict['wave_true']
         Rrs_true = rdict['Rrs_true']
         a_true = rdict['a_true']
@@ -342,7 +474,7 @@ def compare_models(models:list, idx:int, axes:list,
             ax_anw.plot(wave_true, a_true-aw, 'ko', label='True', zorder=1)
             ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
 
-        ax_anw.plot(wave, a_mean-aw, clr, label='Retreival')
+        ax_anw.plot(wave, a_mean-aw, clr, label='Retrieval')
 
 
         # #########################################################
@@ -585,13 +717,13 @@ def fig_spectra(idx:int,
     bbnw = odict['bb'] - bbw
 
     #
-    fig = plt.figure(figsize=(7,5))
+    fig = plt.figure(figsize=(10,5))
     ax = plt.gca()
 
     # Colors
     ctotal ='gray'
     cwater ='black'
-    cnw ='green'
+    cnw ='orange'
     #embed(header='559 of figs')
 
     # a
@@ -606,15 +738,16 @@ def fig_spectra(idx:int,
         ax.plot(wave, adg, '-', color='brown', label=r'$a_{dg}$', zorder=1)
 
     # bb
+    bb_ls = '--'
     if show_total:
-        ax.plot(wave, bb, ':', color=ctotal, label=r'$b_{b}$', zorder=1)
+        ax.plot(wave, bb, bb_ls, color=ctotal, label=r'$b_{b}$', zorder=1)
 
     if bbscl != 1.:
-        ax.plot(wave, bbscl*bbw, ':', color=cwater, label=f'{bbscl}*'+r'$b_{b,w}$', zorder=1)
-        ax.plot(wave, bbscl*bbnw, ':', color=cnw, label=f'{bbscl}*'+r'$b_{b,nw}$', zorder=1)
+        ax.plot(wave, bbscl*bbw, bb_ls, color=cwater, label=f'{bbscl}*'+r'$b_{b,w}$', zorder=1)
+        ax.plot(wave, bbscl*bbnw, bb_ls, color=cnw, label=f'{bbscl}*'+r'$b_{b,nw}$', zorder=1)
     else:
-        ax.plot(wave, bbscl*bbw, ':', color=cwater, label=r'$b_{b,w}$', zorder=1)
-        ax.plot(wave, bbscl*bbnw, ':', color=cnw, label=r'$b_{b,nw}$', zorder=1)
+        ax.plot(wave, bbscl*bbw, bb_ls, color=cwater, label=r'$b_{b,w}$', zorder=1)
+        ax.plot(wave, bbscl*bbnw, bb_ls, color=cnw, label=r'$b_{b,nw}$', zorder=1)
 
     #
     # Legend filled white
@@ -632,7 +765,7 @@ def fig_spectra(idx:int,
         ymax = 0.08
         ax.set_ylim(0., ymax)
 
-    plotting.set_fontsize(ax, 15)
+    plotting.set_fontsize(ax, 17)
 
     # Fill between
     aw_to_anw = aw/anw
@@ -759,7 +892,7 @@ def fig_satellite_noise(satellite:str, wave:int, min_Rrs:float=-0.03):
 def fig_pace_noise(outfile:str='fig_pace_noise.png'):
 
     # Load up the data
-    pace_file = files('oceancolor').joinpath(os.path.join(
+    pace_file = files('ocpy').joinpath(os.path.join(
         'data', 'satellites', 'PACE_error.csv'))
     actual_PACE_error = pandas.read_csv(pace_file)
     acut = (actual_PACE_error['wave'] < 700.) & (actual_PACE_error['wave'] > 400.)
@@ -768,6 +901,14 @@ def fig_pace_noise(outfile:str='fig_pace_noise.png'):
     l23_wave = ds.Lambda.data
     l23_PACE_error = sat_pace.gen_noise_vector(l23_wave)
     lcut = (l23_wave < 700.) & (l23_wave > 400.)
+
+    # Load a random Rrs
+    idx = 170 # Random choice
+    Rrs = ds.Rrs.data[idx]
+    Rrs = Rrs[lcut]
+
+    # S/N
+    s2n = Rrs / l23_PACE_error[lcut]
 
     #embed(header='fig_all_bic 660')
 
@@ -783,6 +924,7 @@ def fig_pace_noise(outfile:str='fig_pace_noise.png'):
               label='Median PACE Noise')
     ax_c.plot(l23_wave[lcut], l23_PACE_error[lcut], 'ko', label='Re-sampled PACE Noise')
 
+
     # Labels
     ax_c.set_xlabel('Wavelength (nm)')
     ax_c.set_ylabel('Noise [sr$^{-1}$]')
@@ -792,11 +934,28 @@ def fig_pace_noise(outfile:str='fig_pace_noise.png'):
     # Log
     ax_c.set_yscale('log')
 
-    ax_c.legend(fontsize=15)
+    #ax_c.legend(fontsize=15)
+
+    # New axis for S/N
+    ax_s2n = ax_c.twinx()
+    ax_s2n.plot(l23_wave[lcut], s2n, 'r*', label='Example S/N')
+    ax_s2n.set_ylabel('S/N', color='red')
+    ax_s2n.set_ylim(0., None)
+    # Color the axis font
+    for label in ax_s2n.get_yticklabels():
+        label.set_color('red')
     
     # axes
-    for ax in [ax_c]:
+    for ax in [ax_c, ax_s2n]:
         plotting.set_fontsize(ax, 19)
+
+    # Legend
+    # Get handles and labels from both axes
+    lines1, labels1 = ax_c.get_legend_handles_labels()
+    lines2, labels2 = ax_s2n.get_legend_handles_labels()
+
+    # Create combined legend on first axis
+    ax_c.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=15)
 
     # Finish
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
@@ -942,7 +1101,8 @@ def fig_bic_modis_pace(use_LM:bool=True,
             MODIS = False
             PACE = True
             dataset = '(b) Hyperspectral'
-            ks = [4,5]
+            #ks = [4,5]
+            ks = [4,6]
 
         #embed(header='fig_all_ic 571')
         Adict, Bdict = anly_utils.calc_ICs(
@@ -969,13 +1129,14 @@ def fig_bic_modis_pace(use_LM:bool=True,
                 fs2n = int(1./float(s2n))
                 color = None
                 ls = ':'
-                lw = 1
+                lw = 2
             except ValueError:
                 fs2n = s2n
                 color = 'k'
                 ls = '-'
                 lw = 3
-            ax.plot(srt, yvals, label=f'S/N={fs2n}', color=color, linewidth=lw, ls=ls)
+            ax.plot(srt, yvals, label=f'S/N={fs2n}', color=color, 
+                    linewidth=lw, ls=ls)
             # Stats
             print(f'{subset}, {fs2n} -------------')
             print(f'% with BIC > 0: {100*np.sum(srt > 0)/srt.size}')
@@ -1315,10 +1476,11 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph',
 def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
                 scl_noise:float=0.02, add_noise:bool=False, 
                 SeaWiFS:bool=False, MODIS:bool=False,
-                bb_wv:int=443, # Wave for bbnw
-                aph_wv:int=443, # Wave for bbnw
+                bb_wv:int=440, # Wave for bbnw
+                aph_wv:int=440, # Wave for bbnw
+                BING_file:str=None,
                 PACE:bool=False,
-                no_errorbars:bool=True, outfile:str=None):
+                outfile:str=None):
 
 
     # Outfile
@@ -1330,12 +1492,17 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     l23_wave = ds.Lambda.data
     aph = ds.aph.data
     iawv_l23 = np.argmin(np.abs(l23_wave-aph_wv))
+    ibwv_l23 = np.argmin(np.abs(l23_wave-bb_wv))
     l23_aph = aph[:,iawv_l23]
     l23_bbnw = ds.bbnw.data
+    l23_bbnw = l23_bbnw[:,ibwv_l23]
 
     if add_noise:
         error_text = 'Observational error'
-        scl = 10.
+        if PACE:
+            scl = 3.
+        else:
+            scl = 10.
     else:
         error_text = 'No observational error'
         scl = 2.
@@ -1350,78 +1517,131 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
         raise IOError("Bad satellite")
         
 
-
     # Load
-    chain_file = anly_utils.chain_filename(
-        model_names, scl_noise, add_noise,
-        MODIS=MODIS, SeaWiFS=SeaWiFS, PACE=PACE)
-    chain_file = chain_file.replace('BING', 'BING_LM')
-    # Load up
-    print(f'Loading {chain_file}')
-    d = np.load(chain_file)
+    if BING_file is None:
+        chain_file = anly_utils.chain_filename(
+            model_names, scl_noise, add_noise,
+            MODIS=MODIS, SeaWiFS=SeaWiFS, PACE=PACE)
+        chain_file = chain_file.replace('BING', 'BING_LM')
+        # Load up
+        print(f'Loading {chain_file}')
+        d = np.load(chain_file)
 
-    models = model_utils.init(model_names, d['wave'])
+        models = model_utils.init(model_names, d['wave'])
 
-    # More
-    ibbnw = np.argmin(np.abs(d['wave']-models[1].pivot))
-    l23_bbnw = l23_bbnw[:,ibbnw]
+        # More
+        ibbnw = np.argmin(np.abs(d['wave']-models[1].pivot))
+        l23_bbnw = l23_bbnw[:,ibbnw]
 
-    # Specifics
-    if model_names[1] == 'Lee':
-        Y = d['Y']
+        # Specifics
+        if model_names[1] == 'Lee':
+            Y = d['Y']
+        else:
+            Y = None
+
+        # aph
+        perrs = [np.sqrt(np.diag(item)) for item in d['cov']]
+        perrs = np.array(perrs)
+
+        if models[0].name in ['ExpBricaud', 'ExpBricaudFix']:
+            aph_idx = 2
+        else:
+            aph_idx = 1
+        g_aph, sig_aph = anly_utils.calc_aph(
+            models, d['Chl'], d['ans'], perrs, aph_idx,
+            wave=aph_wv)
+
+        # bbnw
+        if models[1].name == 'Pow':
+            bbnw_idx = d['ans'].shape[1]-2
+            nbbnw = 2
+        else:
+            bbnw_idx = d['ans'].shape[1]-1
+            nbbnw = 2
+
+        bbnw = anly_utils.calc_bbnw(
+            models, d['ans'], perrs, bbnw_idx, nbbnw, bb_wv, Y=Y)
     else:
-        Y = None
+        # Load
+        df_bing = pandas.read_csv(BING_file)
+        # Extract
+        g_aph = df_bing['aph_440'].values
+        sig_aph = df_bing['sig_aph_440'].values
 
-    # aph
-    perrs = [np.sqrt(np.diag(item)) for item in d['cov']]
-    perrs = np.array(perrs)
+        bbnw = df_bing['bbp_440'].values
+        sig_bbnw = df_bing['sig_bbp_440'].values
 
-    g_aph, sig_aph = anly_utils.calc_aph(
-        models, d['Chl'], d['ans'], perrs, 1,
-        wave=aph_wv)
+        # REMOVE THIS!
+        #ds = loisel23.load_ds(4,0)
+        #iwave = np.argmin(np.abs(ds.Lambda.data - 440))
+        #bbw_440=ds.bb.data[0,iwave]-ds.bbnw.data[0,iwave]
+        #bbnw -= bbw_440
 
-    # bbnw
-    bbnw_idx = d['ans'].shape[1]-1
-    bbnw = anly_utils.calc_bbnw(
-        models, d['ans'], perrs, bbnw_idx, bb_wv, Y=Y)
 
     def plot_lines(ax, xmin, xmax, scl):
         ax.plot([xmin, xmax], [xmin, xmax], 'k--', label='1 to 1')
-        ax.plot([xmin, xmax], [scl*xmin, scl*xmax], 'k:', label=f'{scl} to {scl}')
-        ax.plot([xmin, xmax], [xmin/scl, xmax/scl], 'k-.', label=f'{1./scl:0.1f} to {1./scl:0.1f}')
+        ax.plot([xmin, xmax], [scl*xmin, scl*xmax], 'k:', label=f'{scl} to 1')
+        ax.plot([xmin, xmax], [xmin/scl, xmax/scl], 'k-.', label=f'{1./scl:0.1f} to 1')
 
     # Figures
     fig = plt.figure(figsize=(12,6))
     gs = gridspec.GridSpec(1,2)
 
+    # ########################################################
     # aph
     ax_ph = plt.subplot(gs[0])
 
-    ax_ph.scatter(l23_aph, g_aph, s=1, color='b')#, label=model)
-    xmin_aph, xmax_aph = 1e-4, 1
+    # Non detections
+    non_d = g_aph < 3*sig_aph
+    ax_ph.scatter(l23_aph[~non_d], g_aph[~non_d], s=1, color='b')#, label=model)
+    ax_ph.scatter(l23_aph[non_d], g_aph[non_d], s=1, edgecolors='b',
+                    facecolors='none', alpha=0.3)#, label=model)
+
+
+    xmin_aph, xmax_aph = 5e-4, 1
+    ymin_aph, ymax_aph = 2e-5, 1
     plot_lines(ax_ph, xmin_aph, xmax_aph, scl)
-    ax_ph.set_ylim(xmin_aph, xmax_aph)
+    ax_ph.set_xlim(xmin_aph, xmax_aph)
+    ax_ph.set_ylim(ymin_aph, ymax_aph)
     ax_ph.grid()
 
+    aph_lbl = model_names[0] if model_names[0] != 'ExpBricaud' else '[k=5]'
     ax_ph.set_xlabel(r'$a_{\rm ph}^{\rm L23}$'+f'({int(aph_wv)})')
-    ax_ph.set_ylabel(r'$a_{\rm ph}^{\rm '+f'{model_names[0]}'+r'}'+f'({int(aph_wv)})'+r'$')
+    ax_ph.set_ylabel(r'$a_{\rm ph}^{\rm '+f'{aph_lbl}'+r'}'+f'({int(aph_wv)})'+r'$')
 
     def calc_stats(x, y, sigy):
-        bias = np.median(y/x)
+        bias = np.nanmedian(y/x)
         diff = x - y
-        std = np.std(diff/x)
-        mae = np.mean(np.abs(diff)/x)
+        std = np.nanstd(diff/x)
+        mae = np.nanmean(np.abs(diff)/x)
         #
         return std, bias, np.median(sigy/y), mae
-    # Stats
+
+    # Stats 
     std, bias, err, mae = calc_stats(l23_aph, g_aph, sig_aph)
-    print(f'aph stats: bias={bias:0.2f}, std={std:0.2f}')
+    #embed(header='fig_aph_and_bbnw 1463')
+    print(f'aph stats: bias={bias:0.2f}, std={std:0.2f}, mae={mae:0.2f}')
+
+    high_aph = l23_aph > 0.01
+    std2, bias2, _, mae2 = calc_stats(l23_aph[high_aph], 
+                                      g_aph[high_aph], 
+                                      sig_aph[high_aph])
+    print(f'aph stats with l23_aph>0.01: bias={bias2:0.2f}, mae={mae2:0.2f}')
 
     # Text
     ax_ph.text(0.95, 0.10, 
-               f'{model_names[0]}/{sat}\n {error_text}\n  bias={int(100*bias)-100}%, MAE={int(100*mae)}%',
+               f'{sat}\n bias={int(100*bias)-100}%\n MAE={int(100*mae)}%\nRMS={int(100*std)}%',
                fontsize=17,
                transform=ax_ph.transAxes, ha='right')
+
+    # Label the top x-axis with Chl
+    ax2 = ax_ph.twiny()
+    Chl_lim = np.array([xmin_aph, xmax_aph])/0.05582
+    ax2.set_xlim(Chl_lim)
+    #ax2.set_xticks([0.01, 0.1, 1])
+    #ax2.set_xticklabels([0.01, 0.1, 1])
+    ax2.set_xlabel('Chl [mg '+r'$\rm m^{-3}]$')
+    
 
     
     # #####################################################################
@@ -1429,24 +1649,24 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     ax_bb = plt.subplot(gs[1])
 
     ax_bb.scatter(l23_bbnw, bbnw, s=1, color='r')#, label=model)
-    xmin_bb, xmax_bb = 1e-5, 3e-2
+    xmin_bb, xmax_bb = 4e-5, 3e-2
     plot_lines(ax_bb, xmin_bb, xmax_bb, scl)
     ax_bb.set_ylim(xmin_bb, xmax_bb)
     ax_bb.grid()
 
     ax_bb.set_xlabel(r'$b_{\rm b,nw}^{\rm L23} '+f'({int(bb_wv)})'+r'$')
-    ax_bb.set_ylabel(r'$b_{\rm b,nw}^{\rm '+f'{model_names[0]}'+r'}'+f' ({int(bb_wv)})'+r'$')
+    ax_bb.set_ylabel(r'$b_{\rm b,nw}^{\rm '+f'{aph_lbl}'+r'}'+f' ({int(bb_wv)})'+r'$')
 
-    std, bias, err, mae = calc_stats(l23_bbnw, bbnw, sig_aph)
+    std, bias, err, mae = calc_stats(l23_bbnw, bbnw, sig_bbnw)
     print(f'bb stats: bias={bias:0.2f}, std={std:0.2f}')
 
     ax_bb.text(0.95, 0.10, 
-               f'\n\nbias={int(100*bias)-100}%, MAE={int(100*mae)}%',
+               f'\n\n bias={int(100*bias)-100}%\n MAE={int(100*mae)}%\nRMS={int(100*std)}%',
                fontsize=17,
                transform=ax_bb.transAxes, ha='right')
 
     
-    for ss, ax in enumerate([ax_ph, ax_bb]):
+    for ss, ax in enumerate([ax_ph, ax_bb, ax2]):
         plotting.set_fontsize(ax, 17)
         ax.set_xscale('log')
         ax.set_yscale('log')
@@ -1459,6 +1679,443 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
 
+# ############################################################
+def fig_bing_figs(p, outroot:str, idx:int=2773, 
+                         make_fit:bool=True,
+                         make_corner:bool=True,
+                         make_anw:bool=True,
+                         ):
+
+    odict = l23.load_one_l23(idx, wv_min=p.wv_min, wv_max=p.wv_max)
+    l23_wave = odict['true_wave']
+
+    model_wave = sat_pace.wave(wv_min=p.wv_min, wv_max=p.wv_max)
+    use_model_names = p.model_names.copy()
+    models = model_utils.init(use_model_names, model_wave)
+
+    # Load chains
+    chain_file = l23.chain_filename(p, idx=idx)
+                                              #path='../../bing_2.0/Analysis/Fits')
+    d = np.load(chain_file)
+
+    # Init the other stuff..
+    _ = model_utils.init_other_bits(models, Chl=d['Chl'], 
+                                    Y=d['Y'])
+
+    # Fit
+    if make_fit:
+        outfile1 = f'fig_bing_fit_{outroot}.png'
+        bing_plot.show_fits(
+            models, d['chains'], d['Chl'], d['Y'],
+            Rrs_true=dict(wave=model_wave, spec=d['obs_Rrs'], var=d['varRrs']),
+            anw_true=dict(wave=l23_wave, spec=odict['anw']),
+            bbnw_true=dict(wave=l23_wave, spec=odict['bbnw']),
+            perc=(16, 84), outfile=outfile1,
+            )
+
+    chains = d['chains']
+    burn = 7000
+    thin = 1
+    coeff = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+    print(f'There are {coeff.shape[0]} samples in the corner plot')
+
+    # Corner plot
+    if make_corner:
+        # Labels
+        clbls = models[0].pnames + models[1].pnames
+        # Add log 10
+        clbls = [r'$\log_{10}('+f'{clbl}'+r'$)' for clbl in clbls]
+        # Fix Sedg
+        clbls[1] = f'{clbls[1]}'
+
+        fig = corner.corner(
+            coeff, labels=clbls,
+            label_kwargs={'fontsize':17},
+            color='k',
+            #axes_scale='log',
+            truths=None, #truths,
+            show_titles=True,
+            title_kwargs={"fontsize": 12},
+            )
+        # Add 90%
+        ss = 0
+        for ax in fig.get_axes():
+            if len(ax.get_title()) > 0:
+                # Calculate the percntile
+                p_16, p_84 = np.percentile(coeff[:,ss], [16, 84], axis=0)
+                # Plot a vertical line
+                ax.axvline(p_16, color='b', linestyle=':')
+                ax.axvline(p_84, color='b', linestyle=':')
+                ss += 1
+        plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+
+        outfile2 = f'fig_bing_corner_{outroot}.png'
+        plt.savefig(outfile2, dpi=300)
+        print(f"Saved: {outfile2}")
+
+    # a_nw
+    if make_anw:
+        outfile3 = f'fig_bing_anw_{outroot}.png'
+        bing_plot.show_anw_fits(
+            models, coeff,
+            anw_true=dict(
+                wave=l23_wave, a_dg=odict['adg'],
+                a_ph=odict['aph']),
+            perc=(16, 84), outfile=outfile3,)
+
+def fig_pace_chi2(outfile:str='fig_pace_chi2.png',
+                  model_names:list=['ExpBricaud', 'Pow'],
+                  scl_noise='PACE', add_noise=True):
+
+    # Load up
+    ds = loisel23.load_ds(4,0)
+    # Unpack
+    wave = ds.Lambda.data
+    Rrs = ds.Rrs.data
+    a = ds.a.data
+    bb = ds.bb.data
+    aph = ds.aph.data
+
+    i440 = np.argmin(np.abs(wave-440.))
+
+    Chl = aph[:,i440] / 0.05582
+
+    model_wave = anly_utils.PACE_wave
+    models = model_utils.init(model_names, model_wave)
+    nparam = models[0].nparam + models[1].nparam
+
+    # Fits
+    fit_file = anly_utils.chain_filename(
+        model_names, scl_noise, add_noise, use_LM=True, 
+        MODIS=False, PACE=True, SeaWiFS=False)
+    d = np.load(fit_file)
+
+    # Reconstruct
+    #embed(header='fig_pace_chi2 1598')
+    model_Rrs, a_mean, bb_mean = evaluate.reconstruct_chisq_fits(
+        models, d['ans'], Chl=d['Chl'])#, bb_basis_params=None)
+
+    # Calc chi2
+    chi2s = []
+    for ss in range(Rrs.shape[0]):
+        chi2 = (model_Rrs[ss] - d['obs_Rrs'][ss])**2 / d['varRrs'][ss]
+        chi2s.append(np.sum(chi2)/(Rrs.shape[1]-nparam))
+
+    # Plot
+    fig = plt.figure(figsize=(8,6))
+    plt.clf()
+    ax = plt.gca()
+
+    ax.plot(Chl, chi2s, 'bo')
+
+    ax.set_xlabel(r'$\rm Chl \; [mg \, m^{-3}]$')
+    ax.set_ylabel(r'$\chi^2_\nu$')
+
+    ax.set_xscale('log')
+    ax.axhline(1., color='r', linestyle='--', label=r'$\chi^2_\nu=1$')
+
+    plotting.set_fontsize(ax, 17)
+
+    # Finish
+    plt.tight_layout()
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+
+
+# ############################################################
+def fig_four_panel_fit(p, idx, outfile:str,
+             perc:tuple=(16,84), fontsize=12.):
+
+    # Load up
+    odict = l23.load_one_l23(idx, wv_min=p.wv_min, wv_max=p.wv_max)
+    l23_wave = odict['true_wave']
+
+    model_wave = sat_pace.wave(wv_min=p.wv_min, wv_max=p.wv_max)
+    use_model_names = p.model_names.copy()
+    models = model_utils.init(use_model_names, model_wave)
+
+    # Load chains
+    chain_file = l23.chain_filename(p, idx=idx)
+                                              #path='../../bing_2.0/Analysis/Fits')
+    d = np.load(chain_file)
+
+    # Init the other stuff..
+    _ = model_utils.init_other_bits(models, Chl=d['Chl'], 
+                                    Y=d['Y'])
+
+    # Pack up
+    Rrs_true=dict(wave=model_wave, spec=d['obs_Rrs'], var=d['varRrs'])
+    anw_true=dict(wave=l23_wave, spec=odict['anw'])
+    bbnw_true=dict(wave=l23_wave, spec=odict['bbnw'])
+
+   # Unpack a little
+    wave = models[0].wave
+    chains = d['chains']
+
+    a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
+            model_Rrs, sigRs = evaluate.reconstruct_from_chains(
+            models, chains, perc=perc)
+    # Generate params just in case
+    params = np.median(chains, axis=[0,1])
+
+    # Water
+    a_w = absorption.a_water(wave, data='IOCCG')
+    # TODO -- FIX THIS!
+    # THIS IS A HACK UNTIL I CAN RESOLVE bbw
+    ds = loisel23.load_ds(4,0)
+    l23_wave = ds.Lambda.data
+    idx = 170 # Random choie
+    l23_bb = ds.bb.data[idx] 
+    l23_bbnw = ds.bbnw.data[idx] 
+    l23_bbw = l23_bb - l23_bbnw
+    # Interpolate
+    bb_w = np.interp(wave, l23_wave, l23_bbw)
+
+    fig = plt.figure(figsize=(10,8))
+    plt.clf()
+    gs = gridspec.GridSpec(2,2)
+
+
+    # #########################################################
+    # a without water
+
+    anw_clr = 'green'
+    ax_anw = plt.subplot(gs[1])
+    if anw_true is not None:
+        ax_anw.plot(anw_true['wave'], anw_true['spec'], 'ko', label='True', zorder=1)
+    ax_anw.plot(wave, a_mean-a_w, '-', color=anw_clr, label='Retrieval')
+
+    ax_anw.fill_between(wave, a_5-a_w, a_95-a_w, 
+            color=anw_clr, alpha=0.5, label='Uncertainty') 
+
+    ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
+
+    # #########################################################
+    # bb nw
+    bb_clr = 'red'
+    ax_bb = plt.subplot(gs[2])
+    if bbnw_true is not None:
+        ax_bb.plot(bbnw_true['wave'], bbnw_true['spec'], 'ko', label='True', zorder=1)
+    ax_bb.plot(wave, bb_mean-bb_w, '-', color=bb_clr, label='Retrieval')
+    ax_bb.fill_between(wave, bb_5-bb_w, bb_95-bb_w,
+            color=bb_clr, alpha=0.5, label='Uncertainty') 
+
+    #ax_bb.set_xlabel('Wavelength (nm)')
+    ax_bb.set_ylabel(r'$b_{b,nw}(\lambda) \; [{\rm m}^{-1}]$')
+
+    # #########################################################
+    # Rs
+    R_clr = 'orange'
+    ax_R = plt.subplot(gs[0])
+    if Rrs_true is not None:
+        if 'var' in Rrs_true.keys():
+            # Calcualte chi^2
+            Rsig=np.sqrt(Rrs_true['var'])
+            f = interp1d(wave, model_Rrs)
+            mod_R = f(Rrs_true['wave'])
+            chi2 = np.sum((Rrs_true['spec']-mod_R)**2 / Rsig**2)
+            nparam = models[0].nparam + models[1].nparam
+            red_chi2 = chi2 / (Rsig.size-nparam)
+            #
+            ax_R.errorbar(Rrs_true['wave'], Rrs_true['spec'], 
+                yerr=Rsig, color='k', fmt='o', capsize=5,
+                label=r'$\chi^2_\nu = '+f'{red_chi2:0.2f}'+r'$') 
+        else:
+            ax_R.plot(Rrs_true['wave'], Rrs_true['spec'], 'k+', label='True', zorder=1)
+    #ax_R.plot(wave, gordon_Rrs, 'k+', label='L23 + Gordon')
+    ax_R.plot(wave, model_Rrs, '-', color=R_clr, label='Fit', zorder=10)
+    ax_R.fill_between(wave, model_Rrs-sigRs, model_Rrs+sigRs, 
+            color=R_clr, alpha=0.5, zorder=10) 
+
+    ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
+
+    # Log scale y-axis
+    ax_R.set_yscale('log')
+
+    # #########################################################
+    # aph, adg
+    burn = 7000
+    thin = 1
+    prep_chains = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+    ax_adgph = plt.subplot(gs[3])
+
+    _ = bing_plot.show_anw_fits(models, prep_chains,
+            anw_true=dict(
+                wave=odict['wave'], a_dg=odict['adg'],
+                a_ph=odict['aph']),
+            perc=(16, 84), ax_anw=ax_adgph,
+            no_show=True)
+    
+    # axes
+    axes = [ax_anw, ax_bb, ax_R, ax_adgph]
+    for ss, ax in enumerate(axes):
+        plotting.set_fontsize(ax, fontsize)
+        ax.set_xlabel('Wavelength (nm)')
+        ax.legend(fontsize=15.)
+
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+        
+
+
+# ############################################################
+def fig_multi_model(ps, lbls, idx:int, outfile:str,
+             perc:tuple=(5,95), fontsize=12.):
+
+    ls = ['-', '--', ':']
+
+    # Load up
+    odict = anly_utils_20.prep_l23_data(
+        idx, wv_min=ps[0].wv_min, wv_max=ps[0].wv_max)
+    l23_wave = odict['true_wave']
+
+    model_wave = anly_utils_20.pace_wave(
+        wv_min=ps[0].wv_min, wv_max=ps[0].wv_max)
+
+    # Pack up
+    anw_true=dict(wave=l23_wave, spec=odict['anw'])
+    bbnw_true=dict(wave=l23_wave, spec=odict['bbnw'])
+    wave = model_wave
+
+    # Reconstruct the models
+
+    bb_means = []
+    all_chains = []
+    model_Rrss = []
+    adgs = []
+    aphs = []
+    for ss, p in enumerate(ps):
+        models = model_utils.init(p.model_names, model_wave)
+        # Load chains
+        chain_file = anly_utils_20.chain_filename(p, idx=idx)
+                                                #path='../../bing_2.0/Analysis/Fits')
+        d = np.load(chain_file)
+
+        # Init the other stuff..
+        _ = model_utils.init_other_bits(models, Chl=d['Chl'], Y=d['Y'])
+
+        # Reconstruct
+        chains = d['chains']
+        a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
+                model_Rrs, sigRs = evaluate.reconstruct_from_chains(
+                models, chains, perc=perc)
+
+        # adg, aph
+        burn = 7000
+        thin = 1
+        prep_chains = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+        a_dg, a_ph = models[0].eval_anw(prep_chains[..., :models[0].nparam],
+                            retsub_comps=True)
+        adg_mean = np.median(a_dg, axis=0)
+        aph_mean = np.median(a_ph, axis=0)
+        # Save
+        bb_means.append(bb_mean)
+        all_chains.append(chains)
+        model_Rrss.append(model_Rrs)
+        adgs.append(adg_mean)
+        aphs.append(aph_mean)
+
+        # Stats
+        i440 = np.argmin(np.abs(model_wave-440.))
+        aph440 = aph_mean[i440]
+        print(f'{p.model_names[0]}: a_ph(440)={aph440:0.3f}')
+
+        # One more
+        if ss == 0:
+            Rrs_true=dict(wave=model_wave, spec=d['obs_Rrs'], var=d['varRrs'])
+
+    # THIS IS A HACK UNTIL I CAN RESOLVE bbw
+    ds = loisel23.load_ds(4,0)
+    l23_wave = ds.Lambda.data
+    idx = 170 # Random choice
+    l23_bb = ds.bb.data[idx] 
+    l23_bbnw = ds.bbnw.data[idx] 
+    l23_bbw = l23_bb - l23_bbnw
+    # Interpolate
+    bb_w = np.interp(wave, l23_wave, l23_bbw)
+
+    fig = plt.figure(figsize=(10,8))
+    plt.clf()
+    gs = gridspec.GridSpec(2,2)
+
+
+    # #########################################################
+    # bb nw
+    bb_clr = 'red'
+    ax_bb = plt.subplot(gs[2])
+    ax_bb.plot(bbnw_true['wave'], bbnw_true['spec'], 'ko', label='True', zorder=1)
+
+    # Loop on the models
+    for p, lbl, bb_mean, l in zip(ps, lbls, bb_means, ls):
+        ax_bb.plot(wave, bb_mean-bb_w, l, color=bb_clr, label=lbl)
+
+    #ax_bb.set_xlabel('Wavelength (nm)')
+    ax_bb.set_ylabel(r'$b_{b,nw}(\lambda) \; [{\rm m}^{-1}]$')
+
+
+    # #########################################################
+    # Rs
+    R_clr = 'orange'
+    ax_R = plt.subplot(gs[0])
+
+    Rsig=np.sqrt(Rrs_true['var'])
+    ax_R.errorbar(Rrs_true['wave'], Rrs_true['spec'], 
+            yerr=Rsig, color='k', fmt='o', capsize=5,
+            label='Obs')
+
+    # Loop on the models
+    for model_Rrs, lbl, l in zip(model_Rrss, lbls, ls):
+        # Calcualte chi^2
+        f = interp1d(wave, model_Rrs)
+        mod_R = f(Rrs_true['wave'])
+        chi2 = np.sum((Rrs_true['spec']-mod_R)**2 / Rsig**2)
+        nparam = models[0].nparam + models[1].nparam
+        red_chi2 = chi2 / (Rsig.size-nparam)
+            #
+        ax_R.plot(wave, model_Rrs, l, color=R_clr, zorder=10,
+                label=lbl+r': $\chi^2_\nu = '+f'{red_chi2:0.2f}'+r'$') 
+
+    ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
+
+    # Log scale y-axis
+    ax_R.set_yscale('log')
+
+    # #########################################################
+    # aph
+    aph_clr = 'green'
+    ax_aph = plt.subplot(gs[1])
+    ax_aph.plot(odict['wave'], odict['aph'], 'ko', label='True', zorder=1)
+
+    # Loop on the models
+    for p, lbl, aph, l in zip(ps, lbls, aphs, ls):
+        ax_aph.plot(wave, aph, l, color=aph_clr, label=lbl)
+    ax_aph.set_ylabel(r'$a_{ph}(\lambda) \; [{\rm m}^{-1}]$')
+
+    # #########################################################
+    # adg
+    adg_clr = 'blue'
+    ax_adg = plt.subplot(gs[3])
+    ax_adg.plot(odict['wave'], odict['adg'], 'ko', label='True', zorder=1)
+
+    # Loop on the models
+    for p, lbl, adg, l in zip(ps, lbls, adgs, ls):
+        ax_adg.plot(wave, adg, l, color=adg_clr, label=lbl)
+    ax_adg.set_ylabel(r'$a_{dg}(\lambda) \; [{\rm m}^{-1}]$')
+
+    # axes
+    axes = [ax_aph, ax_bb, ax_R, ax_adg]
+    for ss, ax in enumerate(axes):
+        plotting.set_fontsize(ax, fontsize)
+        ax.set_xlabel('Wavelength (nm)')
+        ax.legend(fontsize=15.)
+
+
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+        
+
 
 def main(flg):
     if flg== 'all':
@@ -1466,10 +2123,11 @@ def main(flg):
     else:
         flg= int(flg)
 
-    # Spectra
+    # Spectra -- blue/red with water
     if flg == 1:
         fig_spectra(170)#, bbscl=20)
 
+    # Low chl-a
     if flg == 2:
         fig_multi_fits()#[('Cst','Cst'), ('Exp','Cst'), ('Exp','Pow'), ('ExpBricaud','Pow')], 
                        #[170, 1032])
@@ -1505,8 +2163,8 @@ def main(flg):
         #fig_satellite_noise('SeaWiFS', 443)
         #fig_satellite_noise('SeaWiFS', 670)
         #fig_satellite_noise('MODIS_Aqua', 443)
-        fig_satellite_noise('MODIS_Aqua', 667)
-        #fig_pace_noise()
+        #fig_satellite_noise('MODIS_Aqua', 667)
+        fig_pace_noise()
 
 
     if flg == 13:
@@ -1527,9 +2185,17 @@ def main(flg):
                          outfile='fig_aph_and_bbnw_GSM_noise.png')
         '''
         # PACE
-        fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, add_noise=True,
-                         scl_noise='PACE',
-                         outfile='fig_aph_and_bbnw_GIOP_PACE_noise.png')
+        #fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, add_noise=True,
+        #                 scl_noise='PACE',
+        #                 outfile='fig_aph_and_bbnw_GIOP_PACE_noise.png')
+        fig_aph_and_bbnw(['ExpBricaud', 'Pow'], PACE=True, 
+                         BING_file='../Analysis/BING_L23_results_ExpBricaudPow.csv',
+                         add_noise=True, scl_noise='PACE',
+                         outfile='fig_aph_and_bbnw_k5_PACE.png')
+        fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, 
+                         BING_file='../Analysis/BING_L23_results_GIOPLee.csv',
+                         add_noise=True, scl_noise='PACE',
+                         outfile='fig_aph_and_bbnw_GIOP_PACE.png')
 
 
     # BIC/AIC for MODIS+L23
@@ -1558,10 +2224,14 @@ def main(flg):
 
     # Degenerate solutions
     if flg == 17:
+        # Actual fits
         #fig_mcmc_fit(['Every', 'Every'], idx=170, full_LM=False,
         #    use_LM=False)
-        fig_mcmc_fit(['Every', 'GSM'], idx=170, full_LM=False,
-            use_LM=False)
+        #fig_mcmc_fit(['Every', 'GSM'], idx=170, full_LM=False,
+        #    use_LM=False)
+        # Degenerates
+        fig_degenerate_fits(['Every', 'Every'], idx=170, 
+                           full_LM=False, use_LM=False)
 
 
     # Fits
@@ -1608,6 +2278,88 @@ def main(flg):
         #    MODIS=True, use_LM=False, scl_noise='MODIS_Aqua',
         #    show_log=True)
 
+    # High aph
+    if flg == 33:
+        #fig_multi_fits(indices=[170,2590])
+        fig_multi_fits(indices=[605,2951])
+
+    # Individual 
+    if flg == 34:
+
+        # GIOP, Lee
+        if True:
+            model_names=['GIOP', 'Lee']
+            p = param20.p_ntuple(model_names,
+                set_Sdg=False, sSdg=0.002, 
+                scl_noise='PACE', 
+                add_noise=True, wv_min=400., wv_max=700.)
+
+            fig_bing_figs(p, 'GIOP_2773', make_fit=True, make_corner=True)
+
+        # GSM
+        if False:
+            model_names=['GSM', 'GSM']
+            p = param20.p_ntuple(model_names,
+                set_Sdg=False, sSdg=0.002, 
+                scl_noise='PACE', 
+                add_noise=True, wv_min=400., wv_max=700.)
+
+            fig_bing_figs(p, 'GSM', make_fit=True, make_corner=True)
+
+    # PACE chi^2
+    if flg == 36:
+        fig_pace_chi2()
+
+    # Low Chl, 4 panel
+    if flg == 37:
+        idx = 170
+        p = standard.expb_pow(scl_noise='PACE', add_noise=True)
+        fig_four_panel_fit(p, idx, 'fig_low_chl_4panel.png')
+
+    # High Chl, 4-panel
+    if flg == 38:
+        idx = 2773
+        p = standard.expb_pow(scl_noise='PACE', add_noise=True)
+        fig_four_panel_fit(p, idx, 'fig_high_chl_4panel.png')
+
+    # Multi-model, 4-panel
+    if flg == 39:
+        idx = 2773
+        wv_min=400.
+        wv_max=700.
+        lbls = []
+        # Model 1
+        p1 = param20.p_ntuple(['ExpBricaud', 'Pow'],
+                set_Sdg=False, sSdg=0.002, 
+                scl_noise='PACE', 
+                add_noise=True, wv_min=wv_min, wv_max=wv_max)
+        lbls.append('[k=5]')
+        # Model 2
+        p2 = param20.p_ntuple(['GIOP', 'Lee'],
+                set_Sdg=False, sSdg=0.002, 
+                scl_noise='PACE', 
+                add_noise=True, wv_min=wv_min, wv_max=wv_max)
+        lbls.append('GIOP')
+        # Model 3
+        p3 = param20.p_ntuple(['GSM', 'GSM'],
+                set_Sdg=False, sSdg=0.002, 
+                scl_noise='PACE', 
+                add_noise=True, wv_min=wv_min, wv_max=wv_max)
+        lbls.append('GSM')
+        #
+        fig_multi_model([p1, p2, p3], lbls, idx, 'fig_multi_model.png')
+
+    if flg == 40:
+        # ExpBricaud, Pow
+        #model_names=['ExpBricaud', 'Pow']
+        #p = param20.p_ntuple(model_names,
+        #    set_Sdg=False, sSdg=0.002, 
+        #    scl_noise='PACE', 
+        #    add_noise=True, wv_min=400., wv_max=700)
+        p = standard.expb_pow(scl_noise='PACE')
+
+        fig_bing_figs(p, 'ExpBPow_170', make_fit=True, make_corner=True, idx=170)
+
 
 # Command line execution
 if __name__ == '__main__':
@@ -1617,10 +2369,25 @@ if __name__ == '__main__':
         flg = 0
 
         # flg = 1 :: Figure 1; Spectra of water and non-water
-        # flg = 2 :: Figure 2; Fits to example Rrs
-        # flg = 3 :: Figure 3; BIC
+        # flg = 2 :: Figure 2; k=2,5 fits
+        # flg = 3 :: Figure 6; BIC
+        # flg = 37 :: Figure 7 Low Chl, 4-panel :: fig_four_panel_fit
+        # flg = 38 :: Fig 9 High Chl, 4-panel :: fig_four_panel_fit
         
         # flg = 10 :: Supp 1; fig_u
+
+        # flg = 12 :: Satellite noise
+
+        # flg = 14 :: a_ph(440), bbp(440) scatter fig_aph_and_bbnw
+            # PACE and GIOP
+
+        # flg = 17 :: Every, Every degenerate fit; arbitrary IOP model
+
+        # New PACE figures
+        # flg = 34 :: Rrs, anw, bbnw on high Chla
+        # flg = 39 :: Multi-model, 4-panel
+
+        # flg = 40 :: k=5, ExpBricaud, Pow; fig_bing_figs
 
     else:
         flg = sys.argv[1]

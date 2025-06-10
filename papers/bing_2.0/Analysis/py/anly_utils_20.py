@@ -1,0 +1,274 @@
+
+import os
+from collections import namedtuple
+
+import numpy as np
+
+from ocpy.satellites import pace as sat_pace
+from ocpy.satellites import modis as sat_modis
+from ocpy.satellites import seawifs as sat_seawifs
+
+from bing import rt as bing_rt
+from bing.models import utils as model_utils
+from bing import stats as bing_stats
+from bing.fitting import chisq_fit
+
+
+from IPython import embed
+
+
+kdict = {2: ['Cst', 'Cst'],
+            3: ['Exp', 'Cst'],
+            4: ['Exp', 'Pow'],
+            5: ['ExpBricaud', 'Pow'],
+            6: ['ExpNMF', 'Pow'],
+            'GIOP': ['GIOP', 'Lee'],
+            'GIOP+': ['GIOP', 'Pow'],
+            'GSM': ['GSM', 'GSM'],
+            'GSM+': ['GSM', 'Pow'],
+}
+
+MODIS_reduce = np.sqrt(2)
+
+
+def calc_ICs(ks:list, s2ns:list, use_LM:bool=False,
+             MODIS:bool=False, PACE:bool=False, SeaWiFS:bool=False):
+    """
+    Calculate the AIC and BIC values for different models and signal-to-noise ratios.
+
+    Parameters:
+    - ks (list): List of model indices.
+    - s2ns (list): List of signal-to-noise ratios.
+    - use_LM (bool): Flag indicating whether to use Levenberg-Marquardt optimization.
+    - MODIS (bool): Flag indicating whether to use MODIS data.
+    - PACE (bool): Flag indicating whether to use PACE data.
+    - SeaWiFS (bool): Flag indicating whether to use SeaWiFS data.
+
+    Returns:
+        tuple
+            - Adict (dict): Dictionary containing the AIC values for each model.
+            - Bdict (dict): Dictionary containing the BIC values for each model.
+    """
+    Bdict = dict()
+    Adict = dict()
+    for k in ks:
+        Adict[k] = []
+        Bdict[k] = []
+
+        # Model names
+        model_names = kdict[k]
+
+        chain_file = chain_filename(
+            model_names, 0.02, False, use_LM=use_LM,
+            MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
+        d_chains = np.load(chain_file)
+        print(f'Loaded: {chain_file}')
+        wave = d_chains['wave']
+
+        # Init the models
+        models = model_utils.init(model_names, wave)
+
+        # Loop on S/N
+        if k == ks[0]:
+            sv_s2n = []
+            sv_idx = []
+        for s2n in s2ns:
+            if PACE and (s2n == 'OCI/PACE'):
+                noise_vector = sat_pace.gen_noise_vector(
+                    models[0].wave)
+            elif MODIS and (s2n == 'MODIS/Aqua'):
+                err_dict = sat_modis.calc_errors(reduce_by_in_situ=MODIS_reduce)
+                noise_vector = np.array([err_dict[wv][0] for wv in sat_modis.modis_wave])
+            elif SeaWiFS and (s2n == 'SeaWiFS'):
+                noise_vector = sat_seawifs.seawifs_error
+            else:
+                noise_vector = None
+            # Calculate BIC
+            AICs, BICs = bing_stats.calc_ICs(
+                d_chains['obs_Rrs'], models, d_chains['ans'],
+                            s2n, use_LM=use_LM, debug=False,
+                            Chl=d_chains['Chl'],
+                            bb_basis_params=d_chains['Y'], # Lee
+                            noise_vector=noise_vector)
+            Adict[k].append(AICs)
+            Bdict[k].append(BICs)
+            # 
+            if k == 3:
+                sv_s2n += [s2n]*BICs.size
+                sv_idx += d_chains['idx'].tolist()
+        #embed(header='678 of fig_all_bic')
+        # Concatenate
+        Bdict[k] = np.array(Bdict[k])
+        Adict[k] = np.array(Adict[k])
+
+    # Return
+    return Adict, Bdict
+        
+
+
+
+
+# #############################################################################
+def recon_one(model_names:list, idx:int, 
+              min_wave:float=None, max_wave:float=None,
+              scl_noise:float=None, add_noise:bool=False, 
+              use_LM:bool=False,
+              full_LM:bool=False, MODIS=False, PACE=False,
+              limit_wave_to_fit:bool=True):
+
+    # Load up the chains or parameters
+    chain_file = chain_filename(
+        model_names, scl_noise, add_noise, idx=None, use_LM=use_LM,
+        MODIS=MODIS)
+    print(f'Loading: {chain_file}')
+    d_chains = np.load(chain_file)
+
+    # Load the data
+    odict = prep_l23_data(idx, min_wave=min_wave, max_wave=max_wave)
+    model_wave = odict['wave']
+    Rrs = odict['Rrs']
+    a_true = odict['a']
+    bb_true = odict['bb']
+    aw = odict['aw']
+    adg = odict['adg']
+    aph = odict['aph']
+    bbw = odict['bbw']
+    bbnw = bb_true - bbw
+    wave_true = odict['true_wave']
+    Rrs_true = odict['true_Rrs']
+
+    gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'])
+
+    # MODIS?
+    model_Rrs = None
+    if MODIS:
+        model_wave = bing_modis.modis_wave
+        model_Rrs = bing_modis.convert_to_modis(wave_true, gordon_Rrs)
+    elif PACE:
+        model_wave = bing_pace.pace_wave
+    else:
+        model_wave = wave_true
+
+    if model_Rrs is None:
+        model_Rrs = gordon_Rrs
+
+    # Init the models
+    models = model_utils.init(model_names, model_wave)
+
+    # Noise
+    if scl_noise is None:
+        scl_noise = 0.02
+    model_varRrs = scale_noise(scl_noise, model_Rrs, model_wave)
+
+    # Extras?
+    if models[0].uses_Chl:
+        models[0].set_aph(odict['Chl'])
+    if models[1].uses_basis_params:  # Lee
+        models[1].set_basis_func(odict['Y'])
+
+    # Interpolate
+    aw_interp = np.interp(model_wave, wave_true, aw)
+
+    #embed(header='figs 167')
+
+    # Reconstruct
+    if use_LM:
+        if full_LM:
+            params = d_chains['ans'][idx]
+        else:
+            params = d_chains['ans']
+        model_Rrs, a_mean, bb_mean = chisq_fit.fit_func(
+            model_wave, *params, models=models, return_full=True)
+    else:
+        raise ValueError("Need to implement")
+        #a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
+        #    model_Rrs, sigRs = anly_utils.reconstruct(
+        #    models, d_chains['chains']) 
+
+    # Return as a dict
+    rdict = dict(wave=model_wave, Rrs=Rrs, varRrs=model_varRrs, 
+                 idx=idx,
+                 a_true=a_true, bb_true=bb_true,
+                 aw=aw, adg=adg, aph=aph,
+                 anw_model=models[0], bbnw_model=models[1],
+                 aw_interp=aw_interp, 
+                 bbw=bbw, bbnw=bbnw,
+                 wave_true=wave_true, Rrs_true=Rrs_true,
+                 gordon_Rrs=gordon_Rrs,
+                 model_Rrs=model_Rrs, a_mean=a_mean, bb_mean=bb_mean)
+    # Return
+    return rdict
+
+
+
+
+def calc_aph(models, Chl, params, sig_params, aph_idx, wave:float=443.):
+    iwv_g = np.argmin(np.abs(models[0].wave-wave))
+
+    aph_fits = []
+    aphlow_fits = []
+    aphhi_fits = []
+    for ss in range(Chl.size):
+        models[0].set_aph(Chl[ss])
+        #
+        iaph = functions.gen_basis(params[ss,aph_idx:aph_idx+1], 
+                                   [models[0].a_ph])
+        # Brute for cme
+        iaph_lo = functions.gen_basis(
+            params[ss,aph_idx:aph_idx+1]-sig_params[ss,aph_idx:aph_idx+1], 
+            [models[0].a_ph])
+        iaph_hi = functions.gen_basis(
+            params[ss,aph_idx:aph_idx+1]+sig_params[ss,aph_idx:aph_idx+1], 
+            [models[0].a_ph])
+        #
+        aph_fits.append(iaph.flatten())
+        aphlow_fits.append(iaph_lo.flatten())
+        aphhi_fits.append(iaph_hi.flatten())
+    #
+    aph_fits = np.array(aph_fits)
+    aphlow_fits = np.array(aphlow_fits)
+    aphhi_fits = np.array(aphhi_fits)
+    #
+    g_awv = aph_fits[:, iwv_g]
+    # Error
+    sig_awv = (aphhi_fits[:, iwv_g] - aphlow_fits[:, iwv_g])/2.
+
+    return g_awv, sig_awv
+
+def calc_bbnw(models, params, sig_params, bbnw_idx, pwave,
+              Y:np.ndarray=None):
+
+    ipiv = np.argmin(np.abs(models[0].wave-pwave))
+
+    bbnw_fits = []
+    #aphlow_fits = []
+    #aphhi_fits = []
+    for ss in range(params.shape[0]):
+        if Y is not None:
+            models[1].set_basis_func(Y[ss])
+        #
+        #embed(header='calc_bbnw')
+        bbnw = models[1].eval_bbnw(params[ss,bbnw_idx:bbnw_idx+1])
+        '''
+        # Brute for cme
+        iaph_lo = functions.gen_basis(
+            params[ss,aph_idx:aph_idx+1]-sig_params[ss,aph_idx:aph_idx+1], 
+            [models[0].a_ph])
+        iaph_hi = functions.gen_basis(
+            params[ss,aph_idx:aph_idx+1]+sig_params[ss,aph_idx:aph_idx+1], 
+            [models[0].a_ph])
+        '''
+        #
+        bbnw_fits.append(bbnw.flatten())
+        #aphlow_fits.append(iaph_lo.flatten())
+        #aphhi_fits.append(iaph_hi.flatten())
+    #
+    bbnw_fits = np.array(bbnw_fits)
+    #aphlow_fits = np.array(aphlow_fits)
+    #aphhi_fits = np.array(aphhi_fits)
+    #
+    bbnw_i = bbnw_fits[:, ipiv]
+    # Error
+    #sig_a440 = (aphhi_fits[:, i440_g] - aphlow_fits[:, i440_g])/2.
+
+    return bbnw_i

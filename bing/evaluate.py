@@ -3,10 +3,13 @@
 import numpy as np
 
 from bing import rt as bing_rt
-from bing import chisq_fit
+from bing.fitting import chisq_fit
 
+from IPython import embed
 
-def reconstruct_from_chains(models:list, chains, burn=7000, thin=1):
+def reconstruct_from_chains(models:list, chains, 
+                            burn:int=7000, thin:int=1,
+                            perc=(5,95)):
     """
     Reconstructs the parameters and calculates statistics from chains of model parameters.
 
@@ -15,19 +18,20 @@ def reconstruct_from_chains(models:list, chains, burn=7000, thin=1):
         - chains (ndarray): An array of shape (n_samples, n_chains, n_params) containing the chains of model parameters.
         - burn (int): The number of burn-in samples to discard from the chains. Default is 7000.
         - thin (int): The thinning factor to apply to the chains. Default is 1.
+        - perc (tuple): The percentiles to calculate. Default is (5, 95).
 
     Returns:
         - a_mean (ndarray): The mean of the parameter 'a' across the chains.
         - bb_mean (ndarray): The mean of the parameter 'bb' across the chains.
-        - a_5 (ndarray): The 5th percentile of the parameter 'a' across the chains.
-        - a_95 (ndarray): The 95th percentile of the parameter 'a' across the chains.
-        - bb_5 (ndarray): The 5th percentile of the parameter 'bb' across the chains.
-        - bb_95 (ndarray): The 95th percentile of the parameter 'bb' across the chains.
+        - a_low (ndarray): The Xth percentile of the parameter 'a' across the chains.
+        - a_high (ndarray): The XXth percentile of the parameter 'a' across the chains.
+        - bb_low (ndarray): The Xth percentile of the parameter 'bb' across the chains.
+        - bb_high (ndarray): The XXth percentile of the parameter 'bb' across the chains.
         - Rrs (ndarray): The calculated model Rrs.
         - sigRs (ndarray): The standard deviation of Rrs.
 
     """
-    # Burn the chains
+    # Burn/thin the chains
     chains = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
     # Calc
     a = models[0].eval_a(chains[..., :models[0].nparam])
@@ -36,10 +40,10 @@ def reconstruct_from_chains(models:list, chains, burn=7000, thin=1):
 
     # Calculate the mean and standard deviation
     a_mean = np.median(a, axis=0)
-    a_5, a_95 = np.percentile(a, [5, 95], axis=0)
+    a_low, a_high = np.percentile(a, perc, axis=0)
     #a_std = np.std(a, axis=0)
     bb_mean = np.median(bb, axis=0)
-    bb_5, bb_95 = np.percentile(bb, [5, 95], axis=0)
+    bb_low, bb_high = np.percentile(bb, perc, axis=0)
     #bb_std = np.std(bb, axis=0)
 
     # Calculate the model Rrs
@@ -50,7 +54,7 @@ def reconstruct_from_chains(models:list, chains, burn=7000, thin=1):
     Rrs = np.median(Rrs, axis=0)
 
     # Return
-    return a_mean, bb_mean, a_5, a_95, bb_5, bb_95, Rrs, sigRs 
+    return a_mean, bb_mean, a_low, a_high, bb_low, bb_high, Rrs, sigRs 
 
 
 def reconstruct_chisq_fits(models:list, params:np.ndarray,

@@ -9,7 +9,7 @@ from ocpy.hydrolight import loisel23
 from abc import ABCMeta
 
 from bing.models import functions
-from bing import priors as bing_priors
+from bing.priors import priors as bing_priors
 
 def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
     """
@@ -120,7 +120,7 @@ class bbNWModel:
 
             Pow:
                 params[0] = log10(Bnw)
-                params[1] = log10(beta)
+                params[1] = beta
             Cst:
                 params[0] = log10(Bnw)
 
@@ -169,6 +169,8 @@ class bbNWModel:
             param (float): The basis function
         """
 
+    def __repr__(self):
+        return f"<bbNWModel: {self.name}, nparam={self.nparam}>"
 
 class bbNWCst(bbNWModel):
     """
