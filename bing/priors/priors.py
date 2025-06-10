@@ -47,12 +47,12 @@ class Prior:
 
 class GaussianPrior(Prior):
     """
-    Class for a uniform prior
+    Class for a Gaussian prior
 
     Attributes:
 
     """
-    flavor:str = 'guassian'
+    flavor:str = 'gaussian'
     """
     Approach to the prior
     """
