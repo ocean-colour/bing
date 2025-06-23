@@ -151,7 +151,7 @@ def prep_one_l23(p, idx, chk:bool=False):
     wave = odict['wave']
     l23_wave = odict['true_wave']
 
-    # Wavelenegths
+    # Wavelengths
     if p.satellite == 'MODIS':
         model_wave = sat_modis.modis_wave
     elif p.satellite in ['PACE', 'SBG']:

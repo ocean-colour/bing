@@ -3,7 +3,7 @@
 from collections import namedtuple
 
 def_dict = dict(model_names=[], # Name of models for a and bb, list
-               scl_noise=None,  # Scale noise, float or str
+                scl_noise=None,  # Scale noise, float or str
                 wv_min=400.,       # Minimum wavelength, float
                 wv_max=700.,       # Maximum wavelength, float
                 satellite='PACE',    # Satellite name, str
