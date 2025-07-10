@@ -104,7 +104,8 @@ def fig_u(outfile='fig_u.png', log_log:bool=False):
     plt.clf()
     ax = plt.gca()
     for lbl, clr, idx, ans in zip(['370nm', '440nm', '500nm', '600nm'],
-                                ['purple', 'b','g', 'r'],
+                                ['#006BA4', '#FF800E','#5F9ED1',  '#FFB300'],
+                                #['purple', 'b','g', 'r'],
                                 [i370, i440, i500, i600],
                                 save_ans):
         ax.scatter(u[:,idx], rrs[:,idx], color=clr, s=1., label=r'$\lambda = $'+lbl)
@@ -124,7 +125,7 @@ def fig_u(outfile='fig_u.png', log_log:bool=False):
         print(f"wv={lbl}, rRMS={10*rms:0.4f}")
 
     # GIOP
-    ax.plot(uval, rrs_GIOP, 'k--', label=f'Gordon: '+r'$G_1='+f'{G1}, '+r'$G_2=$'+f'{G2}'+r'$')
+    ax.plot(uval, rrs_GIOP, 'k--', label=f'Gordon: '+r'$G_1='+f'{G1}, '+r'G_2='+f'{G2}'+r'$')
     ax.grid()
     #
     ax.set_xlabel(r'$u(\lambda)$')
@@ -512,21 +513,21 @@ def compare_models(models:list, idx:int, axes:list,
             ax.tick_params(labelbottom=False)  # Hide x-axis labels
 
 
-def fig_corner(model_names:list, outroot:str='fig_corner_', idx:int=170,
-                 full_LM:bool=True, scl_noise:float=None,
-                 MODIS:bool=False, PACE:bool=False,
-                 SeaWiFS:bool=False, show_log:bool=False,
-                 use_LM:bool=False, add_noise:bool=False): 
+def fig_corner(p, outroot:str='fig_corner_', idx:int=170,
+                 full_LM:bool=True, 
+                 show_log:bool=False,
+                 use_LM:bool=False):
 
     # Load the fits
-    chain_file = anly_utils.chain_filename(
-        model_names, scl_noise, add_noise, idx=idx, 
-        MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
+    chain_file = l23.chain_filename(p, idx=idx, path='../Analysis/Fits/')
+    #chain_file = anly_utils.chain_filename(
+    #    model_names, scl_noise, add_noise, idx=idx, 
+    #    MODIS=MODIS, PACE=PACE, SeaWiFS=SeaWiFS)
     print(f'Loading: {chain_file}')
     d_chains = np.load(chain_file)
 
     # Init the models
-    models = model_utils.init(model_names, d_chains['wave'])
+    models = model_utils.init(p.model_names, d_chains['wave'])
 
     # Right answer
     ds = loisel23.load_ds(4,0)
@@ -554,20 +555,26 @@ def fig_corner(model_names:list, outroot:str='fig_corner_', idx:int=170,
         coeff = 10**coeff
     
 
-    if model_names[0] == 'GIOP':
+    truths = None
+    if p.model_names[0] == 'GIOP':
         truths = [adg_440, aph_440]
-    elif model_names[0] == 'GSM':
+    elif p.model_names[0] == 'GSM':
         truths = [adg_443, true_Chl]
 
-    if model_names[1] == 'Lee':
+    if p.model_names[1] == 'Lee':
         truths += [bbnw_600]
-    elif model_names[1] == 'GSM':
+    elif p.model_names[1] == 'GSM':
         truths += [bbnw_443]
 
     # Labels
     clbls = models[0].pnames + models[1].pnames
     # Add log 10
     clbls = [r'$\log_{10}('+f'{clbl}'+r'$)' for clbl in clbls]
+
+    # Replace Aph with Cph
+    for ss, clbl in enumerate(clbls):
+        if 'Aph' in clbl:
+            clbls[ss] = clbl.replace('Aph', 'Cph')
     #embed(header='figs 407')
 
     if show_log and truths is not None:
@@ -1476,6 +1483,7 @@ def fig_aph_vs_aph(model:str, outroot='fig_aph_vs_aph',
 def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
                 scl_noise:float=0.02, add_noise:bool=False, 
                 SeaWiFS:bool=False, MODIS:bool=False,
+                ax_ph=None, ax_bb=None,
                 bb_wv:int=440, # Wave for bbnw
                 aph_wv:int=440, # Wave for bbnw
                 BING_file:str=None,
@@ -1484,8 +1492,8 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
 
 
     # Outfile
-    if outfile is None:
-        outfile = outroot + f'_{model_names[0]}{model_names[1]}.png'
+    #if outfile is None:
+    #    outfile = outroot + f'_{model_names[0]}{model_names[1]}.png'
 
     # Load
     ds = loisel23.load_ds(4,0)
@@ -1584,12 +1592,14 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
         ax.plot([xmin, xmax], [xmin/scl, xmax/scl], 'k-.', label=f'{1./scl:0.1f} to 1')
 
     # Figures
-    fig = plt.figure(figsize=(12,6))
-    gs = gridspec.GridSpec(1,2)
+    if ax_ph is None:
+        fig = plt.figure(figsize=(12,6))
+        gs = gridspec.GridSpec(1,2)
 
     # ########################################################
     # aph
-    ax_ph = plt.subplot(gs[0])
+    if ax_ph is None:
+        ax_ph = plt.subplot(gs[0])
 
     # Non detections
     non_d = g_aph < 3*sig_aph
@@ -1646,7 +1656,8 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
     
     # #####################################################################
     # bbnw
-    ax_bb = plt.subplot(gs[1])
+    if ax_bb is None:
+        ax_bb = plt.subplot(gs[1])
 
     ax_bb.scatter(l23_bbnw, bbnw, s=1, color='r')#, label=model)
     xmin_bb, xmax_bb = 4e-5, 3e-2
@@ -1675,9 +1686,10 @@ def fig_aph_and_bbnw(model_names:list, outroot='fig_aph_and_bbnw',
             ax.legend(fontsize=15.)
 
     # Write
-    plt.tight_layout()
-    plt.savefig(outfile, dpi=300)
-    print(f"Saved: {outfile}")
+    if outfile is not None:
+        plt.tight_layout()
+        plt.savefig(outfile, dpi=300)
+        print(f"Saved: {outfile}")
 
 # ############################################################
 def fig_bing_figs(p, outroot:str, idx:int=2773, 
@@ -2115,6 +2127,27 @@ def fig_multi_model(ps, lbls, idx:int, outfile:str,
     plt.savefig(outfile, dpi=300)
     print(f"Saved: {outfile}")
         
+def fig_combined_aph_bbnw(outfile='fig_aph_bbnw_combined.png'):
+
+    # Figures
+    fig = plt.figure(figsize=(12,12))
+    gs = gridspec.GridSpec(2,2)
+    
+    fig_aph_and_bbnw(['ExpBricaud', 'Pow'], PACE=True, 
+                        BING_file='../Analysis/BING_L23_results_ExpBricaudPow.csv',
+                        add_noise=True, scl_noise='PACE',
+                        ax_ph=plt.subplot(gs[0]),
+                        ax_bb=plt.subplot(gs[1]),
+                        outfile=None)
+    fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, 
+                        BING_file='../Analysis/BING_L23_results_GIOPLee.csv',
+                        ax_ph=plt.subplot(gs[2]),
+                        ax_bb=plt.subplot(gs[3]),
+                        add_noise=True, scl_noise='PACE',
+                        outfile=None)
+    plt.tight_layout()
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
 
 
 def main(flg):
@@ -2188,14 +2221,16 @@ def main(flg):
         #fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, add_noise=True,
         #                 scl_noise='PACE',
         #                 outfile='fig_aph_and_bbnw_GIOP_PACE_noise.png')
-        fig_aph_and_bbnw(['ExpBricaud', 'Pow'], PACE=True, 
-                         BING_file='../Analysis/BING_L23_results_ExpBricaudPow.csv',
-                         add_noise=True, scl_noise='PACE',
-                         outfile='fig_aph_and_bbnw_k5_PACE.png')
-        fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, 
-                         BING_file='../Analysis/BING_L23_results_GIOPLee.csv',
-                         add_noise=True, scl_noise='PACE',
-                         outfile='fig_aph_and_bbnw_GIOP_PACE.png')
+
+        #fig_aph_and_bbnw(['ExpBricaud', 'Pow'], PACE=True, 
+        #                 BING_file='../Analysis/BING_L23_results_ExpBricaudPow.csv',
+        #                 add_noise=True, scl_noise='PACE',
+        #                 outfile='fig_aph_and_bbnw_k5_PACE.png')
+        #fig_aph_and_bbnw(['GIOP', 'Lee'], PACE=True, 
+        #                 BING_file='../Analysis/BING_L23_results_GIOPLee.csv',
+        #                 add_noise=True, scl_noise='PACE',
+        #                 outfile='fig_aph_and_bbnw_GIOP_PACE.png')
+        fig_combined_aph_bbnw()
 
 
     # BIC/AIC for MODIS+L23
@@ -2265,9 +2300,13 @@ def main(flg):
 
     # Corner
     if flg == 32:
-        fig_corner(['GSM', 'GSM'], idx=170, full_LM=False,
-            SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS',
-            show_log=True, add_noise=True)
+        p = standard.expb_pow(scl_noise='PACE', nsteps=40000, add_noise=True)
+        fig_corner(p, idx=170, full_LM=False,
+            use_LM=False, show_log=True)
+
+        #fig_corner(['GSM', 'GSM'], idx=170, full_LM=False,
+        #    SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS',
+        #    show_log=True, add_noise=True)
         #fig_corner(['GSM', 'GSM'], idx=170, full_LM=False,
         #    SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS',
         #    show_log=True)
