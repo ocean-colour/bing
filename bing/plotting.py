@@ -45,9 +45,9 @@ def show_fits(models:list, inputs:np.ndarray,
             or 
             chains: The MCMC chains.
         ex_a_params (np.ndarray):
-            The example parameters for `a_nw`.
+            The extra parameters for `a_nw`, e.g. Chl
         ex_bb_params (np.ndarray):
-            The example parameters for `b_bnw`.
+            The extra parameters for `b_bnw`.
         outfile (str, optional): The path to save the plot as an image file. Default is None.
         figsize (tuple, optional): The size of the figure. Default is (14, 6).
         fontsize (float, optional): The font size of the plot labels. Default is 12.0.
