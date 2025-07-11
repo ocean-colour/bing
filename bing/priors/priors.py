@@ -173,6 +173,71 @@ class UniformPrior(LogUniformPrior):
     def __init__(self, pdict:dict):
         Prior.__init__(self, pdict)
 
+
+
+class RatioPrior(Prior):
+    """
+    Class for a Ratio prior, e.g. CDOM/aph
+
+    Attributes:
+
+    """
+    flavor:str = 'ratio'
+    """
+    Approach to the prior
+    """
+
+    ratio:float = None
+    """
+    The expected ratio
+    """
+
+    sigma:float = None
+    """
+    The standard deviation for the prior
+    """
+
+    def __init__(self, pdict:dict):
+        Prior.__init__(self, pdict)
+
+    def init_from_dict(self, pdict:dict):
+        """
+        Initialize the prior from a dictionary
+
+        Args:
+            pdict (dict): The dictionary containing the prior information
+                ratio (float): The mean value for the prior
+                sigma (float): The standard deviation for the prior
+        """
+        # Requred
+        self.ratio = pdict['ratio']
+        self.sigma = pdict['sigma']
+        self.i0 = pdict['i0']
+        self.i1 = pdict['i1']
+
+    def calc(self, params:np.ndarray):
+        """
+        Calculate the prior for the parameters
+
+        Args:
+            params (np.ndarray): The parameters
+
+        Returns:
+            float: prior
+        """
+        # Calculate ratio (assumed log10)
+        p0 = 10**(params[self.i0])
+        p1 = 10**(params[self.i1])
+        pred_0 = self.ratio*p1
+
+        # Required
+        return -0.5*((pred_0 - p0)/(self.sigma*p0))**2
+
+
+    def __repr__(self):
+        return f"<Prior: {self.flavor}, mean={self.ratio:0.3f}, sigma={self.sigma:0.3f} >"
+
+
 class Priors:
 
     nparam:int = None
@@ -194,6 +259,18 @@ class Priors:
         self.nparam = len(pdicts)
         self.set_priors(pdicts)
 
+    def add_prior(self, pdict):
+        if pdict['flavor'] == 'log_uniform':
+            self.priors.append(LogUniformPrior(pdict))
+        elif pdict['flavor'] == 'uniform':
+            self.priors.append(UniformPrior(pdict))
+        elif pdict['flavor'] == 'gaussian':
+            self.priors.append(GaussianPrior(pdict))
+        elif pdict['flavor'] == 'ratio':
+            self.priors.append(RatioPrior(pdict))
+        else:
+            raise ValueError(f"Unknown prior flavor: {pdict['flavor']}")
+
     def set_priors(self, pdicts):
         """
         Set the priors for the model
@@ -201,20 +278,21 @@ class Priors:
         """
         self.priors = []
         for pdict in pdicts:
-            if pdict['flavor'] == 'log_uniform':
-                self.priors.append(LogUniformPrior(pdict))
-            elif pdict['flavor'] == 'uniform':
-                self.priors.append(UniformPrior(pdict))
-            elif pdict['flavor'] == 'gaussian':
-                self.priors.append(GaussianPrior(pdict))
-            else:
-                raise ValueError(f"Unknown prior flavor: {pdict['flavor']}")
+            self.add_prior(pdict)
 
     def calc(self, params:np.ndarray):
         prior_sum = 0.
-        for kk,prior in enumerate(self.priors):
-            prior_sum += prior.calc(params[kk])
-        #
+
+        # Individual priors
+        for kk,param in enumerate(params):
+            prior_sum += self.priors[kk].calc(param)
+
+        # Extras
+        if len(self.priors) > params.size:
+            for kk in range(params.size, len(self.priors)):
+                prior_sum += self.priors[kk].calc(params)
+        
+        # Return
         return prior_sum
 
     def gen_bounds(self):
@@ -245,9 +323,42 @@ class Priors:
 
 
 def set_standard_priors(models, p):
+    """
+    Set standard priors for the given models based on the provided parameters.
+
+    This function configures the prior distributions for the parameters of 
+    the models. It supports special cases for specific model names and 
+    parameter configurations, and allows customization of priors through 
+    the `p` object.
+
+    Args:
+        models (list): A list of model objects. Each model should have attributes 
+            `nparam` (number of parameters), `name` (model name), and `pnames` 
+            (list of parameter names).
+        p (object): An object containing prior configuration attributes:
+            - `apriors` (list or None): Custom priors for the first model.
+            - `bpriors` (list or None): Custom priors for the second model.
+            - `model_names` (list): Names of the models.
+            - `beta` (float or None): Value for the beta parameter in the second model.
+            - `set_Sdg` (bool): Whether to set the Sdg parameter.
+            - `Sdg` (float): Mean value for the Sdg parameter.
+            - `sSdg` (float): Standard deviation for the Sdg parameter.
+
+    Returns:
+        None: The function modifies the `priors` attribute of the models in-place.
+
+    Notes:
+        - For the first model (`jj == 0`), if its name is 'ExpBricaud', a specific 
+          prior is set for the second parameter.
+        - For the second model (`jj == 1`), if its name is 'Pow' and `p.beta` is 
+          provided, a Gaussian prior is set for the second parameter.
+        - If `p.set_Sdg` is True, a Gaussian prior is set for the 'Sdg' parameter 
+          in the first model.
+    """
 
     # Set priors
     prior_dict = dict(flavor='log_uniform', pmin=-6, pmax=5)
+    # Loop on a, bb
     for jj in range(2):
         prior_dicts = [prior_dict]*models[jj].nparam
         # Special cases
@@ -273,4 +384,3 @@ def set_standard_priors(models, p):
                                 mean=p.Sdg, sigma=p.sSdg)
         # Finish
         models[jj].priors = Priors(prior_dicts)
-                    

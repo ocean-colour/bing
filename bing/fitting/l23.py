@@ -65,6 +65,7 @@ def load_one_l23(idx:int, step:int=1,
             - aw (numpy.ndarray): Absorption coefficients of water.
             - anw (numpy.ndarray): Absorption coefficients of non-water components.
             - adg (numpy.ndarray): Combined absorption of dissolved and detrital matter.
+            - ag (numpy.ndarray): Absorption by dissolved material
             - aph (numpy.ndarray): Phytoplankton absorption coefficients.
             - Sdg (float): Spectral slope of dissolved and detrital absorption.
             - Y (float): Spectral slope parameter for backscattering.
@@ -83,6 +84,7 @@ def load_one_l23(idx:int, step:int=1,
     if ds is None:
         ds = loisel23.load_ds(4,0)
 
+    # Wavelengths
     wave = ds.Lambda.data
 
     gd_wave = np.ones_like(ds.Lambda.data, dtype=bool)
@@ -101,6 +103,7 @@ def load_one_l23(idx:int, step:int=1,
     bb = ds.bb.data[idx,iwave]
     adg = ds.ag.data[idx,iwave] + ds.ad.data[idx,iwave]
     aph = ds.aph.data[idx,iwave]
+    ag = ds.ag.data[idx,iwave] 
 
     # For bp: Lee+2002 prescription
     rrs = Rrs / (bing_rt.A_Rrs + bing_rt.B_Rrs*Rrs)
@@ -135,12 +138,36 @@ def load_one_l23(idx:int, step:int=1,
                  aw=ds.a.data[idx,iwave]-ds.anw.data[idx,iwave],
                  anw=ds.anw.data[idx,iwave],
                  adg=adg, aph=aph, Sdg=float(ans[1]),
+                 ag=ag,
                  Y=Y, Chl=Chl)
 
     return odict
 
 def prep_one_l23(p, idx, chk:bool=False):
-
+    """
+    Prepare data and models for L23 fitting.
+    This function initializes the necessary data, models, priors, and MCMC 
+    parameters for fitting L23 data. It also handles wavelength conversions, 
+    noise scaling, and initial guesses for the fitting process.
+    Args:
+        p (object): Parameter object containing configuration settings such as 
+            wavelength range (`wv_min`, `wv_max`), satellite type (`satellite`), 
+            model names (`model_names`), number of MCMC steps (`nsteps`), 
+            burn-in steps (`nburn`), and other prior settings.
+        idx (int): Index used to load specific L23 data.
+        chk (bool, optional): If True, checks the initial guess for Rrs and 
+            prints the relative difference. Defaults to False.
+    Returns:
+        dict: A dictionary containing the following keys:
+            - 'odict': Dictionary with loaded L23 data.
+            - 'model_Rrs': Modeled remote sensing reflectance (Rrs).
+            - 'model_varRrs': Variance of the modeled Rrs after scaling noise.
+            - 'p0': Initial guess for model parameters.
+            - 'pdict': Dictionary containing MCMC initialization parameters.
+            - 'models': List of initialized models for fitting.
+    Raises:
+        ValueError: If the satellite type specified in `p.satellite` is unknown.
+    """
     odict = load_one_l23(idx, wv_min=p.wv_min, wv_max=p.wv_max)
 
     # Set power-law
@@ -175,6 +202,12 @@ def prep_one_l23(p, idx, chk:bool=False):
 
     # Set priors
     bing_priors.set_standard_priors(models, p)
+
+    # Extra priors?
+    if p.othera_priors is not None:
+        for prior_dict in p.othera_priors:
+            # Append
+            models[0].priors.add_prior(prior_dict)
 
     # Initialize the MCMC
     pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
