@@ -264,7 +264,7 @@ def prep_one_l23(p, idx, chk:bool=False):
     
 
 def fit_one(p:namedtuple, idx:int,
-        debug:bool=False):
+        debug:bool=False, p0:np.ndarray=None):
     """
     Fits a model to the data for a given index.
 
@@ -283,7 +283,13 @@ def fit_one(p:namedtuple, idx:int,
     model_Rrs = prep_dict['model_Rrs']
     model_varRrs = prep_dict['model_varRrs']
     model_wave = models[0].wave
-    p0 = prep_dict['p0']
+
+    # Initial guess
+    if p0 is None:
+        p0 = prep_dict['p0']
+    else:
+        prep_dict['p0'] = p0
+
     l23_wave = odict['true_wave']
 
     # pdict -- this is a hack for a single run
