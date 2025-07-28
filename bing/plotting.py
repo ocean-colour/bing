@@ -28,7 +28,9 @@ def show_fits(models:list, inputs:np.ndarray,
              Rrs_true:dict=None,
              show_params:bool=False,
              perc:tuple=(5,95),
-             log_Rrs:bool=True):
+             log_Rrs:bool=True,
+             log_abb:bool=False):
+
     """
     Plots the fit results for the given models and inputs.
 
@@ -38,6 +40,10 @@ def show_fits(models:list, inputs:np.ndarray,
             ans: The optimized parameters for the curve fitting.
             or 
             chains: The MCMC chains.
+        ex_a_params (np.ndarray):
+            Extra parameters for the a model.
+        ex_bb_params (np.ndarray):
+            Extra parameters for the bb model.
         outfile (str, optional): The path to save the plot as an image file. Default is None.
         figsize (tuple, optional): The size of the figure. Default is (14, 6).
         fontsize (float, optional): The font size of the plot labels. Default is 12.0.
@@ -50,6 +56,9 @@ def show_fits(models:list, inputs:np.ndarray,
         show_params (bool, optional): Whether to show the parameters. Default is False.
         log_Rrs (bool, optional): Whether to use a logarithmic scale for the y-axis of `R_rs`. Default is True.
         perc (tuple, optional): The percentiles to calculate. Default is (5, 95).
+        log_abb (bool, optional):
+            Whether to use a logarithmic scale for the y-axis of a_nw and
+            b_bnw`. Default is False.
 
     Returns:
         axes (list): A list of the axes objects used in the plot.
@@ -116,6 +125,8 @@ def show_fits(models:list, inputs:np.ndarray,
         ax_anw.plot(xqaa['wave'], xqaa['anw'], ':', color='orange', label='XQAA')
     
     ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
+    if log_abb:
+        ax_anw.set_yscale('log')
 
     #ax_anw.plot(wave_true, adg, '-', color='brown', label=r'$a_{\rm dg}$')
     #ax_anw.plot(wave_true, aph, 'b-', label=r'$a_{\rm ph}$')
@@ -140,6 +151,9 @@ def show_fits(models:list, inputs:np.ndarray,
 
     #ax_bb.set_xlabel('Wavelength (nm)')
     ax_bb.set_ylabel(r'$b_{b,nw}(\lambda) \; [{\rm m}^{-1}]$')
+
+    if log_abb:
+        ax_bb.set_yscale('log')
 
     #if set_abblim:
     #    ax_bb.set_ylim(bottom=0., top=2*show_bb.max())
