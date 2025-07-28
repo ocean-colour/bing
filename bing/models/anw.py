@@ -390,26 +390,36 @@ class aNWBricaud(aNWModel):
 
 
     def set_aph(self, Chla):
-
         # Bricaud
-        self.a_ph = self.L23_A * Chla**self.L23_E
 
         # Normalize
         if len(Chla.shape) == 2:
+            Chla_array = np.outer(Chla, np.ones(self.L23_E.size))
+            self.a_ph = self.L23_A * Chla_array**self.L23_E
             norm = np.outer(self.a_ph[:,self.i440], np.ones(self.a_ph.shape[1]))
             self.a_ph /= norm
         else:
+            self.a_ph = self.L23_A * Chla**self.L23_E
             self.a_ph /= self.a_ph[self.i440]
 
         # Extrapolate to <400nm, as necessary
         if self.wave.min() < 400:
             iwave = np.argmin(np.abs(self.wave-400))
-            a400 = self.a_ph[iwave]
+            wv_ext = self.wave < 400.
+            if len(Chla.shape) == 2:
+                a400 = np.outer(self.a_ph[:,iwave], np.ones(np.sum(wv_ext)))
+            else:
+                a400 = self.a_ph[iwave]
             scl_400 = 2./3
             # 
-            wv_ext = self.wave < 400.
-            self.a_ph[wv_ext] = scl_400*a400 + (
-                self.wave[wv_ext]-350) * a400 * (1-scl_400) / 50.
+            if len(Chla.shape) == 2:
+                self.a_ph[:,wv_ext] = scl_400*a400 + (
+                    np.outer(np.ones(a400.shape[0]), self.wave[wv_ext]-350) * a400 *
+                    (1-scl_400) / 50.)
+                    #self.wave[wv_ext]-350) * a400 * (1-scl_400) / 50.
+            else:
+                self.a_ph[wv_ext] = scl_400*a400 + (
+                    self.wave[wv_ext]-350) * a400 * (1-scl_400) / 50.
 
     def init_guess(self, a_nw:np.ndarray):
         """
