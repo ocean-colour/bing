@@ -2265,9 +2265,11 @@ def main(flg):
 
     # Corner
     if flg == 32:
-        fig_corner(['GSM', 'GSM'], idx=170, full_LM=False,
-            SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS',
-            show_log=True, add_noise=True)
+        fig_corner(['ExpBricaud', 'Pow'], PACE=True, idx=170,
+                   use_LM=False, scl_noise='PACE') 
+        #fig_corner(['GSM', 'GSM'], idx=170, full_LM=False,
+        #    SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS',
+        #    show_log=True, add_noise=True)
         #fig_corner(['GSM', 'GSM'], idx=170, full_LM=False,
         #    SeaWiFS=True, use_LM=False, scl_noise='SeaWiFS',
         #    show_log=True)
