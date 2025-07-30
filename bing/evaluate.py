@@ -7,8 +7,27 @@ from bing.fitting import chisq_fit
 
 from IPython import embed
 
-def reconstruct_from_chains(models:list, chains, 
-                            burn:int=7000, thin:int=1,
+def calc_stats(chains, names:list=None, 
+               perc=(5,95)):
+    # Thin/burn
+    chains = thin_burn_chains(chains)
+
+    # Names
+    if names is None:
+        names = [f'p{ii}' for ii in range(chains.shape[1])]
+
+    # Simple stats
+    stats = {}
+    stats['names'] = names
+
+    stats['med'] = np.median(chains, axis=0)
+    stats[f'p{perc[0]:02d}'] = np.percentile(chains, perc[0], axis=0)
+    stats[f'p{perc[1]:02d}'] = np.percentile(chains, perc[1], axis=0)
+
+    return stats
+
+
+def reconstruct_from_chains(models:list, chains:np.ndarray, 
                             perc=(5,95)):
     """
     Reconstructs the parameters and calculates statistics from chains of model parameters.
@@ -16,8 +35,6 @@ def reconstruct_from_chains(models:list, chains,
     Parameters:
         - models (list): A list of model objects.
         - chains (ndarray): An array of shape (n_samples, n_chains, n_params) containing the chains of model parameters.
-        - burn (int): The number of burn-in samples to discard from the chains. Default is 7000.
-        - thin (int): The thinning factor to apply to the chains. Default is 1.
         - perc (tuple): The percentiles to calculate. Default is (5, 95).
 
     Returns:
@@ -32,7 +49,8 @@ def reconstruct_from_chains(models:list, chains,
 
     """
     # Burn/thin the chains
-    chains = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+    chains = thin_burn_chains(chains)
+
     # Calc
     a = models[0].eval_a(chains[..., :models[0].nparam])
     bb = models[1].eval_bb(chains[..., models[0].nparam:])
@@ -114,3 +132,9 @@ def reconstruct_chisq_fits(models:list, params:np.ndarray,
 
     # Return
     return np.array(all_Rrs), np.array(all_a), np.array(all_bb)
+
+
+def thin_burn_chains(chains:np.ndarray, 
+                     burn:int=7000, thin:int=1):
+    # Burn/thin the chains
+    return chains[burn::thin, :, :].reshape(-1, chains.shape[-1])

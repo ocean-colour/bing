@@ -9,7 +9,7 @@ from bing import rt as bing_rt
 
 from IPython import embed
 
-def fit(items:tuple, models:list):
+def fit(items:tuple, models:list, bounds:tuple=None):
     """
     Fits the given Rrs data to the specified models using curve fitting.
 
@@ -20,6 +20,8 @@ def fit(items:tuple, models:list):
             initial parameters 
             index (for running in parallel; it is not used and can be None)
         models (list): The models to fit the data to.
+        bounds (tuple, optonal):
+            Bounds on the parameters
 
     Returns:
         ans (np.ndarray): The optimized parameters for the curve fitting.
@@ -27,13 +29,15 @@ def fit(items:tuple, models:list):
         idx (int): The index of the fitted data. (for book-keeping)
 
     """
+    if bounds is None:
+        bounds = (-np.inf, np.inf)
     # Unpack
     Rrs, varRrs, params, idx = items
 
     partial_func = partial(fit_func, models=models)
     ans, cov =  curve_fit(partial_func, None, 
                           Rrs, p0=params, sigma=np.sqrt(varRrs),
-                          full_output=False)
+                          full_output=False, bounds=bounds)
     # Return
     return ans, cov, idx
 
