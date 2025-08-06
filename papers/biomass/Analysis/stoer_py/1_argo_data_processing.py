@@ -179,22 +179,8 @@ def plot_data_summary(df,file_name):
                                             edgecolor='olive',
                                             facecolor='olive')
     ax_map.add_feature(land_50m)
-    ax_map.add_feature(cfeature.LAKES, edgecolor='black', facecolor='white')
-
-    lon_formatter = LongitudeFormatter()
-    lat_formatter = LatitudeFormatter()
-    ax_map.xaxis.set_major_formatter(lon_formatter)
-    ax_map.yaxis.set_major_formatter(lat_formatter)
-    ax_map.set_ylabel('Latitude')
-    ax_map.set_xlabel('Longitude')
-    ax_map.set_adjustable('datalim')
-
-    for axh in axhlst:
-        i = axhlst.index(axh)
-        if vlst[i] in df_good.columns and len(df_good[vlst[i]].dropna()) != 0:
-            ran = (df_good[vlst[i]].quantile(0.1),df_good[vlst[i]].quantile(0.9))
-            hist, bins = np.histogram(df_good[vlst[i]],range = ran, bins = 50)
-            axh.bar(bins[:-1], hist.astype(np.float32) / hist.max(), 
+    ax_map.add_feature(cfeature.LAKES, e dgecolor='black', facecolor='white')
+ 
                     width=(bins[1]-bins[0]), color='black')
             axh.set_xlim(ran)
         axh.set_title(lablst[i], loc = 'left')
