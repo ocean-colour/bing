@@ -6,8 +6,8 @@ import datetime
 
 import numpy as np
 
-import pysolar.solar
 import xarray
+import pandas
 
 import pysolar
 
@@ -60,20 +60,19 @@ def scan_profiles(surface:float=20., N_surface:int=3, MLD:float=200., N_MLD:int=
                 continue
 
             # Keep em!
-            print("We got one!")
-
             filenames.append(base_file)
             #IDs.append(prof.ARGO_PROFILE.values)
             profiles.append(int(iprof))
             lats.append(float(prof.Lat))
             lons.append(float(prof.Lon))
 
-            embed(header='Found a good profile!')
-            times.append(str(prof.JULD.values))
+            times.append(prof.JULD.values)
+            tstamp = pandas.to_datetime(times[-1], utc=True)
             solar_angles.append(
-                pysolar.solar.get_altitude(float(prof.Lat),
-                              float(prof.Lon),
-                              date))
+                pysolar.solar.get_altitude(lats[-1],
+                              lons[-1],
+                              tstamp)
+            embed(header='Found a good profile!')
 
 
 
