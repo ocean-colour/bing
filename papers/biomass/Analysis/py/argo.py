@@ -2,10 +2,14 @@
 
 import os
 import glob
+import datetime
 
 import numpy as np
 
+import pysolar.solar
 import xarray
+
+import pysolar
 
 from IPython import embed
 
@@ -58,13 +62,19 @@ def scan_profiles(surface:float=20., N_surface:int=3, MLD:float=200., N_MLD:int=
                 good_ones[base_file]['lats'] = []
                 good_ones[base_file]['lons'] = []
                 good_ones[base_file]['times'] = []
+                good_ones[base_file]['solar_angle'] = []
 
             good_ones[base_file]['profiles'].append(int(iprof))
             good_ones[base_file]['lats'].append(float(prof.Lat))
             good_ones[base_file]['lons'].append(float(prof.Lon))
-            good_ones[base_file]['times'].append(str(prof.JULD.values))
 
             embed(header='Found a good profile!')
+            good_ones[base_file]['times'].append(str(prof.JULD.values))
+            good_ones[base_file]['solar_angle'].append(
+                pysolar.solar.get_altitude(float(prof.Lat),
+                              float(prof.Lon),
+                              date))
+
 
 
 if __name__ == '__main__':
