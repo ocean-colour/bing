@@ -37,6 +37,10 @@ def scan_profiles(surface:float=20., N_surface:int=3, MLD:float=200., N_MLD:int=
         # Load the dataset
         ds = xarray.open_dataset(ifile)
 
+        # Check for bbp
+        if 'b_bp700_QF' not in ds.variables:
+            continue
+
         # Loop on profiles
         for iprof in ds.N_PROF.values:
             # Grab the profile
