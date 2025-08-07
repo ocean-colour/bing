@@ -22,7 +22,14 @@ def scan_profiles(surface:float=20., N_surface:int=3, MLD:float=200., N_MLD:int=
     # Grab all .nc files
     all_files = glob.glob(os.path.join(argo_path,'*.nc'))
 
-    good_ones = {}
+    filenames = []
+    IDs = []
+    profiles = []
+    lats = []
+    lons = []
+    times = []
+    solar_angles = []
+
     # Loop on em
     for ifile in all_files:
         base_file = os.path.basename(ifile)
@@ -55,22 +62,15 @@ def scan_profiles(surface:float=20., N_surface:int=3, MLD:float=200., N_MLD:int=
             # Keep em!
             print("We got one!")
 
-            # Record
-            if base_file not in good_ones:
-                good_ones[base_file] = {}
-                good_ones[base_file]['profiles'] = []
-                good_ones[base_file]['lats'] = []
-                good_ones[base_file]['lons'] = []
-                good_ones[base_file]['times'] = []
-                good_ones[base_file]['solar_angle'] = []
-
-            good_ones[base_file]['profiles'].append(int(iprof))
-            good_ones[base_file]['lats'].append(float(prof.Lat))
-            good_ones[base_file]['lons'].append(float(prof.Lon))
+            filenames.append(base_file)
+            #IDs.append(prof.ARGO_PROFILE.values)
+            profiles.append(int(iprof))
+            lats.append(float(prof.Lat))
+            lons.append(float(prof.Lon))
 
             embed(header='Found a good profile!')
-            good_ones[base_file]['times'].append(str(prof.JULD.values))
-            good_ones[base_file]['solar_angle'].append(
+            times.append(str(prof.JULD.values))
+            solar_angles.append(
                 pysolar.solar.get_altitude(float(prof.Lat),
                               float(prof.Lon),
                               date))
