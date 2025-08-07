@@ -72,8 +72,7 @@ def scan_profiles(surface:float=20., N_surface:int=3, MLD:float=200., N_MLD:int=
                 float(pysolar.solar.get_altitude(lats[-1],
                               lons[-1],
                               tstamp)))
-        #
-        embed(header='76 of argo')
+        #embed(header='76 of argo')
 
     # Generate a DataFrame
     df = pandas.DataFrame({
@@ -84,6 +83,11 @@ def scan_profiles(surface:float=20., N_surface:int=3, MLD:float=200., N_MLD:int=
         'time': times,
         'solar_angle': solar_angles
     })
+
+    # Write
+    outfile = 'argo_profiles_bbp.csv'
+    df.to_csv(outfile, index=False)
+    print(f'Wrote {len(df)} profiles to {outfile}')
 
 
 if __name__ == '__main__':
