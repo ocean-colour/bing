@@ -69,11 +69,21 @@ def scan_profiles(surface:float=20., N_surface:int=3, MLD:float=200., N_MLD:int=
             times.append(prof.JULD.values)
             tstamp = pandas.to_datetime(times[-1], utc=True)
             solar_angles.append(
-                pysolar.solar.get_altitude(lats[-1],
+                float(pysolar.solar.get_altitude(lats[-1],
                               lons[-1],
-                              tstamp))
-            embed(header='Found a good profile!')
+                              tstamp)))
+        #
+        embed(header='76 of argo')
 
+    # Generate a DataFrame
+    df = pandas.DataFrame({
+        'filename': filenames,
+        'profile': profiles,
+        'lat': lats,
+        'lon': lons,
+        'time': times,
+        'solar_angle': solar_angles
+    })
 
 
 if __name__ == '__main__':
