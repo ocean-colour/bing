@@ -13,17 +13,22 @@ import pysolar
 
 from IPython import embed
 
-def scan_profiles(surface:float=20., N_surface:int=3, MLD:float=200., N_MLD:int=5):
+def scan_profiles(surface:float=20., N_surface:int=3, 
+                  MLD:float=200., N_MLD:int=5,
+                  argo_path:str=None):
     """ Search for Argo profiles with sufficient data """
-    argo_path = os.path.join(os.getenv('OS_DATA'), 
+    if argo_path is None:
+        argo_path = os.path.join(os.getenv('OS_DATA'), 
                              'Argo', 
                              'SOCCOM_GO-BGC_HiResQC_LIAR_26Jun2025_netcdf')
 
     # Grab all .nc files
     all_files = glob.glob(os.path.join(argo_path,'*.nc'))
+    # Sort
+    all_files = sorted(all_files)
 
     filenames = []
-    IDs = []
+    cruises = []
     profiles = []
     lats = []
     lons = []
@@ -66,7 +71,7 @@ def scan_profiles(surface:float=20., N_surface:int=3, MLD:float=200., N_MLD:int=
 
             # Keep em!
             filenames.append(base_file)
-            #IDs.append(prof.ARGO_PROFILE.values)
+            cruises.append(str(prof.Cruise.data.astype(str)).strip())
             profiles.append(int(iprof))
             lats.append(float(prof.Lat))
             lons.append(float(prof.Lon))
@@ -81,6 +86,7 @@ def scan_profiles(surface:float=20., N_surface:int=3, MLD:float=200., N_MLD:int=
 
     # Generate a DataFrame
     df = pandas.DataFrame({
+        'cruise': cruises,
         'filename': filenames,
         'profile': profiles,
         'lat': lats,
@@ -90,7 +96,7 @@ def scan_profiles(surface:float=20., N_surface:int=3, MLD:float=200., N_MLD:int=
     })
 
     # Write
-    outfile = 'argo_profiles_bbp.csv'
+    outfile = 'argo_bgc_profiles_bbp.csv'
     df.to_csv(outfile, index=False)
     print(f'Wrote {len(df)} profiles to {outfile}')
 
@@ -98,5 +104,9 @@ def scan_profiles(surface:float=20., N_surface:int=3, MLD:float=200., N_MLD:int=
 if __name__ == '__main__':
 
     # Scan Argo profiles
-    scan_profiles()
+    #https://library.ucsd.edu/dc/object/bb1310816p
+    argo_path = os.path.join(os.getenv('OS_DATA'), 
+                             'Argo', 
+                             'SOCCOM_GO-BGC_LoResQC_LIAR_26Jun2025_netcdf')
+    scan_profiles(argo_path=argo_path)
             
