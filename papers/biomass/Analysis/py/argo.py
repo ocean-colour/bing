@@ -71,7 +71,7 @@ def scan_profiles(surface:float=20., N_surface:int=3, MLD:float=200., N_MLD:int=
             solar_angles.append(
                 pysolar.solar.get_altitude(lats[-1],
                               lons[-1],
-                              tstamp)
+                              tstamp))
             embed(header='Found a good profile!')
 
 
