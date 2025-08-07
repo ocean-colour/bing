@@ -33,6 +33,7 @@ def scan_profiles(surface:float=20., N_surface:int=3, MLD:float=200., N_MLD:int=
     # Loop on em
     for ifile in all_files:
         base_file = os.path.basename(ifile)
+        print(f'Examining {base_file}')
         # Load the dataset
         ds = xarray.open_dataset(ifile)
 
