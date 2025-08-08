@@ -11,17 +11,27 @@ import pandas
 
 import pysolar
 
+from shapely.vectorized import contains
+
+# Local imports
+import grab_pace_granules
+import gpolygons
+
 from IPython import embed
 
-def load_argo(csv_file='argo_bgc_profiles_bbp.csv',
+
+
+def load_orig_argo(csv_file:str='argo_bgc_profiles_bbp.csv',
               cut_for_pace:bool=True):
-    df = pandas.read_csv('argo_bgc_profiles_bbp.csv')
+    df = pandas.read_csv(csv_file)
     df['time'] = pandas.to_datetime(df.time.values, utc=True)
 
     # Cut for PACE?
     if cut_for_pace:
         old_enough = df.time > pandas.Timestamp('2024-04-01', tz='UTC')
         df = df[old_enough].copy()
+        # Drop index
+        df.reset_index(drop=True, inplace=True)
 
     # Deal with lon
     lons = df.lon.values
@@ -31,6 +41,50 @@ def load_argo(csv_file='argo_bgc_profiles_bbp.csv',
     # Return
     return df
 
+def match_argo_to_pace(out_file:str, dtime:str='1 day'):
+
+    # Load up Argo profiles, already cut to PACE dates
+    argo_pace = load_orig_argo()
+
+    # Load up PACE granules
+    granules, pace = grab_pace_granules.load_from_json('PACE_50clouds.json')
+
+    # Check if in PACE granule
+    all_inside = []
+    for ss in range(len(pace)):
+        inside = contains(pace.polygon.values[ss], argo_pace.lon, argo_pace.lat)
+        all_inside.append(np.array(inside))
+    all_inside = np.array(all_inside)
+
+    # Time window
+    ok_times = []
+    for ss in range(len(pace)):
+        dt = pandas.Timestamp(pace.iloc[ss].time) - argo_pace.time
+        good_dt = np.abs(dt) < pandas.Timedelta(dtime)
+        ok_times.append(np.array(good_dt))
+    ok_times = np.array(ok_times)
+
+    # Match
+    match = all_inside & ok_times
+    good_idx = np.where(match)
+    argo_idx = good_idx[1]
+
+    print(f'Found {np.unique(argo_idx).size} unique Argo profiles in PACE granules within {dtime}')
+
+    # Loop on good_argo indices 
+    done = []
+    for jj, idx in enumerate(argo_idx):
+        if idx in done:
+            #print("Skipping already processed index:", idx)
+            continue
+        granule_idx = good_idx[0][jj]
+        argo_pace.loc[idx, 'pace_id'] = pace.iloc[granule_idx].id
+        argo_pace.loc[idx, 'pace_time'] = pace.iloc[granule_idx].time
+        done.append(idx)
+
+    # Write
+    argo_pace.to_csv(out_file, index=False)
+    print(f'Wrote {len(argo_pace)} profiles to {out_file}')
 
 def scan_profiles(surface:float=20., N_surface:int=3, 
                   MLD:float=200., N_MLD:int=5,
@@ -122,10 +176,19 @@ def scan_profiles(surface:float=20., N_surface:int=3,
 
 if __name__ == '__main__':
 
+    scan = False
+    match = True
+
     # Scan Argo profiles
     #https://library.ucsd.edu/dc/object/bb1310816p
-    argo_path = os.path.join(os.getenv('OS_DATA'), 
+    if scan:
+        argo_path = os.path.join(os.getenv('OS_DATA'), 
                              'Argo', 
                              'SOCCOM_GO-BGC_LoResQC_LIAR_26Jun2025_netcdf')
-    scan_profiles(argo_path=argo_path)
+        scan_profiles(argo_path=argo_path)
             
+
+    # Match
+    if match:
+        out_file='matched_argo_bgc_profiles_bbp.csv'
+        match_argo_to_pace(out_file, dtime='1 day')

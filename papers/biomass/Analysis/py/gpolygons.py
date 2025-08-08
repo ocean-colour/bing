@@ -11,7 +11,7 @@ import cartopy.feature as cfeature
 from remote_sensing.download import earthaccess as rs_ea
 
 
-def plot_spatial_extent(granule, granule_title="Data Granule"):
+def plot_spatial_extent(granule, granule_title="Data Granule", show:bool=True):
     """
     Plot the spatial extent using matplotlib and cartopy.
     
@@ -94,6 +94,8 @@ def plot_spatial_extent(granule, granule_title="Data Granule"):
     
     plt.title(f'{granule_title}\nSpatial Extent Visualization')
     plt.legend(loc='upper right')
+    if show:
+        plt.show()
     
     return fig
 
@@ -132,7 +134,7 @@ def demonstrate_spatial_extent_extraction():
         return
     
     # Extract spatial extent
-    spatial_info = extract_spatial_extent(granule)
+    spatial_info = rs_ea.extract_spatial_extent(granule)
     
     print("\n=== Spatial Extent Summary ===")
     print(f"GPolygons found: {len(spatial_info['gpolygons'])}")
