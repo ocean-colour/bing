@@ -8,172 +8,24 @@ from matplotlib.patches import Polygon as MPLPolygon
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
-def extract_spatial_extent(granule):
-    """
-    Extract spatial extent information from an earthaccess DataGranule object.
-    
-    Parameters:
-    -----------
-    granule : earthaccess.results.DataGranule
-        The granule object to extract spatial extent from
-        
-    Returns:
-    --------
-    dict : Dictionary containing extracted spatial information
-    """
-    spatial_info = {
-        'bounding_rectangles': [],
-        'gpolygons': [],
-        'points': [],
-        'lines': []
-    }
-    
-    # Check if spatial extent exists
-    if 'SpatialExtent' not in granule.get('umm', {}):
-        print("No spatial extent found in granule metadata")
-        return spatial_info
-    
-    spatial_extent = granule['umm']['SpatialExtent']
-    
-    # Extract horizontal spatial domain
-    if 'HorizontalSpatialDomain' in spatial_extent:
-        horizontal_domain = spatial_extent['HorizontalSpatialDomain']
-        
-        if 'Geometry' in horizontal_domain:
-            geometry = horizontal_domain['Geometry']
-            
-            # Extract GPolygons
-            if 'GPolygons' in geometry:
-                for gpolygon in geometry['GPolygons']:
-                    polygon_info = {
-                        'boundary_points': [],
-                        'exclusive_zones': []
-                    }
-                    
-                    # Extract boundary points
-                    if 'Boundary' in gpolygon:
-                        boundary = gpolygon['Boundary']
-                        if 'Points' in boundary:
-                            points = [(point['Longitude'], point['Latitude']) 
-                                    for point in boundary['Points']]
-                            polygon_info['boundary_points'] = points
-                    
-                    # Extract exclusive zones (holes)
-                    if 'ExclusiveZone' in gpolygon:
-                        if 'Boundaries' in gpolygon['ExclusiveZone']:
-                            for boundary in gpolygon['ExclusiveZone']['Boundaries']:
-                                if 'Points' in boundary:
-                                    hole_points = [(point['Longitude'], point['Latitude']) 
-                                                 for point in boundary['Points']]
-                                    polygon_info['exclusive_zones'].append(hole_points)
-                    
-                    spatial_info['gpolygons'].append(polygon_info)
-            
-            # Extract BoundingRectangles
-            if 'BoundingRectangles' in geometry:
-                for rect in geometry['BoundingRectangles']:
-                    spatial_info['bounding_rectangles'].append({
-                        'west': rect.get('WestBoundingCoordinate'),
-                        'east': rect.get('EastBoundingCoordinate'), 
-                        'north': rect.get('NorthBoundingCoordinate'),
-                        'south': rect.get('SouthBoundingCoordinate')
-                    })
-            
-            # Extract Points
-            if 'Points' in geometry:
-                for point in geometry['Points']:
-                    spatial_info['points'].append((
-                        point['Longitude'], 
-                        point['Latitude']
-                    ))
-            
-            # Extract Lines
-            if 'Lines' in geometry:
-                for line in geometry['Lines']:
-                    if 'Points' in line:
-                        line_points = [(point['Longitude'], point['Latitude']) 
-                                     for point in line['Points']]
-                        spatial_info['lines'].append(line_points)
-    
-    return spatial_info
+from remote_sensing.download import earthaccess as rs_ea
 
-def create_shapely_geometries(spatial_info):
-    """
-    Convert spatial extent information to Shapely geometry objects.
-    
-    Parameters:
-    -----------
-    spatial_info : dict
-        Spatial information dictionary from extract_spatial_extent
-        
-    Returns:
-    --------
-    dict : Dictionary containing Shapely geometry objects
-    """
-    geometries = {
-        'polygons': [],
-        'rectangles': [],
-        'points': [],
-        'lines': []
-    }
-    
-    # Convert GPolygons to Shapely Polygons
-    for gpolygon in spatial_info['gpolygons']:
-        if gpolygon['boundary_points']:
-            # Create exterior ring
-            exterior = gpolygon['boundary_points']
-            
-            # Create holes (exclusive zones)
-            holes = gpolygon['exclusive_zones'] if gpolygon['exclusive_zones'] else None
-            
-            try:
-                # Ensure proper orientation (counter-clockwise for exterior)
-                polygon = Polygon(exterior, holes=holes)
-                # Orient exterior counter-clockwise, holes clockwise
-                oriented_polygon = orient(polygon)
-                geometries['polygons'].append(oriented_polygon)
-            except Exception as e:
-                print(f"Error creating polygon: {e}")
-    
-    # Convert BoundingRectangles to Shapely Polygons
-    for rect in spatial_info['bounding_rectangles']:
-        if all(coord is not None for coord in [rect['west'], rect['east'], 
-                                              rect['north'], rect['south']]):
-            # Create rectangle coordinates (counter-clockwise)
-            rect_coords = [
-                (rect['west'], rect['south']),   # SW
-                (rect['east'], rect['south']),   # SE  
-                (rect['east'], rect['north']),   # NE
-                (rect['west'], rect['north']),   # NW
-                (rect['west'], rect['south'])    # Close
-            ]
-            geometries['rectangles'].append(Polygon(rect_coords))
-    
-    # Convert Points to Shapely Points
-    for point in spatial_info['points']:
-        geometries['points'].append(Point(point))
-    
-    # Convert Lines to Shapely LineStrings
-    from shapely.geometry import LineString
-    for line in spatial_info['lines']:
-        if len(line) >= 2:
-            geometries['lines'].append(LineString(line))
-    
-    return geometries
 
-def plot_spatial_extent(spatial_info, geometries, granule_title="Data Granule"):
+def plot_spatial_extent(granule, granule_title="Data Granule"):
     """
     Plot the spatial extent using matplotlib and cartopy.
     
     Parameters:
     -----------
-    spatial_info : dict
+    granule : dict
         Raw spatial information
-    geometries : dict  
-        Shapely geometry objects
     granule_title : str
         Title for the plot
     """
+    spatial_info = rs_ea.extract_spatial_extent(granule)
+    geometries = rs_ea.create_shapely_geometries(spatial_info, 
+                                                 fix_antimeridian=True)
+
     fig = plt.figure(figsize=(12, 8))
     
     # Determine bounds for the plot

@@ -31,7 +31,8 @@ def load_from_json(json_file:str):
     granules = ocpy_io.loadjson(json_file)
 
     # Build the table
-    df = rs_ea.build_granule_table(granules)
+    df = rs_ea.build_granule_table(granules, 
+                                   fix_antimeridian=True)
 
     # Return
     return granules, df
