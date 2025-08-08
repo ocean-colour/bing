@@ -13,6 +13,25 @@ import pysolar
 
 from IPython import embed
 
+def load_argo(csv_file='argo_bgc_profiles_bbp.csv',
+              cut_for_pace:bool=True):
+    df = pandas.read_csv('argo_bgc_profiles_bbp.csv')
+    df['time'] = pandas.to_datetime(df.time.values, utc=True)
+
+    # Cut for PACE?
+    if cut_for_pace:
+        old_enough = df.time > pandas.Timestamp('2024-04-01', tz='UTC')
+        df = df[old_enough].copy()
+
+    # Deal with lon
+    lons = df.lon.values
+    lons[lons > 180] -= 360
+    df['lon'] = lons
+
+    # Return
+    return df
+
+
 def scan_profiles(surface:float=20., N_surface:int=3, 
                   MLD:float=200., N_MLD:int=5,
                   argo_path:str=None):
