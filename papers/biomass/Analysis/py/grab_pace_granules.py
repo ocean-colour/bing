@@ -8,6 +8,9 @@ import earthaccess
 import pandas
 
 from ocpy.utils import io as ocpy_io
+from ocpy.pace import io as pace_io
+from ocpy.utils import coords as ocpy_coords
+
 from remote_sensing.download import earthaccess as rs_ea
 
 from IPython import embed
@@ -87,6 +90,81 @@ def download_matched(match_file:str):
             subprocess.run(['wget', '-O', outfile, granule.url])
     print(f'Downloaded {len(matched)} Argo profiles to {PACE_L2_AOP_PATH}')        
 
+def find_closest(match_file:str, iRrs:int=38,
+                 debug:bool=False):
+
+    # Load up Argo profiles, already matched to PACE
+    matched = pandas.read_csv(match_file)
+
+    # Load up PACE granules
+    granules, pace = load_from_json('PACE_50clouds.json')
+
+    # Items to add to the table
+    sv_ids = []
+    sv_dist = []
+    sv_time = []
+    sv_file = []
+
+    # Loop on Argo profiles
+    for irow in range(len(matched)):
+        row = matched.iloc[irow]
+
+        # Get the PACE IDs
+        pace_ids = row['pace_ids'].split(',')
+
+        mind = 1e9
+        # Find the granules
+        for jj, pace_id in enumerate(pace_ids):
+            ss = np.where(pace.id == pace_id)[0][0]
+            granule = pace.iloc[ss]
+            #embed(header=f'Granule for {pace_id}')
+
+            pace_file = os.path.join(PACE_L2_AOP_PATH, 
+                os.path.basename(granule.url))
+
+            # Load up
+            xds, flags = pace_io.load_oci_l2(pace_file)
+            Rrs_ok = xds.Rrs_unc.values[:,:,iRrs] > 0.
+
+            # Closest good Rrs
+            coords = np.stack((xds.latitude.values.flatten(), 
+                   xds.longitude.values.flatten()), axis=1)
+            d = ocpy_coords.distance_from_latlon((
+                row.lat, row.lon), coords)
+            dmin = d[Rrs_ok.flatten()].min()
+            # 
+            if dmin < mind:
+                mind = dmin
+                best_g = granule
+
+        # Save best
+        sv_ids.append(best_g.id)
+        sv_file.append(os.path.basename(best_g.url))
+        sv_dist.append(mind)
+        sv_time.append(best_g.time)
+        #embed(header='133 of grab')
+
+        # Debug?
+        if debug and irow > 4:
+            break
+    # Debug?
+    if debug:
+        embed(header='152 of grab')
+        print(f'Debug mode, only processed {irow+1} of {len(matched)}')
+        cut = np.array([False]*len(matched))
+        cut[:irow+1] = True
+        matched = matched[cut].copy()
+        matched.reset_index(drop=True, inplace=True)
+
+    # Add to table
+    #embed(header='160 of grab')
+    matched['closest_id'] = sv_ids
+    matched['closest_file'] = sv_file
+    matched['closest_dist_km'] = sv_dist
+    matched['closest_time'] = sv_time
+
+    embed(header='163 of grab')
+
 def load_from_json(json_file:str):
     # Load
     granules = ocpy_io.loadjson(json_file)
@@ -103,7 +181,8 @@ def load_from_json(json_file:str):
 if __name__ == '__main__':
 
     build_json = False
-    download = True
+    download = False
+    closest = True
 
     if build_json:
         # Build the JSON file
@@ -113,3 +192,8 @@ if __name__ == '__main__':
     if download:
         # Download nearest granules
         download_matched('matched_argo_bgc_profiles_bbp.csv')
+
+    if closest:
+        # Find closest granules
+        find_closest('matched_argo_bgc_profiles_bbp.csv',
+                     debug=False)
