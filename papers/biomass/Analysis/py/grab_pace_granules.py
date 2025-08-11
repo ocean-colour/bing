@@ -91,7 +91,7 @@ def download_matched(match_file:str):
     print(f'Downloaded {len(matched)} Argo profiles to {PACE_L2_AOP_PATH}')        
 
 def find_closest(match_file:str, iRrs:int=38,
-                 debug:bool=False):
+                 debug:bool=False, skip_to:int=None):
 
     # Load up Argo profiles, already matched to PACE
     matched = pandas.read_csv(match_file)
@@ -108,6 +108,8 @@ def find_closest(match_file:str, iRrs:int=38,
     # Loop on Argo profiles
     for irow in range(len(matched)):
         row = matched.iloc[irow]
+        if skip_to is not None and irow < (skip_to-1):
+            continue
 
         # Get the PACE IDs
         pace_ids = row['pace_ids'].split(',')
@@ -120,7 +122,7 @@ def find_closest(match_file:str, iRrs:int=38,
             granule = pace.iloc[ss]
             #embed(header=f'Granule for {pace_id}')
 
-            pace_file = os.path.join(PACE_L2_AOP_PATH, 
+            pace_file = os.path.join(PACE_L2_AOP_PATH,
                 os.path.basename(granule.url))
 
             # Load up
@@ -148,6 +150,10 @@ def find_closest(match_file:str, iRrs:int=38,
         # Debug?
         if debug and irow > 4:
             break
+
+    if skip_to is not None:
+        return
+
     # Debug?
     if debug:
         embed(header='152 of grab')
@@ -198,4 +204,4 @@ if __name__ == '__main__':
     if closest:
         # Find closest granules
         find_closest('matched_argo_bgc_profiles_bbp.csv',
-                     debug=False)
+                     debug=False, skip_to=298)
