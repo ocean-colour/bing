@@ -67,20 +67,19 @@ def match_argo_to_pace(out_file:str, dtime:str='1 day'):
     # Match
     match = all_inside & ok_times
     good_idx = np.where(match)
+    pace_idx = good_idx[0]
     argo_idx = good_idx[1]
 
     print(f'Found {np.unique(argo_idx).size} unique Argo profiles in PACE granules within {dtime}')
 
     # Loop on good_argo indices 
-    done = []
     for jj, idx in enumerate(argo_idx):
-        if idx in done:
-            #print("Skipping already processed index:", idx)
-            continue
         granule_idx = good_idx[0][jj]
+        # Find all matches
+        ss = argo_idx == idx
+        #
         argo_pace.loc[idx, 'pace_id'] = pace.iloc[granule_idx].id
-        argo_pace.loc[idx, 'pace_time'] = pace.iloc[granule_idx].time
-        done.append(idx)
+        #argo_pace.loc[idx, 'pace_time'] = pace.iloc[granule_idx].time
 
     # Write
     argo_pace.to_csv(out_file, index=False)
