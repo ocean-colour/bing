@@ -115,6 +115,7 @@ def find_closest(match_file:str, iRrs:int=38,
         mind = 1e9
         # Find the granules
         for jj, pace_id in enumerate(pace_ids):
+            print(f'Processing {irow+1}/{len(matched)}: {pace_id} ({jj+1}/{len(pace_ids)})')
             ss = np.where(pace.id == pace_id)[0][0]
             granule = pace.iloc[ss]
             #embed(header=f'Granule for {pace_id}')
@@ -163,7 +164,8 @@ def find_closest(match_file:str, iRrs:int=38,
     matched['closest_dist_km'] = sv_dist
     matched['closest_time'] = sv_time
 
-    embed(header='163 of grab')
+    # Write
+    matched.to_csv(match_file, index=False)
 
 def load_from_json(json_file:str):
     # Load
