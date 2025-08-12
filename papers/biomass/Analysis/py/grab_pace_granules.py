@@ -128,6 +128,9 @@ def find_closest(match_file:str, iRrs:int=38,
             # Load up
             xds, flags = pace_io.load_oci_l2(pace_file)
             Rrs_ok = xds.Rrs_unc.values[:,:,iRrs] > 0.
+            if not np.any(Rrs_ok):
+                print(f'No valid Rrs found in {pace_file}, skipping')
+                continue
 
             # Closest good Rrs
             coords = np.stack((xds.latitude.values.flatten(), 
@@ -141,10 +144,14 @@ def find_closest(match_file:str, iRrs:int=38,
                 best_g = granule
 
         # Save best
+        if mind == 1e9:
+            # This is a hack, but distance is very large
+            best_g = granule
         sv_ids.append(best_g.id)
         sv_file.append(os.path.basename(best_g.url))
-        sv_dist.append(mind)
         sv_time.append(best_g.time)
+
+        sv_dist.append(mind)
         #embed(header='133 of grab')
 
         # Debug?
@@ -204,4 +211,4 @@ if __name__ == '__main__':
     if closest:
         # Find closest granules
         find_closest('matched_argo_bgc_profiles_bbp.csv',
-                     debug=False, skip_to=298)
+                     debug=False)#, skip_to=799)
