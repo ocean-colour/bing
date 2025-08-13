@@ -14,7 +14,8 @@ from ocpy.utils import plotting
 from bing import evaluate
 
 
-def plot_fit(models, chains, Rrs_obs, outfile:str=None, 
+def plot_fit(models, chains, Rrs_obs, stats:dict=None,
+             outfile:str=None, 
              ulist:list=None, perc:tuple=(5,95),
              show_Rsig:bool=False):
 
@@ -49,6 +50,15 @@ def plot_fit(models, chains, Rrs_obs, outfile:str=None,
     ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
     ax_anw.set_yscale('log')
 
+    model = models[0]
+    ypos = 0.1
+    for ss in range(model.nparam):
+        ax_anw.text(0.05, ypos, 
+                  f'{model.pnames[ss]} = {10**params[ip]:.2f}',
+            transform=ax_anw.transAxes, fontsize=13.)
+        ypos += 0.07
+        ip += 1
+
     # #########################################################
     # bb nw
     ax_bb = plt.subplot(gs[2])
@@ -57,7 +67,6 @@ def plot_fit(models, chains, Rrs_obs, outfile:str=None,
             color='g', alpha=0.5, label='Uncertainty') 
     ax_bb.set_ylabel(r'$b_{b,nw}(\lambda) \; [{\rm m}^{-1}]$')
     ax_bb.set_yscale('log')
-
 
     # #########################################################
     # Rs
