@@ -8,8 +8,10 @@ import matplotlib as mpl
 import matplotlib.gridspec as gridspec
 mpl.rcParams['font.family'] = 'stixgeneral'
 
+import corner
+
 from ocpy.water import absorption
-from ocpy.hydrolight import loisel23
+from ocpy.water import scattering as w_scattering
 from ocpy.utils import plotting
 
 from bing import evaluate
@@ -88,17 +90,8 @@ def show_fits(models:list, inputs:np.ndarray,
 
     # Water
     a_w = absorption.a_water(wave, data='IOCCG')
-    # TODO -- FIX THIS!
-    # THIS IS A HACK UNTIL I CAN RESOLVE bbw
-    ds = loisel23.load_ds(4,0)
-    l23_wave = ds.Lambda.data
-    idx = 170 # Random choie
-    l23_bb = ds.bb.data[idx] 
-    l23_bbnw = ds.bbnw.data[idx] 
-    l23_bbw = l23_bb - l23_bbnw
-    # Interpolate
-    bb_w = np.interp(wave, l23_wave, l23_bbw)
-
+    bb_w = w_scattering.bbw_from_l23(wave)
+    
     # #########################################################
     # Plot the solution
     lgsz = 14.
@@ -286,3 +279,68 @@ def show_anw_fits(models:list, prep_chains:np.ndarray,
         plt.show()
 
     return ax_anw
+
+def corner_plot(chains, models:list=None, 
+           outfile:str=None,
+           show:bool=True, show_log:bool=True):
+
+    # Init the models
+    #models = model_utils.init(p.model_names, d_chains['wave'])
+
+    burn = 7000
+    thin = 1
+    coeff = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+    if not show_log:
+        coeff = 10**coeff
+
+    truths = None
+
+    # Labels
+    if models is not None:
+        clbls = models[0].pnames + models[1].pnames
+        # Add log 10
+        clbls = [r'$\log_{10}('+f'{clbl}'+r'$)' for clbl in clbls]
+    else:
+        clbls = None
+
+    # Replace Aph with Cph
+    #for ss, clbl in enumerate(clbls):
+    #    if 'Aph' in clbl:
+    #        clbls[ss] = clbl.replace('Aph', 'Cph')
+    #embed(header='figs 407')
+
+    if show_log and truths is not None:
+        truths = np.log10(truths)
+
+    fig = corner.corner(
+        coeff, labels=clbls,
+        label_kwargs={'fontsize':17},
+        color='k',
+        #axes_scale='log',
+        truths=truths,
+        show_titles=True,
+        title_kwargs={"fontsize": 12},
+        )
+
+    # Add 95%
+    ss = 0
+    for ax in fig.get_axes():
+        if len(ax.get_title()) > 0:
+            # Calculate the percntile
+            p_5, p_95 = np.percentile(coeff[:,ss], [5, 95], axis=0)
+            # Plot a vertical line
+            ax.axvline(p_5, color='b', linestyle=':')
+            ax.axvline(p_95, color='b', linestyle=':')
+            ss += 1
+
+
+
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    if outfile is not None:
+        plt.savefig(outfile, dpi=300)
+        print(f"Saved: {outfile}")
+
+    if show:
+        plt.show()
+
+    return fig
