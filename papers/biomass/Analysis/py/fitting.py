@@ -1,4 +1,5 @@
 
+import os
 import numpy as np
 from scipy.interpolate import interp1d
 
@@ -9,15 +10,102 @@ import matplotlib.image as mpimg
 mpl.rcParams['font.family'] = 'stixgeneral'
 
 import corner
+import pandas
 
 from ocpy.water import absorption
 from ocpy.water import scattering as w_scattering
 from ocpy.utils import plotting
+from ocpy.pace import io as pace_io
 
 from bing import evaluate
+from bing.parameters import standard
+from bing.models import utils as model_utils
+from bing.priors import priors as bing_priors
+from bing.fitting import inference as bing_inf
+from bing.fitting import chisq_fit
 
+# Locals
+from grab_pace_granules import closest_Rrs
 
-def plot_fit(models, chains, Rrs_obs, stats:dict=None,
+from IPython import embed
+
+def fit_one(imatched:pandas.Series, outfile:str):
+
+    # Load PACE file
+    gfile = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_AOP', 
+                     imatched.closest_file)
+    print(f"----- Loading {gfile} -----")
+    xds, flags = pace_io.load_oci_l2(gfile)
+
+    # Find closest Rrs
+    d_min, dmin_ij = closest_Rrs(xds, (imatched.lat, imatched.lon))
+
+    # Parse out the data
+    ix, iy = dmin_ij
+    gd_wave = (xds.wavelength.data >= 400.) &  (xds.wavelength.data <= 700.) 
+    iwave = xds.wavelength.data[gd_wave]
+    ispec = xds.Rrs.data[ix,iy,gd_wave]
+    isig = xds.Rrs_unc.data[ix,iy,gd_wave]
+
+    # Init models
+    p = standard.expb_pow()
+    models = model_utils.init(p.model_names, iwave)
+    bing_priors.set_standard_priors(models, p)
+    pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
+
+    # Fit with LM for first guess
+    low_bounds, high_bounds = [], []
+    low_bounds += [item['pmin'] for item in p.apriors]
+    low_bounds += [item['pmin'] for item in p.bpriors]
+    high_bounds += [item['pmax'] for item in p.apriors]
+    high_bounds += [item['pmax'] for item in p.bpriors]
+    #
+    bounds = (np.array(low_bounds), np.array(high_bounds))
+
+    p0 = [-1, 0.015, -1, -1, 1.5]
+    items = [(ispec, isig**2, p0, 0)]
+    ans, cov, idx = chisq_fit.fit(items[0], models, bounds=bounds)
+
+    # Now the MCMC
+    p0 = ans.tolist()
+    items = [(ispec, isig**2, p0, 0)]
+    pdict['Chl'] = np.array([10**p0[2] / 0.05582])
+    pdict['Y'] = None
+
+    print("----- Fitting with MCMC -----")
+    chains, idx = bing_inf.fit_one(
+        items[0], models=models, pdict=pdict, chains_only=True)
+    stats = evaluate.calc_stats(chains)
+
+    # Save
+    out_dict = {}
+    out_dict['chains'] = chains
+    out_dict['LM'] = ans
+    out_dict['wave'] = iwave
+    out_dict['Rrs'] = ispec
+    out_dict['Rrs_sig'] = isig
+    out_dict['Rrs_idx'] = np.array(dmin_ij) # ij in xds
+    #
+    out_dict['med'] = stats['med']
+    out_dict['p05'] = stats['p05']
+    out_dict['p95'] = stats['p95']
+    out_dict['model_names'] = [model.name for model in models]
+
+    np.savez(outfile, **out_dict)
+    print(f"Saved: {outfile}")
+
+    # Plot me
+    print("----- Plotting -----")
+    title = f'Float={imatched.cruise}-{imatched.profile}, lat={imatched.lat},'+\
+    f'lon={imatched.lon}, time={imatched.time[:19]}, {imatched.closest_id[12:-9]}'
+    Rrs_obs=dict(wave=models[0].wave, spec=ispec, var=isig**2)
+    plotfile=outfile.replace('.npz', '.png')
+    plot_fit(models, chains, Rrs_obs, title, show_Rsig=True,
+                   outfile=plotfile)
+
+    
+
+def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
              outfile:str=None, 
              ulist:list=None, perc:tuple=(5,95),
              show_Rsig:bool=False):
@@ -25,6 +113,9 @@ def plot_fit(models, chains, Rrs_obs, stats:dict=None,
     # Do this first
     mini_corner(models, chains, ['Sdg', 'beta', 'Bnw'],
                 outfile='tmpc.png')
+
+    if stats is None:
+        stats = evaluate.calc_stats(chains)
 
     # Wavelengths
     wave = models[0].wave
@@ -77,7 +168,7 @@ def plot_fit(models, chains, Rrs_obs, stats:dict=None,
     ax_bb.fill_between(wave, bb_5-bb_w, bb_95-bb_w,
             color='g', alpha=0.5, label='Uncertainty') 
     ax_bb.set_ylabel(r'$b_{b,nw}(\lambda) \; [{\rm m}^{-1}]$')
-    ax_bb.set_yscale('log')
+    #ax_bb.set_yscale('log')
 
     # Parameters
     model = models[1]
@@ -136,6 +227,9 @@ def plot_fit(models, chains, Rrs_obs, stats:dict=None,
     ax_c.imshow(img)
     ax_c.axis('off') 
 
+    # Title
+    fig.suptitle(title, fontsize=14, y=0.99)
+
     # Finish
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     if outfile is not None:
@@ -186,3 +280,35 @@ def mini_corner(models, chains, show_params:list,
     if outfile is not None:
         plt.savefig(outfile, dpi=300)
         print(f"Saved: {outfile}")
+
+# Command line
+if __name__ == '__main__':
+
+    test = True
+    run_em = False
+
+    match_file = 'matched_argo_bgc_profiles_bbp.csv'
+    # Load up Argo profiles, already matched to PACE
+    matched = pandas.read_csv(match_file)
+
+    if test:
+        # Load the matched file
+        imatched = matched.iloc[1]
+
+        # Fit one
+        outfile = os.path.join(os.getenv('OS_COLOR'), 'Biomass', 'Fits',
+            f'Argo_{imatched.cruise}_{imatched.profile:03d}_fits.npz')
+        fit_one(imatched, outfile)
+
+    if run_em:
+        for ss in range(len(matched)):
+            imatched = matched.iloc[ss]
+            print(f"Fitting {imatched.cruise}-{imatched.profile:03d}...")
+
+            # Fit one
+            outfile = os.path.join(os.getenv('OS_COLOR'), 'Biomass', 'Fits',
+                f'Argo_{imatched.cruise}_{imatched.profile:03d}_fits.npz')
+            if not os.path.exists(outfile):
+                fit_one(imatched, outfile)
+            else:
+                print(f"Already fitted {outfile}, skipping...")

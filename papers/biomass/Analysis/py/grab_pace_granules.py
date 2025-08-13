@@ -180,6 +180,19 @@ def find_closest(match_file:str, iRrs:int=38,
     # Write
     matched.to_csv(match_file, index=False)
 
+def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38):
+
+    Rrs_ok = xds.Rrs_unc.values[:,:,iRrs] > 0.
+    coords = np.stack((xds.latitude.values.flatten(), 
+        xds.longitude.values.flatten()), axis=1)
+    d = ocpy_coords.distance_from_latlon(lat_lon, coords)
+
+    # Unravel
+    imin = np.argmin(d)
+    dmin_ij = np.unravel_index(imin, xds.latitude.shape)
+
+    return d.min(), dmin_ij
+
 def load_from_json(json_file:str):
     # Load
     granules = ocpy_io.loadjson(json_file)
