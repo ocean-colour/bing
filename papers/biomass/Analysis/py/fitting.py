@@ -5,7 +5,10 @@ from scipy.interpolate import interp1d
 from matplotlib import pyplot as plt
 import matplotlib as mpl
 import matplotlib.gridspec as gridspec
+import matplotlib.image as mpimg
 mpl.rcParams['font.family'] = 'stixgeneral'
+
+import corner
 
 from ocpy.water import absorption
 from ocpy.water import scattering as w_scattering
@@ -18,6 +21,10 @@ def plot_fit(models, chains, Rrs_obs, stats:dict=None,
              outfile:str=None, 
              ulist:list=None, perc:tuple=(5,95),
              show_Rsig:bool=False):
+
+    # Do this first
+    mini_corner(models, chains, ['Sdg', 'beta', 'Bnw'],
+                outfile='tmpc.png')
 
     # Wavelengths
     wave = models[0].wave
@@ -50,14 +57,18 @@ def plot_fit(models, chains, Rrs_obs, stats:dict=None,
     ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
     ax_anw.set_yscale('log')
 
+    # Parameters
     model = models[0]
     ypos = 0.1
     for ss in range(model.nparam):
+        lsig = stats['med'][ss] - stats[f'p{perc[0]:02d}'][ss]
+        hsig = stats[f'p{perc[1]:02d}'][ss] - stats['med'][ss]
         ax_anw.text(0.05, ypos, 
-                  f'{model.pnames[ss]} = {10**params[ip]:.2f}',
+                  r''+f'{model.pnames[ss]} = {stats['med'][ss]:.3f}'+
+                  r'$^{+'+f'{hsig:.3f}'+
+                  r'}_{-'+f'{lsig:.3f}'+r'}$',
             transform=ax_anw.transAxes, fontsize=13.)
-        ypos += 0.07
-        ip += 1
+        ypos += 0.11
 
     # #########################################################
     # bb nw
@@ -67,6 +78,20 @@ def plot_fit(models, chains, Rrs_obs, stats:dict=None,
             color='g', alpha=0.5, label='Uncertainty') 
     ax_bb.set_ylabel(r'$b_{b,nw}(\lambda) \; [{\rm m}^{-1}]$')
     ax_bb.set_yscale('log')
+
+    # Parameters
+    model = models[1]
+    ypos = 0.1
+    for tt in range(model.nparam):
+        ss = tt + models[0].nparam
+        lsig = stats['med'][ss] - stats[f'p{perc[0]:02d}'][ss]
+        hsig = stats[f'p{perc[1]:02d}'][ss] - stats['med'][ss]
+        ax_bb.text(0.05, ypos, 
+                  r''+f'{model.pnames[tt]} = {stats['med'][ss]:.3f}'+
+                  r'$^{+'+f'{hsig:.3f}'+
+                  r'}_{-'+f'{lsig:.3f}'+r'}$',
+            transform=ax_bb.transAxes, fontsize=13.)
+        ypos += 0.11
 
     # #########################################################
     # Rs
@@ -83,7 +108,8 @@ def plot_fit(models, chains, Rrs_obs, stats:dict=None,
     if show_Rsig:
         ax_R.errorbar(Rrs_obs['wave'], Rrs_obs['spec'], 
             yerr=Rsig, color='gray', fmt='o', capsize=3,
-            label=r'Obs; $\chi^2_\nu = '+f'{red_chi2:0.2f}'+r'$',
+            #label=r'Obs; $\chi^2_\nu = '+f'{red_chi2:0.2f}'+r'$',
+            label='Obs',# $\chi^2_\nu = '+f'{red_chi2:0.2f}'+r'$',
             zorder=1) 
     ax_R.plot(Rrs_obs['wave'], Rrs_obs['spec'], 'k+', #label='Obs', 
               zorder=5)
@@ -92,6 +118,9 @@ def plot_fit(models, chains, Rrs_obs, stats:dict=None,
             color='r', alpha=0.5, zorder=10) 
     ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
     #ax_R.set_yscale('log')
+    ax_R.text(0.05, 0.1,
+              r'$\chi^2_\nu = '+f'{red_chi2:0.2f}'+r'$',
+              fontsize=15., transform=ax_R.transAxes)
 
     # axes
     axes = [ax_anw, ax_bb, ax_R]
@@ -101,7 +130,58 @@ def plot_fit(models, chains, Rrs_obs, stats:dict=None,
         ax.set_xlabel('Wavelength (nm)')
         ax.legend(fontsize=15.)
 
+    # Mini corner plot
+    ax_c = plt.subplot(gs[3])
+    img = mpimg.imread('tmpc.png')
+    ax_c.imshow(img)
+    ax_c.axis('off') 
+
     # Finish
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    if outfile is not None:
+        plt.savefig(outfile, dpi=300)
+        print(f"Saved: {outfile}")
+
+def mini_corner(models, chains, show_params:list,
+                outfile:str=None):
+    """
+    Mini corner plot of the model parameters.
+    
+    Parameters:
+        models (list): List of model objects.
+        chains (ndarray): Chains of model parameters.
+        ax (matplotlib.axes.Axes, optional): Axes to plot on. If None, a new figure is created.
+    """
+    #if ax is None:
+    #    fig, ax = plt.subplots(figsize=(8, 8))
+
+    # Burn/thin the chains
+    coeff = evaluate.thin_burn_chains(chains)
+
+    # Grab the parameters to show
+    keep = np.array([False]*coeff.shape[1])
+    cnt = 0
+    clbls = []
+    for model in models:
+        for param in model.pnames:
+            if param in show_params:
+                keep[cnt] = True
+                clbls.append(param)
+            cnt += 1
+
+    # Cut
+    coeff = coeff[:,keep]
+    
+    fig = corner.corner(
+        coeff, labels=clbls,
+        label_kwargs={'fontsize':17},
+        color='k',
+        #axes_scale='log',
+        #truths=truths,
+        show_titles=True,
+        title_kwargs={"fontsize": 12},
+        )
+
     plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
     if outfile is not None:
         plt.savefig(outfile, dpi=300)
