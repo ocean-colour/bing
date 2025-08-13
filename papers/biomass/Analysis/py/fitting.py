@@ -42,9 +42,9 @@ def plot_fit(models, chains, Rrs_obs, outfile:str=None,
     # a without water
 
     ax_anw = plt.subplot(gs[1])
-    ax_anw.plot(wave, a_mean-a_w, 'r-', label='Retrieval')
+    ax_anw.plot(wave, a_mean-a_w, 'b-', label='Retrieval')
     ax_anw.fill_between(wave, a_5-a_w, a_95-a_w, 
-        color='r', alpha=0.5, label='Uncertainty') 
+        color='b', alpha=0.5, label='Uncertainty') 
 
     ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
     ax_anw.set_yscale('log')
@@ -74,15 +74,15 @@ def plot_fit(models, chains, Rrs_obs, outfile:str=None,
     if show_Rsig:
         ax_R.errorbar(Rrs_obs['wave'], Rrs_obs['spec'], 
             yerr=Rsig, color='gray', fmt='o', capsize=3,
-            label=r'$\chi^2_\nu = '+f'{red_chi2:0.2f}'+r'$',
+            label=r'Obs; $\chi^2_\nu = '+f'{red_chi2:0.2f}'+r'$',
             zorder=1) 
-    ax_R.plot(Rrs_obs['wave'], Rrs_obs['spec'], 'k+', label='Obs', 
+    ax_R.plot(Rrs_obs['wave'], Rrs_obs['spec'], 'k+', #label='Obs', 
               zorder=5)
-    #ax_R.plot(wave, gordon_Rrs, 'k+', label='L23 + Gordon')
-    ax_R.plot(wave, model_Rrs, 'b-', label='Fit', zorder=10)
+    ax_R.plot(wave, model_Rrs, 'r-', label='Fit', zorder=10)
     ax_R.fill_between(wave, model_Rrs-sigRs, model_Rrs+sigRs, 
-            color='b', alpha=0.5, zorder=10) 
+            color='r', alpha=0.5, zorder=10) 
     ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
+    #ax_R.set_yscale('log')
 
     # axes
     axes = [ax_anw, ax_bb, ax_R]
