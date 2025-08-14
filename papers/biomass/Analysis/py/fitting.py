@@ -67,7 +67,11 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False):
 
     p0 = [-1, 0.015, -1, -1, 1.5]
     items = [(ispec, isig**2, p0, 0)]
-    ans, cov, idx = chisq_fit.fit(items[0], models, bounds=bounds)
+
+    try:
+        ans, cov, idx = chisq_fit.fit(items[0], models, bounds=bounds)
+    except RuntimeError:
+        embed(header='Error in chisq_fit.fit, check bounds or data')
 
     # Now the MCMC
     p0 = ans.tolist()
