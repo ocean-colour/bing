@@ -349,6 +349,7 @@ if __name__ == '__main__':
             outfile = set_outfile(imatched)
             if os.path.exists(outfile) and not clobber:
                 print(f"Already fitted {outfile}, skipping...")
+                continue
             #
 
             # Fit one
