@@ -299,6 +299,8 @@ def slurp_fits():
         outfile = set_outfile(imatched)
 
         # Load
+        if not os.path.exists(outfile):
+            embed(header=f"303: Missing {outfile}...")
         d = np.load(outfile)
         Bnw_vals.append(d['med'][3])
         beta_vals.append(d['med'][4])
