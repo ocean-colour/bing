@@ -29,7 +29,7 @@ from grab_pace_granules import closest_Rrs
 
 from IPython import embed
 
-def fit_one(imatched:pandas.Series, outfile:str):
+def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False):
 
     # Load PACE file
     gfile = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_AOP', 
@@ -39,6 +39,9 @@ def fit_one(imatched:pandas.Series, outfile:str):
 
     # Find closest Rrs
     d_min, dmin_ij = closest_Rrs(xds, (imatched.lat, imatched.lon))
+
+    if debug:
+        embed(header='44 of fitting.py')
 
     # Parse out the data
     ix, iy = dmin_ij
@@ -284,8 +287,8 @@ def mini_corner(models, chains, show_params:list,
 # Command line
 if __name__ == '__main__':
 
-    test = True
-    run_em = False
+    test = False
+    run_em = True
 
     match_file = 'matched_argo_bgc_profiles_bbp.csv'
     # Load up Argo profiles, already matched to PACE
@@ -293,22 +296,24 @@ if __name__ == '__main__':
 
     if test:
         # Load the matched file
-        imatched = matched.iloc[1]
+        imatched = matched.iloc[30]
 
         # Fit one
         outfile = os.path.join(os.getenv('OS_COLOR'), 'Biomass', 'Fits',
             f'Argo_{imatched.cruise}_{imatched.profile:03d}_fits.npz')
-        fit_one(imatched, outfile)
+        fit_one(imatched, outfile)#, debug=True)
 
     if run_em:
+        clobber = False
         for ss in range(len(matched)):
+            print(f"Fitting {ss+1}/{len(matched)}...")
             imatched = matched.iloc[ss]
             print(f"Fitting {imatched.cruise}-{imatched.profile:03d}...")
 
             # Fit one
             outfile = os.path.join(os.getenv('OS_COLOR'), 'Biomass', 'Fits',
                 f'Argo_{imatched.cruise}_{imatched.profile:03d}_fits.npz')
-            if not os.path.exists(outfile):
+            if not os.path.exists(outfile) or clobber:
                 fit_one(imatched, outfile)
             else:
                 print(f"Already fitted {outfile}, skipping...")
