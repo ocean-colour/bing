@@ -284,11 +284,46 @@ def mini_corner(models, chains, show_params:list,
         plt.savefig(outfile, dpi=300)
         print(f"Saved: {outfile}")
 
+def slurp_fits():
+
+    # Load up Argo profiles, already matched to PACE
+    match_file = 'matched_argo_bgc_profiles_bbp.csv'
+    matched = pandas.read_csv(match_file)
+
+    beta_vals = []
+    Bnw_vals = []
+    aph_vals = []
+
+    for ss in range(len(matched)):
+        imatched = matched.iloc[ss]
+        outfile = set_outfile(imatched)
+
+        # Load
+        d = np.load(outfile)
+        Bnw_vals.append(d['med'][3])
+        beta_vals.append(d['med'][4])
+        aph_vals.append(d['med'][2])
+
+    # Add to matched
+    matched['Bnw'] = 10**np.array(Bnw_vals)
+    matched['beta'] = beta_vals
+    matched['aph'] = aph_vals
+
+    # Write
+    matched.to_csv(match_file, index=False)
+    print(f'Wrote {len(matched)} profiles to {match_file}')
+
+def set_outfile(imatched:pandas.Series):
+    outfile = os.path.join(os.getenv('OS_COLOR'), 'Biomass', 'Fits',
+            f'Argo_{imatched.cruise}_{imatched.profile:03d}_fits.npz')
+    return outfile
+
 # Command line
 if __name__ == '__main__':
 
     test = False
-    run_em = True
+    run_em = False
+    slurp_em = True
 
     match_file = 'matched_argo_bgc_profiles_bbp.csv'
     # Load up Argo profiles, already matched to PACE
@@ -299,21 +334,24 @@ if __name__ == '__main__':
         imatched = matched.iloc[30]
 
         # Fit one
-        outfile = os.path.join(os.getenv('OS_COLOR'), 'Biomass', 'Fits',
-            f'Argo_{imatched.cruise}_{imatched.profile:03d}_fits.npz')
+        outfile = set_outfile(imatched)
         fit_one(imatched, outfile)#, debug=True)
 
     if run_em:
         clobber = False
         for ss in range(len(matched)):
-            print(f"Fitting {ss+1}/{len(matched)}...")
             imatched = matched.iloc[ss]
-            print(f"Fitting {imatched.cruise}-{imatched.profile:03d}...")
+            print(f"Fitting {ss+1}/{len(matched)}...")
+
+            # Check
+            outfile = set_outfile(imatched)
+            if os.path.exists(outfile) and not clobber:
+                print(f"Already fitted {outfile}, skipping...")
+            #
 
             # Fit one
-            outfile = os.path.join(os.getenv('OS_COLOR'), 'Biomass', 'Fits',
-                f'Argo_{imatched.cruise}_{imatched.profile:03d}_fits.npz')
-            if not os.path.exists(outfile) or clobber:
-                fit_one(imatched, outfile)
-            else:
-                print(f"Already fitted {outfile}, skipping...")
+            print(f"Fitting {imatched.cruise}-{imatched.profile:03d}...")
+            fit_one(imatched, outfile)
+
+    if slurp_em:
+        slurp_fits()
