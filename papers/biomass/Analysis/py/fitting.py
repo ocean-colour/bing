@@ -71,7 +71,11 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False):
     try:
         ans, cov, idx = chisq_fit.fit(items[0], models, bounds=bounds)
     except RuntimeError:
-        embed(header='Error in chisq_fit.fit, check bounds or data')
+        print(f"Fit failed for {imatched.cruise}-{imatched.profile:03d}, saving -999")
+        out_dict = {}
+        out_dict['med'] = np.ones(5) * -999.
+        np.savez(outfile, **out_dict)
+        return
 
     # Now the MCMC
     p0 = ans.tolist()
