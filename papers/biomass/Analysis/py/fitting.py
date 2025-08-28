@@ -29,26 +29,7 @@ from grab_pace_granules import closest_Rrs
 
 from IPython import embed
 
-def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False):
-
-    # Load PACE file
-    gfile = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_AOP', 
-                     imatched.closest_file)
-    print(f"----- Loading {gfile} -----")
-    xds, flags = pace_io.load_oci_l2(gfile)
-
-    # Find closest Rrs
-    d_min, dmin_ij = closest_Rrs(xds, (imatched.lat, imatched.lon))
-
-    if debug:
-        embed(header='44 of fitting.py')
-
-    # Parse out the data
-    ix, iy = dmin_ij
-    gd_wave = (xds.wavelength.data >= 400.) &  (xds.wavelength.data <= 700.) 
-    iwave = xds.wavelength.data[gd_wave]
-    ispec = xds.Rrs.data[ix,iy,gd_wave]
-    isig = xds.Rrs_unc.data[ix,iy,gd_wave]
+def fit_me(iwave, ispec, isig):
 
     # Init models
     p = standard.expb_pow()
@@ -71,7 +52,7 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False):
     try:
         ans, cov, idx = chisq_fit.fit(items[0], models, bounds=bounds)
     except RuntimeError:
-        print(f"Fit failed for {imatched.cruise}-{imatched.profile:03d}, saving -999")
+        print(f"Fit failed: saving -999")
         out_dict = {}
         out_dict['med'] = np.ones(5) * -999.
         np.savez(outfile, **out_dict)
@@ -87,6 +68,85 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False):
     chains, idx = bing_inf.fit_one(
         items[0], models=models, pdict=pdict, chains_only=True)
     stats = evaluate.calc_stats(chains)
+
+     # Return
+    return models, chains, ans, stats
+
+def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False):
+    """
+    Perform spectral fitting on matched data using a combination of 
+    least-squares fitting and Markov Chain Monte Carlo (MCMC) methods.
+
+    Parameters:
+    -----------
+    imatched : pandas.Series
+        A pandas Series containing metadata and information about the 
+        matched data point, including latitude, longitude, cruise, profile, 
+        and closest file path.
+    outfile : str
+        Path to the output file where the results will be saved.
+    debug : bool, optional
+        If True, enables debugging mode with an interactive session. 
+        Default is False.
+
+    Workflow:
+    ---------
+    1. Load the PACE file corresponding to the matched data.
+    2. Find the closest remote sensing reflectance (Rrs) data point.
+    3. Parse the spectral data and uncertainties for the selected wavelengths.
+    4. Initialize models and priors for the fitting process.
+    5. Perform a least-squares fit to obtain an initial guess for the parameters.
+    6. If the least-squares fit fails, save a placeholder result and exit.
+    7. Use the initial guess to perform MCMC fitting and calculate statistics.
+    8. Save the fitting results, including chains, statistics, and metadata.
+    9. Generate and save a plot of the fitting results.
+
+    Outputs:
+    --------
+    - A `.npz` file containing the fitting results, including:
+        - MCMC chains
+        - Least-squares fit parameters
+        - Wavelengths, Rrs, and uncertainties
+        - Median, 5th percentile, and 95th percentile statistics
+        - Model names
+    - A `.png` file with a plot of the fitting results.
+
+    Notes:
+    ------
+    - The function assumes the existence of specific modules and functions 
+        such as `pace_io.load_oci_l2`, `closest_Rrs`, `model_utils.init`, 
+        `bing_priors.set_standard_priors`, `bing_inf.init_mcmc`, 
+        `chisq_fit.fit`, `bing_inf.fit_one`, and `evaluate.calc_stats`.
+    - The function also assumes that the environment variable `OS_COLOR` 
+        is set and points to the base directory for the PACE data files.
+
+    Exceptions:
+    -----------
+    - If the least-squares fitting fails, a RuntimeError is caught, and 
+        placeholder results are saved with parameter values set to -999.
+    """
+
+    # Load PACE file
+    gfile = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_AOP', 
+                     imatched.closest_file)
+    print(f"----- Loading {gfile} -----")
+    xds, _ = pace_io.load_oci_l2(gfile)
+
+    # Find closest Rrs
+    d_min, dmin_ij = closest_Rrs(xds, (imatched.lat, imatched.lon))
+
+    if debug:
+        embed(header='44 of fitting.py')
+
+    # Parse out the data
+    ix, iy = dmin_ij
+    gd_wave = (xds.wavelength.data >= 400.) &  (xds.wavelength.data <= 700.) 
+    iwave = xds.wavelength.data[gd_wave]
+    ispec = xds.Rrs.data[ix,iy,gd_wave]
+    isig = xds.Rrs_unc.data[ix,iy,gd_wave]
+
+    # Fit
+    models, chains, ans, stats = fit_me(iwave, ispec, isig)
 
     # Save
     out_dict = {}
@@ -332,8 +392,9 @@ def set_outfile(imatched:pandas.Series):
 if __name__ == '__main__':
 
     test = False
-    fit_em = True
+    fit_em = False
     slurp_em = False
+    fit_allie = True
 
     match_file = 'matched_argo_bgc_profiles_bbp.csv'
     # Load up Argo profiles, already matched to PACE
@@ -366,3 +427,21 @@ if __name__ == '__main__':
 
     if slurp_em:
         slurp_fits()
+
+    if fit_allie:
+        # Load
+        df = pandas.read_csv('allie_rrs_spectrum.csv')
+        wave = df['Wavelength'].values
+        Rrs = df['Rrs'].values
+        gd_wave = (wave >= 400.) &  (wave <= 700.) 
+
+        iwave = wave[gd_wave]
+        ispec = Rrs[gd_wave]
+        isig = np.ones_like(ispec) * 0.0005
+
+        # Fit
+        models, chains, ans, stats = fit_me(iwave, ispec, isig)
+        Rrs_obs=dict(wave=models[0].wave, spec=ispec, var=isig**2)
+
+        plot_fit(models, chains, Rrs_obs, "Allie's float", show_Rsig=True,
+                   outfile='allie_fit.png')
