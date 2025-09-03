@@ -36,7 +36,7 @@ if __name__ == '__main__':
         df = pandas.read_csv('allie_rrs_spectrum.csv')
         wave = df['Wavelength'].values
         Rrs = df['Rrs'].values
-        gd_wave = (wave >= 400.) &  (wave <= 700.) 
+        gd_wave = (wave >= 400.) &  (wave <= 700.)
 
         iwave = wave[gd_wave]
         ispec = Rrs[gd_wave]

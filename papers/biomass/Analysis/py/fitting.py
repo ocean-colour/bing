@@ -130,10 +130,12 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False):
     gfile = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_AOP', 
                      imatched.closest_file)
     print(f"----- Loading {gfile} -----")
-    xds, _ = pace_io.load_oci_l2(gfile)
+    xds, flags = pace_io.load_oci_l2(gfile)
 
     # Find closest Rrs
-    d_min, dmin_ij = closest_Rrs(xds, (imatched.lat, imatched.lon))
+    d_min, dmin_ij = closest_Rrs(xds, (imatched.lat, imatched.lon),
+                                 nclosest=10)
+    embed(header='138 of fitting.py')
 
     if debug:
         embed(header='44 of fitting.py')
@@ -391,7 +393,7 @@ def set_outfile(imatched:pandas.Series):
 # Command line
 if __name__ == '__main__':
 
-    test = False
+    test = True
     fit_em = False
     slurp_em = False
 
