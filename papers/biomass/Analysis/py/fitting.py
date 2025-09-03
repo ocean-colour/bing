@@ -9,6 +9,10 @@ import matplotlib.gridspec as gridspec
 import matplotlib.image as mpimg
 mpl.rcParams['font.family'] = 'stixgeneral'
 
+from functools import partial
+from concurrent.futures import ProcessPoolExecutor
+from tqdm import tqdm
+
 import corner
 import pandas
 
@@ -29,7 +33,9 @@ from grab_pace_granules import closest_Rrs
 
 from IPython import embed
 
-def fit_me(iwave, ispec, isig):
+def fit_me(items):
+
+    iwave, ispec, isig = items
 
     # Init models
     p = standard.expb_pow()
@@ -52,11 +58,8 @@ def fit_me(iwave, ispec, isig):
     try:
         ans, cov, idx = chisq_fit.fit(items[0], models, bounds=bounds)
     except RuntimeError:
-        print(f"Fit failed: saving -999")
-        out_dict = {}
-        out_dict['med'] = np.ones(5) * -999.
-        np.savez(outfile, **out_dict)
-        return
+        print("Fit failed: saving -999")
+        return None, None, None, None
 
     # Now the MCMC
     p0 = ans.tolist()
@@ -72,7 +75,8 @@ def fit_me(iwave, ispec, isig):
      # Return
     return models, chains, ans, stats
 
-def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False):
+def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
+            nclosest:int=1, n_cores:int=10):
     """
     Perform spectral fitting on matched data using a combination of 
     least-squares fitting and Markov Chain Monte Carlo (MCMC) methods.
@@ -92,14 +96,14 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False):
     Workflow:
     ---------
     1. Load the PACE file corresponding to the matched data.
-    2. Find the closest remote sensing reflectance (Rrs) data point.
+    2. Find the closest remote sensing reflectance (Rrs) data point(s)
     3. Parse the spectral data and uncertainties for the selected wavelengths.
     4. Initialize models and priors for the fitting process.
     5. Perform a least-squares fit to obtain an initial guess for the parameters.
     6. If the least-squares fit fails, save a placeholder result and exit.
     7. Use the initial guess to perform MCMC fitting and calculate statistics.
     8. Save the fitting results, including chains, statistics, and metadata.
-    9. Generate and save a plot of the fitting results.
+    9. Generate and save a plot of the fitting results for the closest good fit
 
     Outputs:
     --------
@@ -134,34 +138,83 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False):
 
     # Find closest Rrs
     d_min, dmin_ij = closest_Rrs(xds, (imatched.lat, imatched.lon),
-                                 nclosest=10)
-    embed(header='138 of fitting.py')
+                                 nclosest=nclosest)
 
     if debug:
         embed(header='44 of fitting.py')
 
     # Parse out the data
-    ix, iy = dmin_ij
     gd_wave = (xds.wavelength.data >= 400.) &  (xds.wavelength.data <= 700.) 
-    iwave = xds.wavelength.data[gd_wave]
-    ispec = xds.Rrs.data[ix,iy,gd_wave]
-    isig = xds.Rrs_unc.data[ix,iy,gd_wave]
+
+    map_fn = partial(fit_me)
+
+    # Setup
+    items = []
+    for ss in range(nclosest):
+        ix, iy = dmin_ij[0][ss], dmin_ij[1][ss]
+        iwave = xds.wavelength.data[gd_wave]
+        ispec = xds.Rrs.data[ix,iy,gd_wave]
+        isig = xds.Rrs_unc.data[ix,iy,gd_wave]
+        items.append((iwave, ispec, isig))
 
     # Fit
-    models, chains, ans, stats = fit_me(iwave, ispec, isig)
+    #models, chains, ans, stats = fit_me([iwave, ispec, isig])
+
+    with ProcessPoolExecutor(max_workers=n_cores) as executor:
+        chunksize = nclosest // n_cores if nclosest // n_cores > 0 else 1
+        answers = list(tqdm(executor.map(map_fn, items, chunksize=chunksize), total=nclosest))
+
+    # Grab em all
+    all_ans, all_stats, all_lon, all_lat = [], [], [], []
+    all_idx, all_dist = [], []
+    all_spec = []
+    ok_ss = []
+    for ss, aa in enumerate(answers):
+        if aa is not None:
+            ok_ss.append(ss)
+            # Grab
+            all_ans.append(aa[2])
+            all_stats.append(aa[3])
+            # Coords
+            ix, iy = dmin_ij[0][ss], dmin_ij[1][ss]
+            all_idx.append(np.array([ix, iy]))
+            all_lon.append(xds.longitude.data[ix,iy])
+            all_lat.append(xds.latitude.data[ix,iy])
+            all_dist.append(d_min[ss])
+            # Spectra
+            all_spec.append(items[ss])
 
     # Save
     out_dict = {}
+
+    # Bust?
+    if len(all_ans) == 0:
+        print("All fits failed: saving -999")
+        out_dict['LM'] = np.array([-999]*5)
+        out_dict['wave'] = items[0][0]
+        out_dict['Rrs'] = items[0][1]
+        out_dict['Rrs_sig'] = items[0][2]
+        out_dict['Rrs_idx'] = np.array([dmin_ij[0][0], dmin_ij[1][0]]) # ij in xds
+        np.savez(outfile, **out_dict)
+        return
+
+    # Grab the closest
+    models, chains, ans, stats = answers[ok_ss[0]]
+    ispec, isig = all_spec[0][1], all_spec[0][2]
+
     out_dict['chains'] = chains
-    out_dict['LM'] = ans
-    out_dict['wave'] = iwave
-    out_dict['Rrs'] = ispec
-    out_dict['Rrs_sig'] = isig
-    out_dict['Rrs_idx'] = np.array(dmin_ij) # ij in xds
+    out_dict['LM'] = np.stack(all_ans)
+    out_dict['wave'] = np.stack([it[0] for it in all_spec])
+    out_dict['Rrs'] = np.stack([it[1] for it in all_spec])
+    out_dict['Rrs_sig'] = np.stack([it[2] for it in all_spec])
+    out_dict['Rrs_idx'] = np.stack(all_idx) # ij in xds
+    out_dict['lon'] = np.array(all_lon)
+    out_dict['lat'] = np.array(all_lat)
+    out_dict['dist'] = np.array(all_dist)
     #
-    out_dict['med'] = stats['med']
-    out_dict['p05'] = stats['p05']
-    out_dict['p95'] = stats['p95']
+    out_dict['med'] = np.stack([stats['med'] for stats in all_stats])
+    out_dict['p14'] = np.stack([stats['p14'] for stats in all_stats])
+    out_dict['p86'] = np.stack([stats['p86'] for stats in all_stats])
     out_dict['model_names'] = [model.name for model in models]
 
     np.savez(outfile, **out_dict)
@@ -169,8 +222,8 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False):
 
     # Plot me
     print("----- Plotting -----")
-    title = f'Float={imatched.cruise}-{imatched.profile}, lat={imatched.lat},'+\
-    f'lon={imatched.lon}, time={imatched.time[:19]}, {imatched.closest_id[12:-9]}'
+    title = f'Float={imatched.cruise}-{imatched.profile}, lat={imatched.lat:.1f},'+\
+    f'lon={imatched.lon:.1f}, time={imatched.time[:19]}, {imatched.closest_id[12:-9]}, dist={all_dist[0]:.1f} km'
     Rrs_obs=dict(wave=models[0].wave, spec=ispec, var=isig**2)
     plotfile=outfile.replace('.npz', '.png')
     plot_fit(models, chains, Rrs_obs, title, show_Rsig=True,
@@ -355,7 +408,39 @@ def mini_corner(models, chains, show_params:list,
         plt.savefig(outfile, dpi=300)
         print(f"Saved: {outfile}")
 
-def slurp_fits():
+def slurp_fits(debug:bool=False):
+    """
+    Processes matched Argo BGC profiles and extracts specific parameters for analysis.
+
+    This function reads a CSV file containing matched Argo BGC profiles, loads corresponding
+    data files for each profile, extracts specific parameters (Bnw, beta, and aph), and appends
+    these parameters to the original dataset. The updated dataset is then saved back to the same
+    CSV file.
+
+    Steps:
+    1. Reads the matched Argo BGC profiles from a CSV file.
+    2. Iterates through each profile, loading associated data files.
+    3. Extracts the median values of Bnw, beta, and aph from the loaded data.
+    4. Appends the extracted values to the dataset.
+    5. Saves the updated dataset back to the CSV file.
+
+    Raises:
+        FileNotFoundError: If a required data file does not exist.
+        KeyError: If the expected keys ('med') are not found in the loaded data.
+
+    Notes:
+        - The function assumes the existence of a helper function `set_outfile` to determine
+          the output file path for each profile.
+        - The function uses the `embed` function for debugging when a file is missing.
+
+    Outputs:
+        - Updates the input CSV file with new columns: 'Bnw', 'beta', and 'aph'.
+        - Prints the number of profiles written to the file.
+
+    Dependencies:
+        - Requires the `pandas` and `numpy` libraries.
+        - Assumes the presence of the `set_outfile` and `embed` functions.
+    """
 
     # Load up Argo profiles, already matched to PACE
     match_file = 'matched_argo_bgc_profiles_bbp.csv'
@@ -363,6 +448,9 @@ def slurp_fits():
 
     beta_vals = []
     Bnw_vals = []
+    Bnw_lsig = []
+    Bnw_hsig = []
+    Bnw_std = []
     aph_vals = []
 
     for ss in range(len(matched)):
@@ -373,12 +461,41 @@ def slurp_fits():
         if not os.path.exists(outfile):
             embed(header=f"303: Missing {outfile}...")
         d = np.load(outfile)
-        Bnw_vals.append(d['med'][3])
-        beta_vals.append(d['med'][4])
-        aph_vals.append(d['med'][2])
+
+        if 'chains' not in d:
+            print(f"Skipping {outfile}...")
+            beta_vals.append(np.nan)
+            Bnw_vals.append(np.nan)
+            aph_vals.append(np.nan)
+            Bnw_std.append(np.nan)
+            Bnw_lsig.append(np.nan)
+            Bnw_hsig.append(np.nan)
+            continue
+
+        #if debug:
+        #    embed(header='305 of fitting.py')
+        #    return
+        # Closest
+        Bnw_vals.append(10**d['med'][0,3])
+        beta_vals.append(d['med'][0,4])
+        aph_vals.append(10**d['med'][0,2])
+        # Std
+        Bnw_std.append(np.std(10**d['med'][:,3]))
+        # Sigma
+        Bnw_lsig.append(10**d['med'][0,3] - 10**d['p14'][0,3])
+        Bnw_hsig.append(10**d['p86'][0,3] - 10**d['med'][0,3])
+        if debug:
+            break
+
+    if debug:
+        embed(header='468 of fitting.py')
+        return
 
     # Add to matched
-    matched['Bnw'] = 10**np.array(Bnw_vals)
+    matched['Bnw'] = np.array(Bnw_vals)
+    matched['Bnw_std'] = np.array(Bnw_std)
+    matched['Bnw_lsig'] = np.array(Bnw_lsig)
+    matched['Bnw_hsig'] = np.array(Bnw_hsig)
     matched['beta'] = beta_vals
     matched['aph'] = aph_vals
 
@@ -394,9 +511,9 @@ def set_outfile(imatched:pandas.Series):
 # Command line
 if __name__ == '__main__':
 
-    test = True
+    test = False
     fit_em = False
-    slurp_em = False
+    slurp_em = True
 
     match_file = 'matched_argo_bgc_profiles_bbp.csv'
     # Load up Argo profiles, already matched to PACE
@@ -408,10 +525,10 @@ if __name__ == '__main__':
 
         # Fit one
         outfile = set_outfile(imatched)
-        fit_one(imatched, outfile)#, debug=True)
+        fit_one(imatched, outfile, nclosest=10)#, debug=True)
 
     if fit_em:
-        clobber = False
+        clobber = True
         for ss in range(len(matched)):
             imatched = matched.iloc[ss]
             print(f"Fitting {ss+1}/{len(matched)}...")
@@ -425,7 +542,7 @@ if __name__ == '__main__':
 
             # Fit one
             print(f"Fitting {imatched.cruise}-{imatched.profile:03d}...")
-            fit_one(imatched, outfile)
+            fit_one(imatched, outfile, nclosest=10)#, debug=True)
 
     if slurp_em:
-        slurp_fits()
+        slurp_fits(debug=True)

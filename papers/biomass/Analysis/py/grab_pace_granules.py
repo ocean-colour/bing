@@ -232,7 +232,6 @@ def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38, nclosest:int=1):
     closest_idx = ok_idx[srt[:nclosest]]
     
     # Unravel
-    embed(header='235 of grab')
     dmin_ij = np.unravel_index(closest_idx, xds.latitude.shape)
 
     return d[closest_idx], dmin_ij
