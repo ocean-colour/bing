@@ -178,7 +178,8 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False):
 
 def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
              outfile:str=None, 
-             ulist:list=None, perc:tuple=(5,95),
+             ulist:list=None, 
+             perc:tuple=(14,86),
              show_Rsig:bool=False):
 
     # Do this first
@@ -186,7 +187,7 @@ def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
                 outfile='tmpc.png')
 
     if stats is None:
-        stats = evaluate.calc_stats(chains)
+        stats = evaluate.calc_stats(chains, perc=perc)
 
     # Wavelengths
     wave = models[0].wave

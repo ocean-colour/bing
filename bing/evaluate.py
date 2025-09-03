@@ -8,7 +8,7 @@ from bing.fitting import chisq_fit
 from IPython import embed
 
 def calc_stats(chains, names:list=None, 
-               perc=(5,95)):
+               perc=(14, 86)):
     # Thin/burn
     chains = thin_burn_chains(chains)
 
