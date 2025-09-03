@@ -130,10 +130,12 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False):
     gfile = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_AOP', 
                      imatched.closest_file)
     print(f"----- Loading {gfile} -----")
-    xds, _ = pace_io.load_oci_l2(gfile)
+    xds, flags = pace_io.load_oci_l2(gfile)
 
     # Find closest Rrs
-    d_min, dmin_ij = closest_Rrs(xds, (imatched.lat, imatched.lon))
+    d_min, dmin_ij = closest_Rrs(xds, (imatched.lat, imatched.lon),
+                                 nclosest=10)
+    embed(header='138 of fitting.py')
 
     if debug:
         embed(header='44 of fitting.py')
@@ -392,10 +394,9 @@ def set_outfile(imatched:pandas.Series):
 # Command line
 if __name__ == '__main__':
 
-    test = False
+    test = True
     fit_em = False
     slurp_em = False
-    fit_allie = True
 
     match_file = 'matched_argo_bgc_profiles_bbp.csv'
     # Load up Argo profiles, already matched to PACE
@@ -428,21 +429,3 @@ if __name__ == '__main__':
 
     if slurp_em:
         slurp_fits()
-
-    if fit_allie:
-        # Load
-        df = pandas.read_csv('allie_rrs_spectrum.csv')
-        wave = df['Wavelength'].values
-        Rrs = df['Rrs'].values
-        gd_wave = (wave >= 400.) &  (wave <= 700.) 
-
-        iwave = wave[gd_wave]
-        ispec = Rrs[gd_wave]
-        isig = np.ones_like(ispec) * 0.0005
-
-        # Fit
-        models, chains, ans, stats = fit_me(iwave, ispec, isig)
-        Rrs_obs=dict(wave=models[0].wave, spec=ispec, var=isig**2)
-
-        plot_fit(models, chains, Rrs_obs, "Allie's float", show_Rsig=True,
-                   outfile='allie_fit.png')

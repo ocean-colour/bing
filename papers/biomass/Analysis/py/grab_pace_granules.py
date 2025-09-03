@@ -92,6 +92,30 @@ def download_matched(match_file:str):
 
 def find_closest(match_file:str, iRrs:int=38,
                  debug:bool=False, skip_to:int=None):
+    """
+    Finds the closest PACE granule for each Argo profile in the given match file.
+
+    This function processes a CSV file containing matched Argo profiles and PACE IDs,
+    identifies the closest valid PACE granule for each profile based on geospatial distance,
+    and appends the results to the CSV file.
+
+    Args:
+        match_file (str): Path to the CSV file containing matched Argo profiles and PACE IDs.
+        iRrs (int, optional): Index of the Rrs band to use for validation. Defaults to 38.
+        debug (bool, optional): If True, processes only the first few rows for debugging. Defaults to False.
+        skip_to (int, optional): If provided, skips processing rows until the specified index. Defaults to None.
+
+    Returns:
+        None: The function modifies the input CSV file in place by adding columns for the closest granule's
+        ID, file name, distance, and time.
+
+    Notes:
+        - The function assumes the existence of a JSON file ('PACE_50clouds.json') containing PACE granule data.
+        - The function uses the `ocpy_coords.distance_from_latlon` method to calculate distances.
+        - The function relies on external modules like `pandas`, `numpy`, and `pace_io` for data processing.
+        - If no valid Rrs values are found for a granule, it is skipped.
+        - Debug mode allows for quick testing by limiting the number of rows processed.
+    """
 
     # Load up Argo profiles, already matched to PACE
     matched = pandas.read_csv(match_file)
@@ -180,22 +204,52 @@ def find_closest(match_file:str, iRrs:int=38,
     # Write
     matched.to_csv(match_file, index=False)
 
-def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38):
+def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38, nclosest:int=1):
+    """
+    Find the closest valid Rrs (Remote Sensing Reflectance) value to a given latitude and longitude.
 
+    Parameters:
+        xds (xarray.Dataset): The dataset containing Rrs data, latitude, and longitude arrays.
+        lat_lon (tuple): A tuple containing the target latitude and longitude (lat, lon).
+        iRrs (int, optional): The index of the Rrs band to analyze. Defaults to 38.
+        nclosest (int, optional): The number of closest valid Rrs values to consider. Defaults to 1.
+
+    Returns:
+        tuple: A tuple containing:
+            - float: The minimum distance(s) to the closest valid Rrs value.
+            - tuple: The indices (i, j) of the closest valid Rrs value in the dataset.
+    """
     Rrs_ok = xds.Rrs_unc.values[:,:,iRrs] > 0.
     ok_idx = np.where(Rrs_ok.flatten())[0]
 
+    # Find distance
     coords = np.stack((xds.latitude.values.flatten(), 
         xds.longitude.values.flatten()), axis=1)
     d = ocpy_coords.distance_from_latlon(lat_lon, coords)
 
+    # Closest 
+    srt = np.argsort(d[ok_idx])
+    closest_idx = ok_idx[srt[:nclosest]]
+    
     # Unravel
-    imin = np.argmin(d[ok_idx])
-    dmin_ij = np.unravel_index(ok_idx[imin], xds.latitude.shape)
+    embed(header='235 of grab')
+    dmin_ij = np.unravel_index(closest_idx, xds.latitude.shape)
 
-    return d[ok_idx].min(), dmin_ij
+    return d[closest_idx], dmin_ij
 
 def load_from_json(json_file:str):
+    """
+    Load granule data from a JSON file and build a corresponding data table.
+
+    Args:
+        json_file (str): Path to the JSON file containing granule data.
+
+    Returns:
+        tuple: A tuple containing:
+            - granules (dict): The loaded granule data as a dictionary.
+            - df (pandas.DataFrame): A DataFrame representing the granule data table,
+                with optional antimeridian fixes applied.
+    """
     # Load
     granules = ocpy_io.loadjson(json_file)
 
@@ -210,11 +264,11 @@ def load_from_json(json_file:str):
 # Command line
 if __name__ == '__main__':
 
-    build_json = False
+    build = False
     download = False
     closest = True
 
-    if build_json:
+    if build:
         # Build the JSON file
         build_json(outfile='PACE_50clouds.json', cloud_cover=(0,50))
 
