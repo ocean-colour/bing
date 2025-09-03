@@ -394,7 +394,6 @@ if __name__ == '__main__':
     test = False
     fit_em = False
     slurp_em = False
-    fit_allie = True
 
     match_file = 'matched_argo_bgc_profiles_bbp.csv'
     # Load up Argo profiles, already matched to PACE
@@ -427,21 +426,3 @@ if __name__ == '__main__':
 
     if slurp_em:
         slurp_fits()
-
-    if fit_allie:
-        # Load
-        df = pandas.read_csv('allie_rrs_spectrum.csv')
-        wave = df['Wavelength'].values
-        Rrs = df['Rrs'].values
-        gd_wave = (wave >= 400.) &  (wave <= 700.) 
-
-        iwave = wave[gd_wave]
-        ispec = Rrs[gd_wave]
-        isig = np.ones_like(ispec) * 0.0005
-
-        # Fit
-        models, chains, ans, stats = fit_me(iwave, ispec, isig)
-        Rrs_obs=dict(wave=models[0].wave, spec=ispec, var=isig**2)
-
-        plot_fit(models, chains, Rrs_obs, "Allie's float", show_Rsig=True,
-                   outfile='allie_fit.png')
