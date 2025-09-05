@@ -170,7 +170,7 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
     all_spec = []
     ok_ss = []
     for ss, aa in enumerate(answers):
-        if aa is not None:
+        if aa[2] is not None:
             ok_ss.append(ss)
             # Grab
             all_ans.append(aa[2])
@@ -512,8 +512,8 @@ def set_outfile(imatched:pandas.Series):
 if __name__ == '__main__':
 
     test = False
-    fit_em = False
-    slurp_em = True
+    fit_em = True
+    slurp_em = False
 
     match_file = 'matched_argo_bgc_profiles_bbp.csv'
     # Load up Argo profiles, already matched to PACE
@@ -530,8 +530,14 @@ if __name__ == '__main__':
     if fit_em:
         clobber = True
         for ss in range(len(matched)):
+            #if ss < 309:
+            #    continue
             imatched = matched.iloc[ss]
+            print("*"*50)
+            print("*"*50)
             print(f"Fitting {ss+1}/{len(matched)}...")
+            print("*"*50)
+            print("*"*50)
 
             # Check
             outfile = set_outfile(imatched)
