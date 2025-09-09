@@ -512,8 +512,8 @@ def set_outfile(imatched:pandas.Series):
 if __name__ == '__main__':
 
     test = False
-    fit_em = True
-    slurp_em = False
+    fit_em = False
+    slurp_em = True
 
     match_file = 'matched_argo_bgc_profiles_bbp.csv'
     # Load up Argo profiles, already matched to PACE
@@ -553,4 +553,4 @@ if __name__ == '__main__':
             fit_one(imatched, outfile, nclosest=10)#, debug=True)
 
     if slurp_em:
-        slurp_fits(debug=True)
+        slurp_fits()#debug=True)
