@@ -224,6 +224,7 @@ def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38, nclosest:int=1):
     ok_idx = np.where((Rrs_ok & lat_ok).flatten())[0]
 
     # Find distance
+    embed(header='227 of grab')
     coords = np.stack((xds.latitude.values.flatten()[ok_idx],
         xds.longitude.values.flatten()[ok_idx]), axis=1)
     d = ocpy_coords.distance_from_latlon(lat_lon, coords)
@@ -235,7 +236,6 @@ def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38, nclosest:int=1):
     # Unravel
     dmin_ij = np.unravel_index(closest_idx, xds.latitude.shape)
 
-    embed(header='238 of grab')
 
     return d[closest_idx], dmin_ij
 
