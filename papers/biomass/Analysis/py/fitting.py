@@ -519,6 +519,8 @@ if __name__ == '__main__':
     # Load up Argo profiles, already matched to PACE
     matched = pandas.read_csv(match_file)
 
+    #embed(header='556 of fitting.py')
+
     if test:
         # Load the matched file
         imatched = matched.iloc[30]
@@ -528,9 +530,9 @@ if __name__ == '__main__':
         fit_one(imatched, outfile, nclosest=10)#, debug=True)
 
     if fit_em:
-        clobber = True
+        clobber = False
         for ss in range(len(matched)):
-            #if ss < 309:
+            #if ss < 625:
             #    continue
             imatched = matched.iloc[ss]
             print("*"*50)
