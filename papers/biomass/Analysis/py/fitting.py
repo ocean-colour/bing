@@ -456,7 +456,7 @@ def slurp_fits(debug:bool=False):
     for ss in range(len(matched)):
         imatched = matched.iloc[ss]
         outfile = set_outfile(imatched)
-        print(f'Working on {ss+1}/{len(matched)}: {outfile}...')
+        print(f'Working on {ss+1}/{len(matched)}: {os.path.basename(outfile)}...')
 
         # Load
         if not os.path.exists(outfile):
@@ -513,8 +513,8 @@ def set_outfile(imatched:pandas.Series):
 if __name__ == '__main__':
 
     test = False
-    fit_em = False
-    slurp_em = True
+    fit_em = True
+    slurp_em = False
 
     match_file = 'matched_argo_bgc_profiles_bbp.csv'
     # Load up Argo profiles, already matched to PACE
@@ -533,8 +533,8 @@ if __name__ == '__main__':
     if fit_em:
         clobber = False
         for ss in range(len(matched)):
-            #if ss < 625:
-            #    continue
+            if ss < 799:
+                continue
             imatched = matched.iloc[ss]
             print("*"*50)
             print("*"*50)
