@@ -456,6 +456,7 @@ def slurp_fits(debug:bool=False):
     for ss in range(len(matched)):
         imatched = matched.iloc[ss]
         outfile = set_outfile(imatched)
+        print(f'Working on {ss+1}/{len(matched)}: {outfile}...')
 
         # Load
         if not os.path.exists(outfile):
