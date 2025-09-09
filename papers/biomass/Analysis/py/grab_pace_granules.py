@@ -220,7 +220,8 @@ def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38, nclosest:int=1):
             - tuple: The indices (i, j) of the closest valid Rrs value in the dataset.
     """
     Rrs_ok = xds.Rrs_unc.values[:,:,iRrs] > 0.
-    ok_idx = np.where(Rrs_ok.flatten())[0]
+    lat_finite = np.isfinite(xds.latitude.values)
+    ok_idx = np.where((Rrs_ok & lat_finite).flatten())[0]
 
     # Find distance
     coords = np.stack((xds.latitude.values.flatten(), 
