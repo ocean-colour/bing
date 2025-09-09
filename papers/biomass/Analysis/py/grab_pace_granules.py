@@ -221,7 +221,8 @@ def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38, nclosest:int=1):
     """
     Rrs_ok = xds.Rrs_unc.values[:,:,iRrs] > 0.
     lat_ok = np.isfinite(xds.latitude.values)
-    ok_idx = np.where((Rrs_ok & lat_ok).flatten())[0]
+    lon_ok = np.isfinite(xds.longitude.values)
+    ok_idx = np.where((Rrs_ok & lat_ok & lon_ok).flatten())[0]
 
     if len(ok_idx) == 0:
         return None, None
@@ -231,16 +232,15 @@ def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38, nclosest:int=1):
         xds.longitude.values.flatten()[ok_idx]), axis=1)
     d = ocpy_coords.distance_from_latlon(lat_lon, coords)
 
-    # Closest 
+    # Closest (deal with indices)
     srt = np.argsort(d)
-    closest_idx = ok_idx[srt[:nclosest]]
+    idx_srt = srt[:nclosest]
+    closest_idx = ok_idx[idx_srt]
 
     # Unravel
     dmin_ij = np.unravel_index(closest_idx, xds.latitude.shape)
 
-    embed(header='241 of grab')
-
-    return d[closest_idx], dmin_ij
+    return d[idx_srt], dmin_ij
 
 def load_from_json(json_file:str):
     """
