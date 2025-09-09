@@ -223,8 +223,10 @@ def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38, nclosest:int=1):
     lat_ok = np.isfinite(xds.latitude.values)
     ok_idx = np.where((Rrs_ok & lat_ok).flatten())[0]
 
+    if len(ok_idx) == 0:
+        return None, None
+
     # Find distance
-    embed(header='227 of grab')
     coords = np.stack((xds.latitude.values.flatten()[ok_idx],
         xds.longitude.values.flatten()[ok_idx]), axis=1)
     d = ocpy_coords.distance_from_latlon(lat_lon, coords)
