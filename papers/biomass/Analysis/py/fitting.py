@@ -564,4 +564,4 @@ if __name__ == '__main__':
             fit_one(imatched, outfile, nclosest=10)#, debug=True)
 
     if slurp_em:
-        slurp_fits()#debug=True)
+        slurp_fits(matched)#debug=True)
