@@ -137,8 +137,11 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
     xds, flags = pace_io.load_oci_l2(gfile)
 
     # Find closest Rrs
-    d_min, dmin_ij = closest_Rrs(xds, (imatched.lat, imatched.lon),
+    try:
+        d_min, dmin_ij = closest_Rrs(xds, (imatched.lat, imatched.lon),
                                  nclosest=nclosest)
+    except:
+        embed(header=f"Error finding closest Rrs for {gfile}")
 
     if debug:
         embed(header='44 of fitting.py')
