@@ -520,7 +520,7 @@ if __name__ == '__main__':
     # Load up Argo profiles, already matched to PACE
     matched = pandas.read_csv(match_file)
 
-    #embed(header='556 of fitting.py')
+    embed(header='556 of fitting.py')
 
     if test:
         # Load the matched file
