@@ -129,6 +129,8 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
     - If the least-squares fitting fails, a RuntimeError is caught, and 
         placeholder results are saved with parameter values set to -999.
     """
+    # Save
+    out_dict = {}
 
     # Load PACE file
     gfile = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_AOP', 
@@ -189,8 +191,6 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
             # Spectra
             all_spec.append(items[ss])
 
-    # Save
-    out_dict = {}
 
     # Bust?
     if len(all_ans) == 0:
