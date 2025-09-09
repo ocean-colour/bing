@@ -408,7 +408,7 @@ def mini_corner(models, chains, show_params:list,
         plt.savefig(outfile, dpi=300)
         print(f"Saved: {outfile}")
 
-def slurp_fits(debug:bool=False):
+def slurp_fits(matched, debug:bool=False):
     """
     Processes matched Argo BGC profiles and extracts specific parameters for analysis.
 
@@ -423,6 +423,11 @@ def slurp_fits(debug:bool=False):
     3. Extracts the median values of Bnw, beta, and aph from the loaded data.
     4. Appends the extracted values to the dataset.
     5. Saves the updated dataset back to the CSV file.
+
+    Args:
+        matched (pandas.DataFrame): DataFrame containing matched Argo BGC profiles.
+        debug (bool, optional): If True, enables debugging mode with an interactive session. 
+                                Default is False.
 
     Raises:
         FileNotFoundError: If a required data file does not exist.
@@ -443,8 +448,8 @@ def slurp_fits(debug:bool=False):
     """
 
     # Load up Argo profiles, already matched to PACE
-    match_file = 'matched_argo_bgc_profiles_bbp.csv'
-    matched = pandas.read_csv(match_file)
+    #match_file = 'matched_argo_bgc_profiles_bbp.csv'
+    #matched = pandas.read_csv(match_file)
 
     beta_vals = []
     Bnw_vals = []
@@ -520,7 +525,7 @@ if __name__ == '__main__':
     # Load up Argo profiles, already matched to PACE
     matched = pandas.read_csv(match_file)
 
-    embed(header='556 of fitting.py')
+    #embed(header='556 of fitting.py')
 
     if test:
         # Load the matched file
@@ -533,7 +538,7 @@ if __name__ == '__main__':
     if fit_em:
         clobber = False
         for ss in range(len(matched)):
-            if ss < 799:
+            if ss < 798:
                 continue
             imatched = matched.iloc[ss]
             print("*"*50)
