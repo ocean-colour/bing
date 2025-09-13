@@ -470,7 +470,8 @@ def slurp_fits(matched, debug:bool=False):
 
         # Load
         if not os.path.exists(outfile):
-            embed(header=f"303: Missing {outfile}...")
+            embed(header=f"303: Missing {outfile}...; ss={ss}")
+            raise FileNotFoundError(f"Missing {outfile}...")
         d = np.load(outfile)
 
         if 'chains' not in d:
@@ -523,8 +524,8 @@ def set_outfile(imatched:pandas.Series):
 if __name__ == '__main__':
 
     test = False
-    fit_em = True
-    slurp_em = False
+    fit_em = False
+    slurp_em = True
 
     match_file = 'matched_argo_bgc_profiles_bbp.csv'
     # Load up Argo profiles, already matched to PACE
@@ -543,8 +544,8 @@ if __name__ == '__main__':
     if fit_em:
         clobber = False
         for ss in range(len(matched)):
-            if ss < 798:
-                continue
+            #if ss < 798:
+            #    continue
             imatched = matched.iloc[ss]
             print("*"*50)
             print("*"*50)
