@@ -19,6 +19,7 @@ from IPython import embed
 PACE_L2_AOP_PATH = os.path.join(os.getenv('OS_COLOR'),
                                  'PACE',
                                  'L2_AOP')
+PACE_L2_IOP_PATH = PACE_L2_AOP_PATH.replace('AOP', 'IOP')
 
 def build_json(outfile:str='PACE_50clouds.json', cloud_cover=(0,50)):
     """
@@ -59,7 +60,14 @@ def build_json(outfile:str='PACE_50clouds.json', cloud_cover=(0,50)):
     ocpy_io.savejson(outfile, jdict)
     print(f'Wrote {len(full_dict)} granules to {outfile}')
 
-def download_matched(match_file:str):
+def download_matched(match_file:str, IOP:bool=False):
+    """ Downloads PACE granules matched to Argo profiles from a given CSV file.
+
+    Args:
+        match_file (str): Path to the CSV file containing matched Argo profiles and PACE IDs.
+        IOP (bool, optional): If True, downloads IOP granules instead of AOP granules. Defaults to False.
+
+    """
 
     # Load up Argo profiles, already matched to PACE
     matched = pandas.read_csv(match_file)
@@ -80,15 +88,21 @@ def download_matched(match_file:str):
             granule = pace.iloc[ss]
             #embed(header=f'Granule for {pace_id}')
 
-            outfile = os.path.join(PACE_L2_AOP_PATH, 
-                os.path.basename(granule.url))
+            url = granule.url
+            if IOP: 
+                path = PACE_L2_IOP_PATH 
+                url = url.replace('AOP', 'IOP')
+            else:
+                path = PACE_L2_AOP_PATH
+            outfile = os.path.join(path, 
+                os.path.basename(url))
             # Check if already downloaded
             if os.path.exists(outfile):
                 print(f'Already downloaded {outfile}')
                 continue
             # wget
             subprocess.run(['wget', '-O', outfile, granule.url])
-    print(f'Downloaded {len(matched)} Argo profiles to {PACE_L2_AOP_PATH}')        
+    print(f'Downloaded {len(matched)} Argo profiles to {path}')
 
 def find_closest(match_file:str, iRrs:int=38,
                  debug:bool=False, skip_to:int=None):
@@ -270,8 +284,8 @@ def load_from_json(json_file:str):
 if __name__ == '__main__':
 
     build = False
-    download = False
-    closest = True
+    download = True
+    closest = False
 
     if build:
         # Build the JSON file
@@ -280,7 +294,8 @@ if __name__ == '__main__':
     # Download nearest granules
     if download:
         # Download nearest granules
-        download_matched('matched_argo_bgc_profiles_bbp.csv')
+        #download_matched('matched_argo_bgc_profiles_bbp.csv')
+        download_matched('matched_argo_bgc_profiles_bbp.csv', IOP=True)
 
     if closest:
         # Find closest granules
