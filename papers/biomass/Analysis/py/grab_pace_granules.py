@@ -101,7 +101,7 @@ def download_matched(match_file:str, IOP:bool=False):
                 print(f'Already downloaded {outfile}')
                 continue
             # wget
-            subprocess.run(['wget', '-O', outfile, granule.url])
+            subprocess.run(['wget', '-O', outfile, url])
     print(f'Downloaded {len(matched)} Argo profiles to {path}')
 
 def find_closest(match_file:str, iRrs:int=38,
