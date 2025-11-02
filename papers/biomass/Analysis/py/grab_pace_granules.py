@@ -101,6 +101,7 @@ def download_matched(match_file:str, IOP:bool=False):
                 print(f'Already downloaded {outfile}')
                 continue
             # wget
+            embed(header='81 of grab')
             subprocess.run(['wget', '-O', outfile, url])
     print(f'Downloaded {len(matched)} Argo profiles to {path}')
 
