@@ -269,10 +269,36 @@ def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
     plt.clf()
     gs = gridspec.GridSpec(2,2)
 
+    # To:
+    gs = gridspec.GridSpec(3, 2, height_ratios=[0.3, 1, 1], hspace=0.02)
+
+    # Then modify the subplot assignments:
+    # Change ax_R = plt.subplot(gs[0]) to:
+    ax_res = plt.subplot(gs[0])  # New residuals axis
+    ax_R = plt.subplot(gs[2], sharex=ax_res)  # Rrs axis, now at position 2
+
+    # Keep the other axes but update their positions:
+    ax_anw = plt.subplot(gs[3])  # was gs[1], now gs[3]
+    ax_bb = plt.subplot(gs[4])   # was gs[2], now gs[4]
+    ax_c = plt.subplot(gs[5])    # was gs[3], now gs[5]
+
+    # After calculating chi2 and before the Rrs plotting section, add residual plotting:
+    # (This would go right after the red_chi2 calculation, around line 102)
+
+
+
+    # Hide x-axis labels for residual plot (they'll show on main Rrs plot)
+    ax_res.set_xticklabels([])
+
+    # Update axes list to include residual axis:
+    # Change from:
+    axes = [ax_anw, ax_bb, ax_R]
+    # To:
+    axes = [ax_anw, ax_bb, ax_R, ax_res]
+
     # #########################################################
     # a without water
 
-    ax_anw = plt.subplot(gs[1])
     ax_anw.plot(wave, a_mean-a_w, 'b-', label='Retrieval')
     ax_anw.fill_between(wave, a_5-a_w, a_95-a_w, 
         color='b', alpha=0.5, label='Uncertainty') 
@@ -295,7 +321,6 @@ def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
 
     # #########################################################
     # bb nw
-    ax_bb = plt.subplot(gs[2])
     ax_bb.plot(wave, bb_mean-bb_w, 'g-', label='Retrieval')
     ax_bb.fill_between(wave, bb_5-bb_w, bb_95-bb_w,
             color='g', alpha=0.5, label='Uncertainty') 
@@ -318,7 +343,6 @@ def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
 
     # #########################################################
     # Rs
-    ax_R = plt.subplot(gs[0])
     
     # Calcualte chi^2
     Rsig=np.sqrt(Rrs_obs['var'])
@@ -345,16 +369,30 @@ def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
               r'$\chi^2_\nu = '+f'{red_chi2:0.2f}'+r'$',
               fontsize=15., transform=ax_R.transAxes)
 
+    # Plot residuals
+    residuals = (Rrs_obs['spec'] - mod_R) / Rsig  # Normalized residuals
+    for y in [-2,0,2]:
+        ls = ':' if y == 0 else '--'
+        ax_res.axhline(y=y, color='gray', linestyle=ls, alpha=0.5)
+    ax_res.scatter(Rrs_obs['wave'], residuals, color='k',
+                   s=1.)
+    ax_res.set_ylabel('Residuals\n(σ)', fontsize=12)
+    ymx = 1.2*np.max(np.abs(residuals)) 
+    ax_res.set_ylim([-ymx, ymx])
+    ax_res.grid(True, alpha=0.3)
+    ax_res.minorticks_on()
+
+    fontsize = 15.
+    plotting.set_fontsize(ax_res, fontsize)
+
     # axes
     axes = [ax_anw, ax_bb, ax_R]
-    fontsize = 15.
     for ss, ax in enumerate(axes):
         plotting.set_fontsize(ax, fontsize)
         ax.set_xlabel('Wavelength (nm)')
         ax.legend(fontsize=15.)
 
     # Mini corner plot
-    ax_c = plt.subplot(gs[3])
     img = mpimg.imread('tmpc.png')
     ax_c.imshow(img)
     ax_c.axis('off') 
@@ -367,6 +405,8 @@ def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
     if outfile is not None:
         plt.savefig(outfile, dpi=300)
         print(f"Saved: {outfile}")
+    else:
+        plt.show()
 
 def mini_corner(models, chains, show_params:list,
                 outfile:str=None):
