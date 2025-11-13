@@ -206,8 +206,10 @@ class RatioPrior(Prior):
             pdict (dict): The dictionary containing the prior information
                 ratio (float): The mean value for the prior
                 sigma (float): The standard deviation for the prior
+                i0 (int): Index of the first parameter in the parameter array
+                i1 (int): Index of the second parameter in the parameter array
         """
-        # Requred
+        # Required
         self.ratio = pdict['ratio']
         self.sigma = pdict['sigma']
         self.i0 = pdict['i0']
@@ -288,7 +290,11 @@ class Priors:
         # Extras
         if len(self.priors) > params.size:
             for kk in range(params.size, len(self.priors)):
-                prior_sum += self.priors[kk].calc(params)
+                prior = self.priors[kk]
+                if getattr(prior, "flavor", None) == "ratio":
+                    prior_sum += prior.calc(params)
+                else:
+                    raise TypeError(f"Prior at index {kk} with flavor '{getattr(prior, 'flavor', None)}' does not support full params array input.")
         
         # Return
         return prior_sum
