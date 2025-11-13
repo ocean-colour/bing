@@ -10,7 +10,7 @@ except ImportError:
 import matplotlib
 from matplotlib import pyplot as plt
 import matplotlib as mpl
-from matplotlib.colors import LinearSegmentedColormap, colorConverter
+from matplotlib.colors import LinearSegmentedColormap, to_rgba
 import matplotlib.gridspec as gridspec
 mpl.rcParams['font.family'] = 'stixgeneral'
 
