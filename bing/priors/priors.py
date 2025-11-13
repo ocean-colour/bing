@@ -179,8 +179,6 @@ class RatioPrior(Prior):
     """
     Class for a Ratio prior, e.g. CDOM/aph
 
-    Attributes:
-
     """
     flavor:str = 'ratio'
     """
