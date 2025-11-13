@@ -92,6 +92,7 @@ def download_matched(match_file:str, IOP:bool=False):
             if IOP: 
                 path = PACE_L2_IOP_PATH 
                 url = url.replace('AOP', 'IOP')
+                url = url.replace('V3_0', 'V3_1')
             else:
                 path = PACE_L2_AOP_PATH
             outfile = os.path.join(path, 
@@ -101,7 +102,6 @@ def download_matched(match_file:str, IOP:bool=False):
                 print(f'Already downloaded {outfile}')
                 continue
             # wget
-            embed(header='81 of grab')
             subprocess.run(['wget', '-O', outfile, url])
     print(f'Downloaded {len(matched)} Argo profiles to {path}')
 
