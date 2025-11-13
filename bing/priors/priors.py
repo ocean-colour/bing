@@ -290,7 +290,11 @@ class Priors:
         # Extras
         if len(self.priors) > params.size:
             for kk in range(params.size, len(self.priors)):
-                prior_sum += self.priors[kk].calc(params)
+                prior = self.priors[kk]
+                if getattr(prior, "flavor", None) == "ratio":
+                    prior_sum += prior.calc(params)
+                else:
+                    raise TypeError(f"Prior at index {kk} with flavor '{getattr(prior, 'flavor', None)}' does not support full params array input.")
         
         # Return
         return prior_sum
