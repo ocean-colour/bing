@@ -376,6 +376,21 @@ def hist2d(
         Any additional keyword arguments to pass to the `pcolor` method when
         adding the density colormap.
 
+    bins : int or [int, int], optional
+        The number of bins for the histogram in each dimension (default: 40).
+        Can be an integer or a tuple/list of two integers.
+    range : [[float, float], [float, float]], optional
+        The range of values for the x and y axes. If None, uses the data range.
+    weights : array-like, optional
+        An array of weights for each sample. Default is None (no weighting).
+    smooth : float, optional
+        Standard deviation for Gaussian smoothing of the density. Default is 0 (no smoothing).
+    color : str or tuple, optional
+        Color for the data points and contours. Default is matplotlib's ytick color.
+    new_fig : bool, optional
+        If True, creates a new figure. Default is False.
+    force_range : bool, optional
+        If True, forces the use of the specified range even if data is outside. Default is False.
     """
     if ax is None:
         ax = plt.gca()
