@@ -208,6 +208,8 @@ class RatioPrior(Prior):
             pdict (dict): The dictionary containing the prior information
                 ratio (float): The mean value for the prior
                 sigma (float): The standard deviation for the prior
+                i0 (int): Index of the first parameter in the parameter array
+                i1 (int): Index of the second parameter in the parameter array
         """
         # Requred
         self.ratio = pdict['ratio']
