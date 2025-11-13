@@ -8,8 +8,9 @@ def_dict = dict(model_names=[], # Name of models for a and bb, list
                 wv_max=700.,       # Maximum wavelength, float
                 satellite='PACE',    # Satellite name, str
                 add_noise=False,    # Add noise flag, bool
-                apriors=None,       # Priors for a, dict
-                bpriors=None,       # Priors for bb, dict
+                apriors=None,       # Priors for a params, list of dict
+                bpriors=None,       # Priors for bb params, list of dict
+                othera_priors=None,  # Other a priors, list of dict
                 set_Sdg=None,       # Set Sdg flag, bool
                 sSdg=None,         # Sdg value, float
                 beta=None,         # Beta value, float
