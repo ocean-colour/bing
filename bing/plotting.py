@@ -7,7 +7,6 @@ try:
 except ImportError:
     gaussian_filter = None
 
-import matplotlib
 from matplotlib import pyplot as plt
 import matplotlib as mpl
 from matplotlib.colors import LinearSegmentedColormap, to_rgba
