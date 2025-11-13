@@ -211,7 +211,7 @@ class RatioPrior(Prior):
                 i0 (int): Index of the first parameter in the parameter array
                 i1 (int): Index of the second parameter in the parameter array
         """
-        # Requred
+        # Required
         self.ratio = pdict['ratio']
         self.sigma = pdict['sigma']
         self.i0 = pdict['i0']
