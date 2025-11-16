@@ -20,6 +20,8 @@ from bing.models import utils as model_utils
 from grab_pace_granules import load_from_json
 import fitting as m_fitting
 
+from IPython import embed
+
 match_file = 'matched_argo_bgc_profiles_bbp.csv'
 
 def slurp_flh_giop(debug:bool=False):
@@ -63,8 +65,8 @@ def slurp_flh_giop(debug:bool=False):
         iop_file = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_IOP', 
                      iop_file)
         xds_iop, flags = pace_io.load_iop_l2(iop_file)
-        bbp_442 = xds_iop.bbp_442[ix0, iy0]
-        bbp_s = xds_iop.bbp_s[ix0, iy0]
+        bbp_442 = xds_iop.bbp_442.data[ix0, iy0]
+        bbp_s = xds_iop.bbp_s.data[ix0, iy0]
         bbp_700 =  bbp_442 * (700./442.)**(-1*bbp_s)
 
         # Save
@@ -72,7 +74,10 @@ def slurp_flh_giop(debug:bool=False):
         bbp700_list.append(bbp_700)
         bbp_442_list.append(bbp_442)
         bbp_s_list.append(bbp_s)
-        adg_s_list.append(xds_iop.adg_s[ix0, iy0])
+        #adg_s_list.append(xds_iop.adg_s.data[ix0, iy0])
+
+    if debug:
+        embed(header='slurp_flh_giop debug')
 
     # Add to dataframe
     matched['FLH'] = FLH_list
@@ -88,5 +93,5 @@ def slurp_flh_giop(debug:bool=False):
 
 # Run it
 if __name__ == '__main__':
-    slurp_flh_giop(debug=True)
+    slurp_flh_giop(debug=False)
     
