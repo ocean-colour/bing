@@ -33,6 +33,15 @@ from grab_pace_granules import closest_Rrs
 
 from IPython import embed
 
+def chains_to_param(fit:dict):
+    iwave = fit['wave']
+
+    # Init models
+    p = standard.expb_pow()
+    models = model_utils.init(p.model_names, iwave)
+    bing_priors.set_standard_priors(models, p)
+    pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
+
 def fit_me(items):
 
     iwave, ispec, isig = items

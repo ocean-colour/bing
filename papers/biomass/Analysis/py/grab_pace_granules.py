@@ -90,12 +90,12 @@ def download_matched(match_file:str, IOP:bool=False):
 
             url = granule.url
             if IOP: 
-                path = PACE_L2_IOP_PATH 
+                path = PACE_L2_IOP_PATH
                 url = url.replace('AOP', 'IOP')
                 url = url.replace('V3_0', 'V3_1')
             else:
                 path = PACE_L2_AOP_PATH
-            outfile = os.path.join(path, 
+            outfile = os.path.join(path,
                 os.path.basename(url))
             # Check if already downloaded
             if os.path.exists(outfile):
