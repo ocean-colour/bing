@@ -1,8 +1,8 @@
 .. BING documentation master file
 
-==============================================
-BING - Biogeochemical Index Network Generator
-==============================================
+==================================================
+BING - Bayesian INference with Gordon coefficients
+==================================================
 
 .. image:: https://img.shields.io/badge/python-3.8+-blue.svg
    :target: https://www.python.org/downloads/
@@ -22,7 +22,6 @@ Features
 * **Ocean Color Analysis**: Process and analyze remote sensing reflectance (Rrs) data
 * **Model Fitting**: Bayesian and least-squares fitting of bio-optical models
 * **PACE Integration**: Native support for PACE OCI data processing
-* **Argo BGC Matching**: Tools for matching satellite data with Argo BGC float profiles
 * **Uncertainty Quantification**: Comprehensive error propagation and uncertainty analysis
 
 .. toctree::
