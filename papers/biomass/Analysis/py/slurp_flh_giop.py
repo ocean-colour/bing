@@ -39,13 +39,24 @@ def slurp_flh_giop(debug:bool=False):
     # Loop me
     for ss in range(len(matched)):
         print(ss)
+        # Fill with np.nan?
+        if len(FLH_list) < ss:
+            FLH_list.append(np.nan)
+        if len(bbp700_list) < ss:
+            bbp700_list.append(np.nan)
+            bbp_442_list.append(np.nan)
+            bbp_s_list.append(np.nan)
+            #adg_s_list.append(np.nan)
         if debug and ss>2:
-            break
+            continue
         imatched = matched.iloc[ss]
 
         # Fits
         fits_file = m_fitting.set_outfile(imatched)
-        fits = np.load(fits_file)
+        try:
+            fits = np.load(fits_file)
+        except:
+            continue
 
         # x,y of closest
         ix0, iy0 = fits['Rrs_idx'][0]
@@ -55,8 +66,12 @@ def slurp_flh_giop(debug:bool=False):
         aop_file = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_AOP', 
                      os.path.basename(aop_file))
         os.path.exists(aop_file)
-        xds_aop, flags = pace_io.load_oci_l2(aop_file)
+        try:
+            xds_aop, flags = pace_io.load_oci_l2(aop_file)
+        except:
+            continue
         FLH = xds_aop['FLH'].data[ix0,iy0]
+        FLH_list.append(FLH)
 
         # GIOP
         iop_file = imatched.closest_file.replace('AOP', 'IOP')
@@ -64,19 +79,26 @@ def slurp_flh_giop(debug:bool=False):
         iop_file
         iop_file = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_IOP', 
                      iop_file)
-        xds_iop, flags = pace_io.load_iop_l2(iop_file)
+        try:
+            xds_iop, flags = pace_io.load_iop_l2(iop_file)
+        except:
+            continue
         bbp_442 = xds_iop.bbp_442.data[ix0, iy0]
         bbp_s = xds_iop.bbp_s.data[ix0, iy0]
         bbp_700 =  bbp_442 * (700./442.)**(-1*bbp_s)
 
         # Save
-        FLH_list.append(FLH)
         bbp700_list.append(bbp_700)
         bbp_442_list.append(bbp_442)
         bbp_s_list.append(bbp_s)
         #adg_s_list.append(xds_iop.adg_s.data[ix0, iy0])
 
     if debug:
+        FLH_list.append(np.nan)
+        bbp700_list.append(np.nan)
+        bbp_442_list.append(np.nan)
+        bbp_s_list.append(np.nan)
+        #adg_s_list.append(np.nan)
         embed(header='slurp_flh_giop debug')
 
     # Add to dataframe
@@ -87,11 +109,14 @@ def slurp_flh_giop(debug:bool=False):
 
 
     # Write
-    if not debug:
-        matched.to_csv(match_file, index=False)
-        print(f'Wrote {len(matched)} profiles to {match_file}')
+    if debug:
+        outfile = 'debug_flh_giop_matched_profiles.csv'
+    else:
+        outfile = match_file
+    matched.to_csv(outfile, index=False)
+    print(f'Wrote {len(matched)} profiles to {outfile}')
 
 # Run it
 if __name__ == '__main__':
-    slurp_flh_giop(debug=False)
+    slurp_flh_giop(debug=True)
     
