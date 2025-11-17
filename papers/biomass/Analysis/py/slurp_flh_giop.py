@@ -118,5 +118,5 @@ def slurp_flh_giop(debug:bool=False):
 
 # Run it
 if __name__ == '__main__':
-    slurp_flh_giop(debug=True)
+    slurp_flh_giop(debug=False)
     
