@@ -13,8 +13,10 @@ from matplotlib.colors import LinearSegmentedColormap, to_rgba
 import matplotlib.gridspec as gridspec
 mpl.rcParams['font.family'] = 'stixgeneral'
 
+import corner
+
 from ocpy.water import absorption
-from ocpy.hydrolight import loisel23
+from ocpy.water import scattering as w_scattering
 from ocpy.utils import plotting
 
 from bing import evaluate
@@ -33,7 +35,9 @@ def show_fits(models:list, inputs:np.ndarray,
              Rrs_true:dict=None,
              show_params:bool=False,
              perc:tuple=(5,95),
-             log_Rrs:bool=True):
+             log_Rrs:bool=True,
+             log_abb:bool=False):
+
     """
     Plots the fit results for the given models and inputs.
 
@@ -44,6 +48,7 @@ def show_fits(models:list, inputs:np.ndarray,
             or 
             chains: The MCMC chains.
         ex_a_params (np.ndarray):
+            Extra parameters for the a modegit config pull.rebase falsel.
             The extra parameters for `a_nw`, e.g. Chl
         ex_bb_params (np.ndarray):
             The extra parameters for `b_bnw`.
@@ -59,6 +64,9 @@ def show_fits(models:list, inputs:np.ndarray,
         show_params (bool, optional): Whether to show the parameters. Default is False.
         log_Rrs (bool, optional): Whether to use a logarithmic scale for the y-axis of `R_rs`. Default is True.
         perc (tuple, optional): The percentiles to calculate. Default is (5, 95).
+        log_abb (bool, optional):
+            Whether to use a logarithmic scale for the y-axis of a_nw and
+            b_bnw`. Default is False.
 
     Returns:
         axes (list): A list of the axes objects used in the plot.
@@ -88,17 +96,8 @@ def show_fits(models:list, inputs:np.ndarray,
 
     # Water
     a_w = absorption.a_water(wave, data='IOCCG')
-    # TODO -- FIX THIS!
-    # THIS IS A HACK UNTIL I CAN RESOLVE bbw
-    ds = loisel23.load_ds(4,0)
-    l23_wave = ds.Lambda.data
-    idx = 170 # Random choie
-    l23_bb = ds.bb.data[idx] 
-    l23_bbnw = ds.bbnw.data[idx] 
-    l23_bbw = l23_bb - l23_bbnw
-    # Interpolate
-    bb_w = np.interp(wave, l23_wave, l23_bbw)
-
+    bb_w = w_scattering.bbw_from_l23(wave)
+    
     # #########################################################
     # Plot the solution
     lgsz = 14.
@@ -125,6 +124,8 @@ def show_fits(models:list, inputs:np.ndarray,
         ax_anw.plot(xqaa['wave'], xqaa['anw'], ':', color='orange', label='XQAA')
     
     ax_anw.set_ylabel(r'$a_{\rm nw}(\lambda) \; [{\rm m}^{-1}]$')
+    if log_abb:
+        ax_anw.set_yscale('log')
 
     #ax_anw.plot(wave_true, adg, '-', color='brown', label=r'$a_{\rm dg}$')
     #ax_anw.plot(wave_true, aph, 'b-', label=r'$a_{\rm ph}$')
@@ -149,6 +150,9 @@ def show_fits(models:list, inputs:np.ndarray,
 
     #ax_bb.set_xlabel('Wavelength (nm)')
     ax_bb.set_ylabel(r'$b_{b,nw}(\lambda) \; [{\rm m}^{-1}]$')
+
+    if log_abb:
+        ax_bb.set_yscale('log')
 
     #if set_abblim:
     #    ax_bb.set_ylim(bottom=0., top=2*show_bb.max())
@@ -282,6 +286,70 @@ def show_anw_fits(models:list, prep_chains:np.ndarray,
 
     return ax_anw
 
+def corner_plot(chains, models:list=None, 
+           outfile:str=None,
+           show:bool=True, show_log:bool=True):
+
+    # Init the models
+    #models = model_utils.init(p.model_names, d_chains['wave'])
+
+    burn = 7000
+    thin = 1
+    coeff = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+    if not show_log:
+        coeff = 10**coeff
+
+    truths = None
+
+    # Labels
+    if models is not None:
+        clbls = models[0].pnames + models[1].pnames
+        # Add log 10
+        clbls = [r'$\log_{10}('+f'{clbl}'+r'$)' for clbl in clbls]
+    else:
+        clbls = None
+
+    # Replace Aph with Cph
+    #for ss, clbl in enumerate(clbls):
+    #    if 'Aph' in clbl:
+    #        clbls[ss] = clbl.replace('Aph', 'Cph')
+    #embed(header='figs 407')
+
+    if show_log and truths is not None:
+        truths = np.log10(truths)
+
+    fig = corner.corner(
+        coeff, labels=clbls,
+        label_kwargs={'fontsize':17},
+        color='k',
+        #axes_scale='log',
+        truths=truths,
+        show_titles=True,
+        title_kwargs={"fontsize": 12},
+        )
+
+    # Add 95%
+    ss = 0
+    for ax in fig.get_axes():
+        if len(ax.get_title()) > 0:
+            # Calculate the percntile
+            p_5, p_95 = np.percentile(coeff[:,ss], [5, 95], axis=0)
+            # Plot a vertical line
+            ax.axvline(p_5, color='b', linestyle=':')
+            ax.axvline(p_95, color='b', linestyle=':')
+            ss += 1
+
+
+
+    plt.tight_layout()#pad=0.0, h_pad=0.0, w_pad=0.3)
+    if outfile is not None:
+        plt.savefig(outfile, dpi=300)
+        print(f"Saved: {outfile}")
+
+    if show:
+        plt.show()
+
+    return fig
 
 def _set_xlim(force, new_fig, ax, new_xlim):
     if force or new_fig:

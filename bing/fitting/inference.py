@@ -81,12 +81,12 @@ def fit_one(items:list, models:list=None, pdict:dict=None, chains_only:bool=Fals
     Fits a model to a set of input data using the MCMC algorithm.
 
     Args:
-        models (list): The list of model objects, a_nw, bb_nw
         items (list): A list containing the 
             Rrs (numpy.ndarray): The reflectance data.
             varRrs (numpy.ndarray): The variance of the reflectance data.
             params (numpy.ndarray): The initial guess for the parameters.
             idx (int): The index of the item.
+        models (list): The list of model objects, a_nw, bb_nw
         pdict (dict, optional): A dictionary containing the model and fitting parameters. Defaults to None.
         chains_only (bool, optional): If True, only the chains are returned. Defaults to False.
 

@@ -6,6 +6,10 @@ import numpy as np
 import pytest
 
 from bing.models import anw as bing_anw
+from bing.parameters import standard
+from bing.priors import priors as bing_priors
+from bing.models import utils as model_utils
+
 
 from IPython import embed
 
@@ -51,3 +55,20 @@ def test_expnmf():
     # Check init -- this requires CNMF
     wave = np.arange(400, 755, 5.)
     anwExpNMF = bing_anw.aNWExpNMF(wave)
+
+
+def test_eval_chains():
+
+    # Dummy chains
+    nchains = 100
+    wavelength = np.arange(350, 755, 5.)
+    chains = np.random.rand(nchains, 3)
+    p = standard.expb_pow()
+    models = model_utils.init(p.model_names, wavelength)
+
+    # Calculate
+    #embed(header='69 of tests')
+    a = models[0].eval_a(chains[..., :models[0].nparam])
+
+    # Test
+    assert a.shape == (nchains, wavelength.size)
