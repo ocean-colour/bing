@@ -20,7 +20,7 @@ The **Bayesian INferences with Gordon coefficients (BING)** package is a compreh
 
 ## 📚 Documentation
 
-**Full documentation is available at [https://bing.readthedocs.io](https://bing.readthedocs.io)**
+**Full documentation is available at [https://oc-bing.readthedocs.io](https://oc-bing.readthedocs.io)**
 
 The documentation includes:
 - [Getting Started Guide](https://bing.readthedocs.io/en/latest/getting_started.html)

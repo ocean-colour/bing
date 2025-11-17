@@ -276,9 +276,6 @@ def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
 
     fig = plt.figure(figsize=(12,8))
     plt.clf()
-    gs = gridspec.GridSpec(2,2)
-
-    # To:
     gs = gridspec.GridSpec(3, 2, height_ratios=[0.3, 1, 1], hspace=0.02)
 
     # Then modify the subplot assignments:
@@ -300,9 +297,6 @@ def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
     ax_res.set_xticklabels([])
 
     # Update axes list to include residual axis:
-    # Change from:
-    axes = [ax_anw, ax_bb, ax_R]
-    # To:
     axes = [ax_anw, ax_bb, ax_R, ax_res]
 
     # #########################################################
