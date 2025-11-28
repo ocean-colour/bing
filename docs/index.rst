@@ -39,6 +39,7 @@ Features
    examples
    contributing
    changelog
+   raman
    references
 
 Quick Start
