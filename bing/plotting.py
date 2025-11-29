@@ -36,6 +36,7 @@ def show_fits(models:list, inputs:np.ndarray,
              show_params:bool=False,
              perc:tuple=(5,95),
              log_Rrs:bool=True,
+             show:bool=False,
              log_abb:bool=False):
 
     """
@@ -67,6 +68,7 @@ def show_fits(models:list, inputs:np.ndarray,
         log_abb (bool, optional):
             Whether to use a logarithmic scale for the y-axis of a_nw and
             b_bnw`. Default is False.
+        show (bool, optional): Whether to display the plot. Default is False.
 
     Returns:
         axes (list): A list of the axes objects used in the plot.
@@ -213,6 +215,9 @@ def show_fits(models:list, inputs:np.ndarray,
     if outfile is not None:
         plt.savefig(outfile, dpi=300)
         print(f"Saved: {outfile}")
+
+    if show:
+        plt.show()
 
     return axes, model_Rrs
 
