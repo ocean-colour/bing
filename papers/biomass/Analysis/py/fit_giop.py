@@ -194,7 +194,9 @@ def fit_giop_matchup(imatched: pandas.Series, outfile: str,
     out_dict['wave'] = iwave
     out_dict['ans_giop'] = ans_giop
     out_dict['cov_giop'] = cov_giop
+    out_dict['CDOM'] = 10**ans_giop[0]
     out_dict['bbp_700'] = bbp_700
+    out_dict['Y'] = models_giop[1].Y
     out_dict['Chl'] = Chl
     out_dict['model_names'] = [model.name for model in models_giop]
     np.savez(outfile, **out_dict)
@@ -230,6 +232,8 @@ def slurp_giop_fits(matched: pandas.DataFrame,
     giop_bbp_442_vals = []
     giop_bbp_s_vals = []
     giop_Y_vals = []
+    giop_Chl_vals = []
+    giop_CDOM_vals = []
 
     for ss in range(len(matched)):
         imatched = matched.iloc[ss]
@@ -252,11 +256,13 @@ def slurp_giop_fits(matched: pandas.DataFrame,
             giop_bbp_442_vals.append(np.nan)
             giop_bbp_s_vals.append(np.nan)
             giop_Y_vals.append(np.nan)
+            giop_Chl_vals.append(np.nan)
+            giop_CDOM_vals.append(np.nan)
             continue
 
         d = np.load(outfile)
 
-        if 'LM_giop' not in d or d['LM_giop'][0, 0] == -999:
+        if 'Chl' not in d or not np.isfinite(d['Chl']):
             print(f"Skipping {outfile} (no valid fit)")
             giop_adg_vals.append(np.nan)
             giop_aph_vals.append(np.nan)
@@ -265,37 +271,44 @@ def slurp_giop_fits(matched: pandas.DataFrame,
             giop_bbp_442_vals.append(np.nan)
             giop_bbp_s_vals.append(np.nan)
             giop_Y_vals.append(np.nan)
+            giop_CDOM_vals.append(np.nan)
+            giop_Chl_vals.append(np.nan)
             continue
 
         # Extract GIOP parameters (use closest pixel, index 0)
         # LM_giop has shape (nclosest, nparams) where nparams=3 for GIOP
-        giop_adg_vals.append(10**d['LM_giop'][0, 0])  # log10(adg)
-        giop_aph_vals.append(10**d['LM_giop'][0, 1])  # log10(aph)
-        giop_bbp_600_vals.append(10**d['LM_giop'][0, 2])  # log10(bbp@600)
+        #giop_adg_vals.append(10**d['LM_giop'][0, 0])  # log10(adg)
+        #giop_aph_vals.append(10**d['LM_giop'][0, 1])  # log10(aph)
 
         # Derived products
         if 'bbp_700' in d:
-            giop_bbp_700_vals.append(d['bbp_700'][0])
-            giop_bbp_442_vals.append(d['bbp_442'][0])
-            giop_bbp_s_vals.append(d['bbp_s'][0])
-            giop_Y_vals.append(d['Y'][0])
+            giop_bbp_700_vals.append(float(d['bbp_700']))
+            #giop_bbp_442_vals.append(d['bbp_442'][0])
+            #giop_bbp_s_vals.append(d['bbp_s'][0])
+            giop_Y_vals.append(float(d['Y']))
+            giop_Chl_vals.append(float(d['Chl']))
+            giop_CDOM_vals.append(float(d['CDOM']))
         else:
             giop_bbp_700_vals.append(np.nan)
             giop_bbp_442_vals.append(np.nan)
             giop_bbp_s_vals.append(np.nan)
             giop_Y_vals.append(np.nan)
+            giop_Chl_vals.append(np.nan)
+            giop_CDOM_vals.append(np.nan)
 
         if debug:
             break
 
     # Add to DataFrame
-    matched['GIOP_adg'] = np.array(giop_adg_vals)
-    matched['GIOP_aph'] = np.array(giop_aph_vals)
-    matched['GIOP_bbp_600'] = np.array(giop_bbp_600_vals)
+    #matched['GIOP_adg'] = np.array(giop_adg_vals)
+    #matched['GIOP_aph'] = np.array(giop_aph_vals)
+    #matched['GIOP_bbp_600'] = np.array(giop_bbp_600_vals)
     matched['GIOP_bbp_700'] = np.array(giop_bbp_700_vals)
-    matched['GIOP_bbp_442'] = np.array(giop_bbp_442_vals)
-    matched['GIOP_bbp_s'] = np.array(giop_bbp_s_vals)
+    #matched['GIOP_bbp_442'] = np.array(giop_bbp_442_vals)
+    #matched['GIOP_bbp_s'] = np.array(giop_bbp_s_vals)
     matched['GIOP_Y'] = np.array(giop_Y_vals)
+    matched['GIOP_Chl'] = np.array(giop_Chl_vals)
+    matched['GIOP_CDOM'] = np.array(giop_CDOM_vals)
 
     return matched
 
@@ -398,8 +411,8 @@ if __name__ == '__main__':
         matched = slurp_giop_fits(matched)
 
         # Save updated matched file
-        output_file = match_file.replace('.csv', '_with_GIOP.csv')
-        matched.to_csv(output_file, index=False)
-        print(f"\nSaved results to: {output_file}")
+        #output_file = match_file.replace('.csv', '_with_GIOP.csv')
+        matched.to_csv(match_file, index=False)
+        print(f"\nSaved results to: {match_file}")
         print(f"Total profiles: {len(matched)}")
         print(f"Successful GIOP fits: {(~matched.GIOP_bbp_700.isna()).sum()}")
