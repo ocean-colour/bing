@@ -1,4 +1,4 @@
-""" Tests for raman """""
+""" Tests for Raman scattering and Raman corrections """
 import os
 
 import numpy as np
@@ -7,11 +7,16 @@ import pytest
 import matplotlib.pyplot as plt
 
 from ocpy.utils import plotting
-from bing.rt import raman 
+from bing.rt import raman
+from bing.rt import rrs
 
 
 from IPython import embed
 
+
+# =============================================================================
+# Tests for raman.py module
+# =============================================================================
 
 def test_raman_seawater():
 
