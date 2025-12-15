@@ -13,8 +13,7 @@ from bing.rt import raman
 from IPython import embed
 
 
-#def test_raman_seawater():
-def raman_seawater():
+def test_raman_seawater():
 
     print("Raman Scattering in Seawater")
     print("=" * 50)
@@ -113,5 +112,5 @@ def raman_seawater():
     print("\n" + "=" * 50)
     print("Plots saved to: raman_seawater_plots.png")
 
-if __name__ == "__main__":
-    raman_seawater()
+#if __name__ == "__main__":
+#    raman_seawater()
