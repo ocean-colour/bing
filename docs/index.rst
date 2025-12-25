@@ -40,6 +40,7 @@ Features
    contributing
    changelog
    raman
+   chlorophyll_fluorescence
    references
 
 Quick Start
