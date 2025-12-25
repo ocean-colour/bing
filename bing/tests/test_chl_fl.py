@@ -1,15 +1,8 @@
 """ Tests for Chlorophyll Fluorescence module """
-import os
 
 import numpy as np
 
-try:
-    import pytest
-except ImportError:
-    pytest = None
-
 from bing.rt import chl_fl
-
 
 # =============================================================================
 # Tests for emission line shape functions
