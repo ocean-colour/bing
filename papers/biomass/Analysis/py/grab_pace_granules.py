@@ -23,6 +23,21 @@ PACE_L2_IOP_PATH = PACE_L2_AOP_PATH.replace('AOP', 'IOP')
 PACE_L1C_PATH = os.path.join(os.getenv('OS_COLOR'),
                               'PACE',
                               'L1C')
+PACE_L1B_PATH = os.path.join(os.getenv('OS_COLOR'),
+                              'PACE',
+                              'L1B')
+
+# Short names for earthaccess searches
+PACE_SHORT_NAMES = {
+    'L1B': 'PACE_OCI_L1B_SCI',
+    'L1C': 'PACE_OCI_L1C_SCI',
+}
+
+# Output paths for each level
+PACE_L1_PATHS = {
+    'L1B': PACE_L1B_PATH,
+    'L1C': PACE_L1C_PATH,
+}
 
 def build_json(outfile:str='PACE_50clouds.json', cloud_cover=(0,50)):
     """
@@ -63,16 +78,18 @@ def build_json(outfile:str='PACE_50clouds.json', cloud_cover=(0,50)):
     ocpy_io.savejson(outfile, jdict)
     print(f'Wrote {len(full_dict)} granules to {outfile}')
 
-def build_json_l1c(outfile:str='PACE_L1C.json',
-                   temporal:tuple=None,
-                   bounding_box:tuple=None):
+def build_json_l1(outfile:str=None,
+                  level:str='L1C',
+                  temporal:tuple=None,
+                  bounding_box:tuple=None):
     """
-    Fetches Level-1C granules from the PACE dataset,
+    Fetches Level-1B or Level-1C granules from the PACE dataset,
     then saves the results to a JSON file.
 
     Args:
         outfile (str): The name of the output JSON file where the granules will be saved.
-                        Defaults to 'PACE_L1C.json'.
+                        Defaults to 'PACE_{level}.json'.
+        level (str): Data level to fetch, either 'L1B' or 'L1C'. Defaults to 'L1C'.
         temporal (tuple): A tuple of date strings (start, end) in format 'YYYY-MM-DD'.
                           If None, searches all available data.
         bounding_box (tuple): A tuple of (west, south, east, north) coordinates.
@@ -81,11 +98,20 @@ def build_json_l1c(outfile:str='PACE_L1C.json',
     Returns:
         None
     """
+    # Validate level
+    level = level.upper()
+    if level not in PACE_SHORT_NAMES:
+        raise ValueError(f"level must be one of {list(PACE_SHORT_NAMES.keys())}, got '{level}'")
+
+    # Default output file
+    if outfile is None:
+        outfile = f'PACE_{level}.json'
+
     # Authorize
     auth = earthaccess.login(persist=True)
 
     # Build search parameters
-    search_params = dict(short_name="PACE_OCI_L1C_SCI")
+    search_params = dict(short_name=PACE_SHORT_NAMES[level])
     if temporal is not None:
         search_params['temporal'] = temporal
     if bounding_box is not None:
@@ -100,27 +126,39 @@ def build_json_l1c(outfile:str='PACE_L1C.json',
     # JSON
     jdict = ocpy_io.jsonify(full_dict)
     ocpy_io.savejson(outfile, jdict)
-    print(f'Wrote {len(full_dict)} L1C granules to {outfile}')
+    print(f'Wrote {len(full_dict)} {level} granules to {outfile}')
 
-def download_l1c(json_file:str='PACE_L1C.json',
-                 max_granules:int=None,
-                 output_path:str=None):
+def download_l1(json_file:str=None,
+                level:str='L1C',
+                max_granules:int=None,
+                output_path:str=None):
     """
-    Downloads PACE Level-1C granules from a JSON file.
+    Downloads PACE Level-1B or Level-1C granules from a JSON file.
 
     Args:
-        json_file (str): Path to the JSON file containing L1C granule metadata.
-                         Defaults to 'PACE_L1C.json'.
+        json_file (str): Path to the JSON file containing granule metadata.
+                         Defaults to 'PACE_{level}.json'.
+        level (str): Data level, either 'L1B' or 'L1C'. Defaults to 'L1C'.
         max_granules (int, optional): Maximum number of granules to download.
                                       Set to 1 for testing. If None, downloads all.
         output_path (str, optional): Path to save downloaded files.
-                                     Defaults to PACE_L1C_PATH.
+                                     Defaults to PACE_L1B_PATH or PACE_L1C_PATH based on level.
 
     Returns:
         list: List of paths to downloaded files.
     """
+    # Validate level
+    level = level.upper()
+    if level not in PACE_L1_PATHS:
+        raise ValueError(f"level must be one of {list(PACE_L1_PATHS.keys())}, got '{level}'")
+
+    # Default JSON file
+    if json_file is None:
+        json_file = f'PACE_{level}.json'
+
+    # Default output path
     if output_path is None:
-        output_path = PACE_L1C_PATH
+        output_path = PACE_L1_PATHS[level]
 
     # Create output directory if it doesn't exist
     os.makedirs(output_path, exist_ok=True)
@@ -156,7 +194,7 @@ def download_l1c(json_file:str='PACE_L1C.json',
         else:
             print(f'Failed to download {url}')
 
-    print(f'Downloaded {len(downloaded_files)} L1C granule(s) to {output_path}')
+    print(f'Downloaded {len(downloaded_files)} {level} granule(s) to {output_path}')
     return downloaded_files
 
 def download_matched(match_file:str, IOP:bool=False):
@@ -408,14 +446,20 @@ if __name__ == '__main__':
                      debug=False)#, skip_to=799)
 
     if build_l1c:
-        # Build the JSON file for L1C granules
+        # Build the JSON file for L1B or L1C granules
         # Example with temporal and spatial constraints:
-        # build_json_l1c(outfile='PACE_L1C.json',
-        #                temporal=('2024-04-01', '2024-04-30'),
-        #                bounding_box=(-180, -60, 180, 60))
-        build_json_l1c(outfile='PACE_L1C.json')
+        # build_json_l1(level='L1C',
+        #               temporal=('2024-04-01', '2024-04-30'),
+        #               bounding_box=(-180, -60, 180, 60))
+        #
+        # For L1B:
+        # build_json_l1(level='L1B')
+        build_json_l1(level='L1C')
 
     if download_l1c_flag:
-        # Download L1C granules
+        # Download L1B or L1C granules
         # Set max_granules=1 to download just 1 image for testing
-        download_l1c(json_file='PACE_L1C.json', max_granules=1)
+        #
+        # For L1B:
+        # download_l1(level='L1B', max_granules=1)
+        download_l1(level='L1C', max_granules=1)
