@@ -15,11 +15,14 @@ from remote_sensing.download import earthaccess as rs_ea
 
 from IPython import embed
 
-# PACE Granule path
+# PACE Granule paths
 PACE_L2_AOP_PATH = os.path.join(os.getenv('OS_COLOR'),
                                  'PACE',
                                  'L2_AOP')
 PACE_L2_IOP_PATH = PACE_L2_AOP_PATH.replace('AOP', 'IOP')
+PACE_L1C_PATH = os.path.join(os.getenv('OS_COLOR'),
+                              'PACE',
+                              'L1C')
 
 def build_json(outfile:str='PACE_50clouds.json', cloud_cover=(0,50)):
     """
@@ -59,6 +62,102 @@ def build_json(outfile:str='PACE_50clouds.json', cloud_cover=(0,50)):
     jdict = ocpy_io.jsonify(full_dict)
     ocpy_io.savejson(outfile, jdict)
     print(f'Wrote {len(full_dict)} granules to {outfile}')
+
+def build_json_l1c(outfile:str='PACE_L1C.json',
+                   temporal:tuple=None,
+                   bounding_box:tuple=None):
+    """
+    Fetches Level-1C granules from the PACE dataset,
+    then saves the results to a JSON file.
+
+    Args:
+        outfile (str): The name of the output JSON file where the granules will be saved.
+                        Defaults to 'PACE_L1C.json'.
+        temporal (tuple): A tuple of date strings (start, end) in format 'YYYY-MM-DD'.
+                          If None, searches all available data.
+        bounding_box (tuple): A tuple of (west, south, east, north) coordinates.
+                              If None, searches globally.
+
+    Returns:
+        None
+    """
+    # Authorize
+    auth = earthaccess.login(persist=True)
+
+    # Build search parameters
+    search_params = dict(short_name="PACE_OCI_L1C_SCI")
+    if temporal is not None:
+        search_params['temporal'] = temporal
+    if bounding_box is not None:
+        search_params['bounding_box'] = bounding_box
+
+    # Grab em
+    all_results = earthaccess.search_data(**search_params)
+
+    # Generate dict
+    full_dict = rs_ea.granules_to_dict(all_results)
+
+    # JSON
+    jdict = ocpy_io.jsonify(full_dict)
+    ocpy_io.savejson(outfile, jdict)
+    print(f'Wrote {len(full_dict)} L1C granules to {outfile}')
+
+def download_l1c(json_file:str='PACE_L1C.json',
+                 max_granules:int=None,
+                 output_path:str=None):
+    """
+    Downloads PACE Level-1C granules from a JSON file.
+
+    Args:
+        json_file (str): Path to the JSON file containing L1C granule metadata.
+                         Defaults to 'PACE_L1C.json'.
+        max_granules (int, optional): Maximum number of granules to download.
+                                      Set to 1 for testing. If None, downloads all.
+        output_path (str, optional): Path to save downloaded files.
+                                     Defaults to PACE_L1C_PATH.
+
+    Returns:
+        list: List of paths to downloaded files.
+    """
+    if output_path is None:
+        output_path = PACE_L1C_PATH
+
+    # Create output directory if it doesn't exist
+    os.makedirs(output_path, exist_ok=True)
+
+    # Load granules from JSON
+    granules, pace_df = load_from_json(json_file)
+
+    # Limit number of granules if specified
+    if max_granules is not None:
+        pace_df = pace_df.head(max_granules)
+        print(f'Limiting download to {max_granules} granule(s) for testing')
+
+    downloaded_files = []
+
+    # Loop on granules
+    for irow in range(len(pace_df)):
+        granule = pace_df.iloc[irow]
+        url = granule.url
+
+        outfile = os.path.join(output_path, os.path.basename(url))
+
+        # Check if already downloaded
+        if os.path.exists(outfile):
+            print(f'Already downloaded {outfile}')
+            downloaded_files.append(outfile)
+            continue
+
+        # wget
+        print(f'Downloading {irow+1}/{len(pace_df)}: {os.path.basename(url)}')
+        result = subprocess.run(['wget', '-O', outfile, url])
+        if result.returncode == 0:
+            downloaded_files.append(outfile)
+        else:
+            print(f'Failed to download {url}')
+
+    print(f'Downloaded {len(downloaded_files)} L1C granule(s) to {output_path}')
+    return downloaded_files
 
 def download_matched(match_file:str, IOP:bool=False):
     """ Downloads PACE granules matched to Argo profiles from a given CSV file.
@@ -285,11 +384,13 @@ def load_from_json(json_file:str):
 if __name__ == '__main__':
 
     build = False
-    download = True
+    download = False
     closest = False
+    build_l1c = True
+    download_l1c_flag = False
 
     if build:
-        # Build the JSON file
+        # Build the JSON file for L2 AOP
         build_json(outfile='PACE_50clouds.json', cloud_cover=(0,50))
 
     # Download nearest granules
@@ -297,7 +398,7 @@ if __name__ == '__main__':
         # Download nearest granules
         # AOP granules
         #download_matched('matched_argo_bgc_profiles_bbp.csv')
-        
+
         # IOP granules
         download_matched('matched_argo_bgc_profiles_bbp.csv', IOP=True)
 
@@ -305,3 +406,16 @@ if __name__ == '__main__':
         # Find closest granules
         find_closest('matched_argo_bgc_profiles_bbp.csv',
                      debug=False)#, skip_to=799)
+
+    if build_l1c:
+        # Build the JSON file for L1C granules
+        # Example with temporal and spatial constraints:
+        # build_json_l1c(outfile='PACE_L1C.json',
+        #                temporal=('2024-04-01', '2024-04-30'),
+        #                bounding_box=(-180, -60, 180, 60))
+        build_json_l1c(outfile='PACE_L1C.json')
+
+    if download_l1c_flag:
+        # Download L1C granules
+        # Set max_granules=1 to download just 1 image for testing
+        download_l1c(json_file='PACE_L1C.json', max_granules=1)
