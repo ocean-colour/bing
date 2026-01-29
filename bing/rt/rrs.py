@@ -122,7 +122,7 @@ def calc_attenuation_coeffs(
     }
 
 
-def calc_R_elastic(
+def calc_r_elastic(
     a: Union[float, np.ndarray],
     bb: Union[float, np.ndarray],
     s: float = 1.0,
@@ -151,7 +151,7 @@ def calc_R_elastic(
     Returns
     -------
     float or ndarray
-        Elastic reflectance R^E(λ, 0).
+        Elastic reflectance rrs^E(λ, 0).
 
     Notes
     -----
@@ -698,7 +698,7 @@ BRICAUD_COEFFS = {
     700: (0.0100, 0.780),
 }
 
-
+'''
 def calc_a_ph_bricaud(
     wavelength: Union[float, np.ndarray],
     Chl: Union[float, np.ndarray]
@@ -819,7 +819,7 @@ def calc_bb_water(wavelength: Union[float, np.ndarray]) -> Union[float, np.ndarr
     bb_w = bb_w_500 * (500.0 / wavelength)**4.32
 
     return np.squeeze(bb_w)
-
+'''
 
 def calc_Rrs_fluorescence(
     wavelength: Union[float, np.ndarray],
