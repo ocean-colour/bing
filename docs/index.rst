@@ -39,6 +39,8 @@ Features
    examples
    contributing
    changelog
+   raman
+   chlorophyll_fluorescence
    references
 
 Quick Start

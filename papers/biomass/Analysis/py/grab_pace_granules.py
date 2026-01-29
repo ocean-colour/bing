@@ -295,7 +295,10 @@ if __name__ == '__main__':
     # Download nearest granules
     if download:
         # Download nearest granules
+        # AOP granules
         #download_matched('matched_argo_bgc_profiles_bbp.csv')
+        
+        # IOP granules
         download_matched('matched_argo_bgc_profiles_bbp.csv', IOP=True)
 
     if closest:

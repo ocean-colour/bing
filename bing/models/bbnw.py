@@ -336,6 +336,17 @@ class bbNWLee(bbNWModel):
         # Lee+2002
         self.Y = None
 
+    def compute_Y(self, rrs_440:float, rrs_555:float):
+        """ Compute Y from Lee+2002 given rrs           
+
+        Parameters:
+            rrs_440 (float): The remote sensing reflectance at 440 nm
+            rrs_555 (float): The remote sensing reflectance at 555 nm
+
+        """
+        Y = 2.2 * (1 - 1.2 * np.exp(-0.9 * rrs_440/rrs_555))
+        self.set_basis_func(Y)
+
     def set_basis_func(self, Y:float):
         self.Y = Y
         self.basis_func = (self.pivot/self.wave)**self.Y

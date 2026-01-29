@@ -59,7 +59,10 @@ def slurp_flh_giop(debug:bool=False):
             continue
 
         # x,y of closest
-        ix0, iy0 = fits['Rrs_idx'][0]
+        try:
+            ix0, iy0 = fits['Rrs_idx'][0]
+        except:
+            continue
 
         # AOP
         aop_file = imatched.closest_file
@@ -100,6 +103,13 @@ def slurp_flh_giop(debug:bool=False):
         bbp_s_list.append(np.nan)
         #adg_s_list.append(np.nan)
         embed(header='slurp_flh_giop debug')
+
+    if len(FLH_list) < len(matched):
+        FLH_list.append(np.nan)
+    if len(bbp700_list) < len(matched):
+        bbp700_list.append(np.nan)
+        bbp_442_list.append(np.nan)
+        bbp_s_list.append(np.nan)
 
     # Add to dataframe
     matched['FLH'] = FLH_list

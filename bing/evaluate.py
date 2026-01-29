@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from bing import rt as bing_rt
+from bing.rt import rrs as bing_rrs
 from bing.fitting import chisq_fit
 
 from IPython import embed
@@ -65,7 +65,7 @@ def reconstruct_from_chains(models:list, chains:np.ndarray,
     #bb_std = np.std(bb, axis=0)
 
     # Calculate the model Rrs
-    Rrs = bing_rt.calc_Rrs(a, bb)
+    Rrs = bing_rrs.calc_Rrs(a, bb)
 
     # Stats
     sigRs = np.std(Rrs, axis=0)
