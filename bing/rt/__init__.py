@@ -20,8 +20,10 @@ from . import rrs
 from . import raman
 from . import chl_fl
 
-# Re-export commonly used functions at package level
+# Re-export commonly used functions and constants at package level
 from .rrs import (
+    A_Rrs,
+    B_Rrs,
     calc_Rrs,
     calc_Rrs_with_raman,
     calc_Rrs_fluorescence,
@@ -43,6 +45,9 @@ __all__ = [
     'rrs',
     'raman',
     'chl_fl',
+    # Constants
+    'A_Rrs',
+    'B_Rrs',
     # Elastic Rrs
     'calc_Rrs',
     'calc_Rrs_with_raman',
