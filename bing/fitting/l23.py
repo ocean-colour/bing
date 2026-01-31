@@ -213,7 +213,12 @@ def prep_one_l23(p, idx, chk:bool=False):
     pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
     
     # Gordon Rrs
-    gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'])
+    if p.variable_Gordon:
+        G1, G2 = bing_rt.rrs.wave_dependent_gordon(model_wave)
+    else: 
+        G1, G2 = None, None
+    gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'],
+                                  in_G1=G1, in_G2=G2)
 
     model_Rrs = convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
     model_anw = convert_to_satwave(l23_wave, odict['anw'], model_wave)

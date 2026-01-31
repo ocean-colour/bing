@@ -7,6 +7,7 @@ def_dict = dict(model_names=[], # Name of models for a and bb, list
                 wv_min=400.,       # Minimum wavelength, float
                 wv_max=700.,       # Maximum wavelength, float
                 satellite='PACE',    # Satellite name, str
+                variable_Gordon=True, # Wavelength dependent Gordon coefficients?
                 add_noise=False,    # Add noise flag, bool
                 apriors=None,       # Priors for a params, list of dict
                 bpriors=None,       # Priors for bb params, list of dict

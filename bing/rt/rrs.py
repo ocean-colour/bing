@@ -21,8 +21,12 @@ References
   coefficients of natural phytoplankton," J. Geophys. Res. 100, 13321-13332.
 """
 
+import os
+from importlib import resources
 import numpy as np
+import pandas
 from typing import Union, Optional, Tuple
+from scipy import interpolate 
 
 # Conversion from rrs to Rrs
 A_Rrs, B_Rrs = 0.52, 1.7
@@ -30,24 +34,30 @@ A_Rrs, B_Rrs = 0.52, 1.7
 # Gordon factors
 G1_STANDARD, G2_STANDARD = 0.0949, 0.0794  # Standard Gordon factors
 
-'''
-## Wavelength dependent
-gordon_file = os.path.join(
-        resources.files('bing'), 
-        'data', 'RT', 'gordon_coefficients.csv')
-result = pandas.read_csv(gordon_file, comment='#')
-
-f_G1 = interpolate.interp1d(result['wavelength'], result['G1'], kind=kind,
-                    bounds_error=False, fill_value='extrapolate')
-f_G2 = interpolate.interp1d(result['wavelength'], result['G2'], kind=kind,
-                    bounds_error=False, fill_value='extrapolate')
-'''
-
 # Default mean cosines for Raman scattering calculations
 # Following Sathyendranath & Platt (1998) Section 4.C
 MU_D_DEFAULT = 0.9  # Mean cosine for downwelling irradiance (clear sky, high sun)
 MU_U_DEFAULT = 0.5  # Mean cosine for upwelling irradiance (diffuse)
 MU_R_DEFAULT = 0.5  # Mean cosine for Raman-scattered light (isotropic)
+
+
+def wave_dependent_gordon(wave:np.ndarray, bounds_error:bool=True):
+
+    # Load
+    gordon_file = os.path.join(
+            resources.files('bing'), 
+            'data', 'RT', 'gordon_coefficients.csv')
+    result = pandas.read_csv(gordon_file, comment='#')
+
+    # Interpolate
+    f_G1 = interpolate.interp1d(result['wavelength'], result['G1'], kind=3,
+                        bounds_error=bounds_error, fill_value='extrapolate')
+    f_G2 = interpolate.interp1d(result['wavelength'], result['G2'], kind=3,
+                        bounds_error=bounds_error, fill_value='extrapolate')
+
+    # Apply                    
+    return f_G1(wave), f_G2(wave)
+
 
 def Rrs_to_rrs(Rrs: np.ndarray, A: float = A_Rrs, B: float = B_Rrs) -> np.ndarray:
     """
