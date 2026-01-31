@@ -100,7 +100,7 @@ def rrs_to_Rrs(rrs: np.ndarray, A: float = A_Rrs, B: float = B_Rrs) -> np.ndarra
     return A * rrs / (1 - B * rrs)
 
 
-def calc_Rrs(a, bb, in_G1:float=None, in_G2:float=None):
+def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None):
     """
     Calculates the remote sensing reflectance (Rrs) using the given absorption (a) and backscattering (bb) coefficients.
 
