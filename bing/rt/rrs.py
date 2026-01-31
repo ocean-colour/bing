@@ -51,9 +51,9 @@ def wave_dependent_gordon(wave:np.ndarray, bounds_error:bool=True):
 
     # Interpolate
     f_G1 = interpolate.interp1d(result['wavelength'], result['G1'], kind=3,
-                        bounds_error=bounds_error, fill_value='extrapolate')
+                        bounds_error=bounds_error)#, fill_value='extrapolate')
     f_G2 = interpolate.interp1d(result['wavelength'], result['G2'], kind=3,
-                        bounds_error=bounds_error, fill_value='extrapolate')
+                        bounds_error=bounds_error)#, fill_value='extrapolate')
 
     # Apply                    
     return f_G1(wave), f_G2(wave)

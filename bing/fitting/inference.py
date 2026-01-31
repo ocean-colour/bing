@@ -42,7 +42,7 @@ def log_prob(params, models:list, Rrs:np.ndarray, varRrs:np.ndarray):
     bb = models[1].eval_bb(bparams)
 
     # TODO -- allow for non-standard Gordon coefficients
-    pred = bing_rrs.calc_Rrs(a, bb) 
+    pred = bing_rrs.calc_Rrs(a, bb, in_G1=models[0].G1, in_G2=models[0].G2) 
 
     # Evaluate
     eeval = (pred-Rrs)**2 / varRrs

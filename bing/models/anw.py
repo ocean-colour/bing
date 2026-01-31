@@ -64,6 +64,18 @@ class aNWModel:
     The name of the model
     """
 
+    G1:float | np.ndarray = None
+    """
+    Gordon G1 coefficients
+        If None, the default will be used (if the Gordon approx is done)
+    """
+
+    G2:float | np.ndarray = None
+    """
+    Gordon G2 coefficients
+        If None, the default will be used (if the Gordon approx is done)
+    """
+
     nparam:int = None
     """
     The number of parameters for the model

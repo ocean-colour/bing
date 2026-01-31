@@ -220,12 +220,19 @@ def prep_one_l23(p, idx, chk:bool=False):
     gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'],
                                   in_G1=G1, in_G2=G2)
 
+    models[0].G1 = G1
+    models[0].G2 = G2
+    models[1].G1 = G1
+    models[1].G2 = G2
+
+    # Other bits and pieces
     model_Rrs = convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
     model_anw = convert_to_satwave(l23_wave, odict['anw'], model_wave)
     model_bbnw = convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
     model_varRrs = scale_noise(p.scl_noise, model_Rrs, model_wave)
-
     orig_model_Rrs = model_Rrs.copy()
+
+    # Noise
     if p.add_noise:
         model_Rrs = add_noise(
                 orig_model_Rrs, abs_sig=np.sqrt(model_varRrs))
@@ -264,6 +271,8 @@ def prep_one_l23(p, idx, chk:bool=False):
     ret_dict['p0'] = p0
     ret_dict['pdict'] = pdict
     ret_dict['models'] = models
+    ret_dict['G1'] = G1
+    ret_dict['G2'] = G2
 
     return ret_dict
     

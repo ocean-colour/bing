@@ -20,27 +20,19 @@ def data_path(filename):
     return str(data_dir.joinpath(filename).resolve())
 
 
-def test_single_fit_standard_Gordon():
-    """Test single spectrum fitting with comprehensive output validation."""
-    idx = 2773
-    p_expb = standard.expb_pow(satellite='SBG', add_noise=True,
-                               variable_Gordon=False)
-    outfile = fit_l23.chain_filename(p_expb, idx=idx, path='./')
+# ===== Helper functions for validation =====
 
-    # L23 data
-    l23_dict = fit_l23.load_one_l23(idx)
-
-    # Run the fit
-    chains, models, prep_dict, idx_out, extras = fit_l23.fit_one(p_expb, idx)
-
-    # ===== Basic return value checks =====
-    assert idx_out == idx, "Index should be preserved"
+def validate_basic_returns(chains, models, prep_dict, idx_out, extras, expected_idx):
+    """Validate basic return values from fit_one."""
+    assert idx_out == expected_idx, "Index should be preserved"
     assert chains is not None, "Chains should not be None"
     assert models is not None and len(models) == 2, "Should return 2 models"
     assert prep_dict is not None, "prep_dict should not be None"
     assert extras is not None, "extras should not be None"
 
-    # ===== Check chains shape =====
+
+def validate_chain_shape(chains, models):
+    """Validate chain array shape and dimensions."""
     # chains shape: (nsteps, nwalkers, nparams)
     assert chains.ndim == 3, f"Chains should be 3D, got {chains.ndim}D"
     nsteps, nwalkers, nparams = chains.shape
@@ -52,7 +44,11 @@ def test_single_fit_standard_Gordon():
     assert nparams == expected_nparams, \
         f"Chains should have {expected_nparams} params, got {nparams}"
 
-    # ===== Check models =====
+    return nsteps, nwalkers, nparams
+
+
+def validate_models(models):
+    """Validate model attributes and wavelengths."""
     assert hasattr(models[0], 'wave'), "Model should have wavelength array"
     assert hasattr(models[0], 'nparam'), "Model should have nparam attribute"
     assert hasattr(models[0], 'pnames'), "Model should have parameter names"
@@ -64,7 +60,11 @@ def test_single_fit_standard_Gordon():
     assert np.all(wave >= 400) and np.all(wave <= 800), \
         "Wavelengths should be in visible range [400-800nm]"
 
-    # ===== Check prep_dict contents =====
+    return wave
+
+
+def validate_prep_dict(prep_dict, wave):
+    """Validate prep_dict contents and data quality."""
     required_keys = ['odict', 'pdict', 'models', 'model_Rrs', 'model_varRrs', 'p0']
     for key in required_keys:
         assert key in prep_dict, f"prep_dict should contain '{key}'"
@@ -80,7 +80,11 @@ def test_single_fit_standard_Gordon():
     assert np.all(np.abs(model_Rrs) < 0.1), "Rrs magnitudes should be < 0.1 sr^-1"
     assert np.all(model_varRrs > 0), "Variance should be positive"
 
-    # ===== Check extras contents =====
+    return model_Rrs, model_varRrs
+
+
+def validate_extras(extras, wave):
+    """Validate extras dictionary contents."""
     required_extras = ['wave', 'obs_Rrs', 'varRrs', 'Chl', 'Y']
     for key in required_extras:
         assert key in extras, f"extras should contain '{key}'"
@@ -89,7 +93,9 @@ def test_single_fit_standard_Gordon():
     assert extras['Chl'] > 0, "Chlorophyll should be positive"
     assert 0 < extras['Y'] < 5, "Y parameter should be in reasonable range [0-5]"
 
-    # ===== Validate fitted parameters =====
+
+def validate_fitted_parameters(chains, models, models_info=None):
+    """Validate fitted parameters are within reasonable bounds."""
     # Calculate statistics from chains
     pnames = models[0].pnames + models[1].pnames
     stats = evaluate.calc_stats(chains, pnames)
@@ -107,7 +113,11 @@ def test_single_fit_standard_Gordon():
     # Backscatter amplitude should be reasonable
     assert -6 < med_params[-2] < 2, f"log10(Bnw) out of bounds: {med_params[-2]}"
 
-    # ===== Validate reconstructed Rrs =====
+    return med_params, pnames, stats
+
+
+def validate_reconstructed_rrs(models, chains, model_Rrs, model_varRrs, wave, nparams):
+    """Validate reconstructed Rrs and IOPs from chains."""
     a, bb, a_lo, a_hi, bb_lo, bb_hi, Rrs_pred, sigRrs = \
         evaluate.reconstruct_from_chains(models, chains, perc=(5, 95))
 
@@ -148,7 +158,12 @@ def test_single_fit_standard_Gordon():
         assert np.median(rel_error) < 1.5, \
             f"Median relative error too large: {np.median(rel_error):.2f}"
 
-    # ===== Compare fitted values to true L23 values =====
+    return a, bb, a_lo, a_hi, bb_lo, bb_hi, Rrs_pred, reduced_chi2
+
+
+def validate_l23_comparison(l23_dict, models, chains, wave, med_params,
+                            a, bb, model_Rrs, Rrs_pred):
+    """Compare fitted values to true L23 values."""
     # Interpolate true IOPs to model wavelengths
     true_wave = l23_dict['true_wave']
     true_a = l23_dict['a']
@@ -184,11 +199,7 @@ def test_single_fit_standard_Gordon():
 
     fitted_Sdg = med_params[1]  # Sdg is 2nd parameter
 
-    # Note: extras['Chl'] and extras['Y'] are passed from the L23 data
-    # as fixed parameters in the fit (see l23.py lines 296-299).
-    # To get the actual recovered Chl from the fitted Aph parameter:
-    # Chl = Aph(440) / 0.05582 (from Bricaud et al. 1995)
-    # But Aph is log10, so: Chl = 10^Aph / 0.05582
+    # Recover Chl from fitted Aph parameter
     fitted_Aph_log10 = med_params[2]  # log10(Aph) is 3rd parameter
     fitted_Aph_440 = 10**fitted_Aph_log10  # Convert from log10
     recovered_Chl = fitted_Aph_440 / 0.05582
@@ -196,8 +207,6 @@ def test_single_fit_standard_Gordon():
     # Calculate relative errors for parameters
     Sdg_rel_error = np.abs(fitted_Sdg - true_Sdg) / true_Sdg * 100
     Chl_rel_error = np.abs(recovered_Chl - true_Chl) / true_Chl * 100
-    # Y is also passed as fixed input, so we note this but don't test recovery
-    Y_used = extras['Y']  # This is the Y value used in fitting (=true_Y)
 
     # Parameters should be recovered within reasonable accuracy
     # Note: With added noise, parameter recovery can be challenging
@@ -205,23 +214,18 @@ def test_single_fit_standard_Gordon():
     # Allow larger error for Chl which depends on the Aph parameterization
     assert Chl_rel_error < 150, f"Chl relative error too high: {Chl_rel_error:.1f}%"
 
-    # Store comparison metrics for summary output
-    comparison_metrics = {
-        'a_mae': a_mae,
-        'a_mape': a_mape,
-        'bb_mae': bb_mae,
-        'bb_mape': bb_mape,
-        'true_Sdg': true_Sdg,
-        'fitted_Sdg': fitted_Sdg,
-        'Sdg_rel_error': Sdg_rel_error,
-        'true_Chl': true_Chl,
-        'recovered_Chl': recovered_Chl,
-        'Chl_rel_error': Chl_rel_error,
-        'true_Y': true_Y,
-        'Y_used': Y_used,  # Y is passed as fixed input, not recovered
+    # Return comparison metrics
+    return {
+        'a_mae': a_mae, 'a_mape': a_mape,
+        'bb_mae': bb_mae, 'bb_mape': bb_mape,
+        'true_Sdg': true_Sdg, 'fitted_Sdg': fitted_Sdg, 'Sdg_rel_error': Sdg_rel_error,
+        'true_Chl': true_Chl, 'recovered_Chl': recovered_Chl, 'Chl_rel_error': Chl_rel_error,
+        'true_Y': true_Y, 'Y_used': l23_dict['Y']
     }
 
-    # ===== Test file save and load =====
+
+def validate_file_save_load(chains, idx, outfile, extras):
+    """Test file save and load functionality."""
     fit_l23.save_chains(chains, idx, outfile, extras=extras)
     assert os.path.exists(outfile), f"Output file {outfile} should be created"
 
@@ -235,13 +239,14 @@ def test_single_fit_standard_Gordon():
                                    err_msg="Loaded chains should match saved chains")
 
     # Verify extras were saved
+    required_extras = ['wave', 'obs_Rrs', 'varRrs', 'Chl', 'Y']
     for key in required_extras:
         assert key in loaded, f"Saved file should contain extra '{key}'"
 
-    # Clean up
-    os.remove(outfile)
 
-    # Print summary statistics for development reference
+def print_test_summary(idx, wave, chains, pnames, med_params, reduced_chi2,
+                      model_Rrs, Rrs_pred, comparison_metrics):
+    """Print summary statistics for test."""
     print(f"\n===== Test Summary for idx={idx} =====")
     print(f"Wavelength range: {wave.min():.1f} - {wave.max():.1f} nm ({len(wave)} bands)")
     print(f"Chain shape: {chains.shape} (steps, walkers, params)")
@@ -270,6 +275,137 @@ def test_single_fit_standard_Gordon():
           f"Used(fixed)={comparison_metrics['Y_used']:.3f} "
           f"[Y is passed as fixed input to fit]")
     print("========================================\n")
+
+
+# ===== Main tests =====
+
+def test_single_fit_standard_Gordon():
+    """Test single spectrum fitting with standard Gordon coefficients."""
+    idx = 2773
+    p_expb = standard.expb_pow(satellite='SBG', add_noise=True,
+                               variable_Gordon=False)
+    outfile = fit_l23.chain_filename(p_expb, idx=idx, path='./')
+
+    # L23 data
+    l23_dict = fit_l23.load_one_l23(idx)
+
+    # Run the fit
+    chains, models, prep_dict, idx_out, extras = fit_l23.fit_one(p_expb, idx)
+
+    # Validate using helper functions
+    validate_basic_returns(chains, models, prep_dict, idx_out, extras, idx)
+    nsteps, nwalkers, nparams = validate_chain_shape(chains, models)
+    wave = validate_models(models)
+    model_Rrs, model_varRrs = validate_prep_dict(prep_dict, wave)
+    validate_extras(extras, wave)
+    med_params, pnames, stats = validate_fitted_parameters(chains, models)
+
+    a, bb, a_lo, a_hi, bb_lo, bb_hi, Rrs_pred, reduced_chi2 = \
+        validate_reconstructed_rrs(models, chains, model_Rrs, model_varRrs, wave, nparams)
+
+    comparison_metrics = validate_l23_comparison(
+        l23_dict, models, chains, wave, med_params, a, bb, model_Rrs, Rrs_pred)
+
+    validate_file_save_load(chains, idx, outfile, extras)
+
+    # Clean up
+    os.remove(outfile)
+
+    # Print summary
+    print_test_summary(idx, wave, chains, pnames, med_params, reduced_chi2,
+                      model_Rrs, Rrs_pred, comparison_metrics)
+
+
+def test_single_fit_variable_Gordon():
+    """Test single spectrum fitting with variable (wavelength-dependent) Gordon coefficients.
+
+    This test verifies that the fitting works correctly when using wavelength-dependent
+    Gordon coefficients (G1 and G2) instead of the standard constant values (G0=0.0949, G1=0.0794).
+
+    The variable Gordon coefficients are loaded from bing/data/RT/gordon_coefficients.csv and
+    interpolated to the model wavelengths. This allows for more accurate modeling of the
+    water-leaving radiance across different wavelengths.
+
+    NOTE: This test was previously failing due to a scipy compatibility issue in rrs.py
+    (using bounds_error=True with fill_value='extrapolate'). This has been fixed by
+    removing the fill_value parameter.
+    """
+    idx = 2773
+    p_expb = standard.expb_pow(satellite='SBG', add_noise=True,
+                               variable_Gordon=True)
+    outfile = fit_l23.chain_filename(p_expb, idx=idx, path='./')
+
+    # L23 data
+    l23_dict = fit_l23.load_one_l23(idx)
+
+    # Run the fit
+    chains, models, prep_dict, idx_out, extras = fit_l23.fit_one(p_expb, idx)
+
+    # Validate using helper functions
+    validate_basic_returns(chains, models, prep_dict, idx_out, extras, idx)
+    nsteps, nwalkers, nparams = validate_chain_shape(chains, models)
+    wave = validate_models(models)
+    model_Rrs, model_varRrs = validate_prep_dict(prep_dict, wave)
+    validate_extras(extras, wave)
+    med_params, pnames, stats = validate_fitted_parameters(chains, models)
+
+    a, bb, a_lo, a_hi, bb_lo, bb_hi, Rrs_pred, reduced_chi2 = \
+        validate_reconstructed_rrs(models, chains, model_Rrs, model_varRrs, wave, nparams)
+
+    comparison_metrics = validate_l23_comparison(
+        l23_dict, models, chains, wave, med_params, a, bb, model_Rrs, Rrs_pred)
+
+    # ===== Variable Gordon specific checks =====
+    # Check that G1 and G2 were set on the models
+    assert hasattr(models[0], 'G1'), "Model should have G1 attribute for variable Gordon"
+    assert hasattr(models[0], 'G2'), "Model should have G2 attribute for variable Gordon"
+    assert hasattr(models[1], 'G1'), "Backscatter model should have G1 attribute"
+    assert hasattr(models[1], 'G2'), "Backscatter model should have G2 attribute"
+
+    # G1 and G2 should be arrays (wavelength-dependent), not None
+    assert models[0].G1 is not None, "G1 should be set for variable Gordon"
+    assert models[0].G2 is not None, "G2 should be set for variable Gordon"
+    assert isinstance(models[0].G1, np.ndarray), "G1 should be an array"
+    assert isinstance(models[0].G2, np.ndarray), "G2 should be an array"
+
+    # Check that G1 and G2 have the right length
+    assert len(models[0].G1) == len(wave), "G1 should match wavelength array"
+    assert len(models[0].G2) == len(wave), "G2 should match wavelength array"
+
+    # Check that G1 and G2 are in reasonable ranges
+    # Standard Gordon: G0=0.0949, G1=0.0794
+    # Variable Gordon should vary with wavelength and can have different ranges
+    assert np.all(models[0].G1 > 0), "G1 should be positive"
+    # Note: G2 can be negative at certain wavelengths in the variable Gordon formulation
+    assert np.all(np.abs(models[0].G2) < 1.0), "G2 magnitude should be < 1.0"
+    assert np.all(models[0].G1 < 0.2), "G1 should be < 0.2"
+
+    # Check that G1 and G2 vary with wavelength (not constant)
+    assert np.std(models[0].G1) > 0, "G1 should vary with wavelength"
+    assert np.std(models[0].G2) > 0, "G2 should vary with wavelength"
+
+    # Verify that prep_dict contains G1 and G2
+    assert 'G1' in prep_dict, "prep_dict should contain G1"
+    assert 'G2' in prep_dict, "prep_dict should contain G2"
+    np.testing.assert_array_equal(prep_dict['G1'], models[0].G1,
+                                   err_msg="prep_dict G1 should match model G1")
+    np.testing.assert_array_equal(prep_dict['G2'], models[0].G2,
+                                   err_msg="prep_dict G2 should match model G2")
+
+    validate_file_save_load(chains, idx, outfile, extras)
+
+    # Clean up
+    os.remove(outfile)
+
+    # Print summary with variable Gordon note
+    print("\n[Variable Gordon Coefficients Enabled]")
+    print(f"G1 range: {models[0].G1.min():.4f} - {models[0].G1.max():.4f}")
+    print(f"G2 range: {models[0].G2.min():.4f} - {models[0].G2.max():.4f}")
+    print(f"G1 std dev: {np.std(models[0].G1):.6f}")
+    print(f"G2 std dev: {np.std(models[0].G2):.6f}")
+
+    print_test_summary(idx, wave, chains, pnames, med_params, reduced_chi2,
+                      model_Rrs, Rrs_pred, comparison_metrics)
 
 
 # ===== Tests for individual l23 methods =====
@@ -433,10 +569,9 @@ def test_prep_one_l23_with_noise():
 def test_prep_one_l23_variable_gordon():
     """Test preparation with variable Gordon coefficients.
 
-    Note: Currently skipped due to scipy interpolation incompatibility.
+    Note: This test was previously skipped due to scipy interpolation incompatibility,
+    which has now been fixed in rrs.py.
     """
-    pytest.skip("Variable Gordon coefficients have scipy interpolation issues")
-
     idx = 120
 
     # Standard Gordon
