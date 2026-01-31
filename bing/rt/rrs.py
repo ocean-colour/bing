@@ -23,13 +23,25 @@ References
 
 import numpy as np
 from typing import Union, Optional, Tuple
-from scipy import interpolate
 
 # Conversion from rrs to Rrs
 A_Rrs, B_Rrs = 0.52, 1.7
 
 # Gordon factors
-G1, G2 = 0.0949, 0.0794  # Standard Gordon factors
+G1_STANDARD, G2_STANDARD = 0.0949, 0.0794  # Standard Gordon factors
+
+'''
+## Wavelength dependent
+gordon_file = os.path.join(
+        resources.files('bing'), 
+        'data', 'RT', 'gordon_coefficients.csv')
+result = pandas.read_csv(gordon_file, comment='#')
+
+f_G1 = interpolate.interp1d(result['wavelength'], result['G1'], kind=kind,
+                    bounds_error=False, fill_value='extrapolate')
+f_G2 = interpolate.interp1d(result['wavelength'], result['G2'], kind=kind,
+                    bounds_error=False, fill_value='extrapolate')
+'''
 
 # Default mean cosines for Raman scattering calculations
 # Following Sathyendranath & Platt (1998) Section 4.C
@@ -37,8 +49,53 @@ MU_D_DEFAULT = 0.9  # Mean cosine for downwelling irradiance (clear sky, high su
 MU_U_DEFAULT = 0.5  # Mean cosine for upwelling irradiance (diffuse)
 MU_R_DEFAULT = 0.5  # Mean cosine for Raman-scattered light (isotropic)
 
+def Rrs_to_rrs(Rrs: np.ndarray, A: float = A_Rrs, B: float = B_Rrs) -> np.ndarray:
+    """
+    Convert above-surface Rrs to subsurface rrs.
 
-def calc_Rrs(a, bb, in_G1=None, in_G2=None):
+    Uses the relation: rrs = Rrs / (A + B * Rrs)
+
+    Parameters
+    ----------
+    Rrs : np.ndarray
+        Remote sensing reflectance (above surface).
+    A : float
+        Conversion coefficient (default 0.52).
+    B : float
+        Conversion coefficient (default 1.17).
+
+    Returns
+    -------
+    np.ndarray
+        Subsurface remote sensing reflectance.
+    """
+    return Rrs / (A + B * Rrs)
+
+
+def rrs_to_Rrs(rrs: np.ndarray, A: float = A_Rrs, B: float = B_Rrs) -> np.ndarray:
+    """
+    Convert subsurface rrs to above-surface Rrs.
+
+    Uses the relation: Rrs = A * rrs / (1 - B * rrs)
+
+    Parameters
+    ----------
+    rrs : np.ndarray
+        Subsurface remote sensing reflectance.
+    A : float
+        Conversion coefficient (default 0.52).
+    B : float
+        Conversion coefficient (default 1.17).
+
+    Returns
+    -------
+    np.ndarray
+        Remote sensing reflectance (above surface).
+    """
+    return A * rrs / (1 - B * rrs)
+
+
+def calc_Rrs(a, bb, in_G1:float=None, in_G2:float=None):
     """
     Calculates the remote sensing reflectance (Rrs) using the given absorption (a) and backscattering (bb) coefficients.
 
@@ -57,15 +114,15 @@ def calc_Rrs(a, bb, in_G1=None, in_G2=None):
     if in_G1 is not None:
         t1 = in_G1 * u
     else: 
-        t1 = G1 * u
+        t1 = G1_STANDARD * u
     if in_G2 is not None:
         t2 = in_G2 * u*u
     else:
-        t2 = G2 * u*u
+        t2 = G2_STANDARD * u*u
     rrs = t1 + t2
-    # Done
-    Rrs = A_Rrs*rrs / (1 - B_Rrs*rrs)
-    return Rrs
+    
+    # Return Rrs
+    return rrs_to_Rrs(rrs)
 
 
 # =============================================================================

@@ -315,7 +315,10 @@ def fit_gordon_from_loisel23(
         )
 
     # Load Loisel23 dataset -- Elastic
-    ds = loisel23.load_ds(1, 0)
+    try: 
+        ds = loisel23.load_ds(1, 0)
+    except:
+        raise IOError("Loisel23 files not available")
 
     # Extract data
     wave = ds.Lambda.data
@@ -442,6 +445,52 @@ def print_gordon_comparison(result: Dict, wavelengths: np.ndarray = None) -> Non
         print(f"  {wv:6.1f}     {G1:.4f}     {G2:.4f}     {G1_STANDARD:.4f}     {G2_STANDARD:.4f}")
 
 
+def save_gordon_to_csv(
+    result: Dict,
+    stats: Dict,
+    filename: str,
+    source: str = "Loisel et al. (2023) synthetic dataset"
+) -> None:
+    """
+    Save fitted Gordon coefficients to CSV file.
+
+    Parameters
+    ----------
+    result : dict
+        Output from fit_gordon_coefficients containing G1, G2, etc.
+    stats : dict
+        Dictionary with fitting statistics (rRMS, RMS).
+    filename : str
+        Output CSV filename.
+    source : str
+        Data source description for metadata header.
+    """
+    import pandas as pd
+
+    # Create DataFrame with results
+    df = pd.DataFrame({
+        'wavelength': result['wavelength'],
+        'G1': result['G1'],
+        'G2': result['G2'],
+        'G1_err': result['G1_err'],
+        'G2_err': result['G2_err'],
+        'rRMS': stats['rRMS'],
+        'RMS': stats['RMS']
+    })
+
+    # Write to CSV with metadata as header comments
+    with open(filename, 'w') as f:
+        f.write(f"# Gordon coefficients fitted from Loisel23 Hydrolight simulations\n")
+        f.write(f"# Source: {source}\n")
+        f.write(f"# Standard G1: {G1_STANDARD}\n")
+        f.write(f"# Standard G2: {G2_STANDARD}\n")
+        f.write("#\n")
+        # Write the DataFrame to CSV
+        df.to_csv(f, index=False)
+
+    print(f"Saved Gordon coefficients to: {filename}")
+
+
 if __name__ == '__main__':
     # Example usage
     print("Fitting wavelength-dependent Gordon coefficients from Loisel23 data...")
@@ -459,3 +508,17 @@ if __name__ == '__main__':
     print("\nFitting statistics (rRMS * 10):")
     for ii, wv in enumerate(result['wavelength']):
         print(f"  {wv:.0f} nm: {10*stats['rRMS'][ii]:.4f}")
+
+    # Fit all wavelengths and save to CSV
+    print("\n\nFitting all wavelengths (350-750 nm)...")
+    result_full, stats_full = fit_gordon_from_loisel23(
+        wv_min=350.,
+        wv_max=750.,
+        return_stats=True
+    )
+
+    # Save to CSV
+    save_gordon_to_csv(result_full, stats_full, 'gordon_coefficients.csv')
+
+    print(f"\nFitted {len(result_full['wavelength'])} wavelengths")
+    print(f"Wavelength range: {result_full['wavelength'].min():.0f} - {result_full['wavelength'].max():.0f} nm")
