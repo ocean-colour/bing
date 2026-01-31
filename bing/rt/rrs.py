@@ -28,6 +28,8 @@ import pandas
 from typing import Union, Optional, Tuple
 from scipy import interpolate 
 
+from bing.rt import raman
+
 # Conversion from rrs to Rrs
 A_Rrs, B_Rrs = 0.52, 1.7
 
@@ -208,7 +210,6 @@ def calc_raman_correction_factor(
     >>> bb_R = raman.raman_backscattering_coeff(443)
     >>> correction = calc_raman_correction_factor(a_520, bb_520, a_443, bb_443, bb_R)
     """
-    from . import raman
 
     # Use default mean cosines if not provided
     if mu_d is None:
