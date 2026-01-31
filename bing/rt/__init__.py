@@ -25,7 +25,6 @@ from .rrs import (
     A_Rrs,
     B_Rrs,
     calc_Rrs,
-    calc_Rrs_with_raman,
     calc_Rrs_fluorescence,
     calc_Rrs_fluorescence_simple,
     calc_Rrs_with_fluorescence,
@@ -34,6 +33,9 @@ from .rrs import (
     #calc_a_ph_bricaud,
     #calc_a_water,
     #calc_bb_water,
+)
+from .raman import (
+    calc_Rrs_with_raman,  # Now in raman module
 )
 from .chl_fl import (
     calc_R_fluorescence,
