@@ -5,3 +5,5 @@
 ## Thanks.  Now refactor test_single_fit_standard_Gordon() so that the checks are abstracted and add a new test that turns on the variable Gordon coefficients and checks its behaviours with the same checks.
 
 ## I have modified rrs.py to remove the fill_value="extrapolate".  Please modify the wrapper for the variable_Gordon test and Note accordingly.
+
+## Now generate a new radiative_transfer.rst file in docs/ that describes the radiative transfer methods (ignore inelastic for now) including the variable Gordon coefficients.
