@@ -20,15 +20,14 @@ PACE_L2_AOP_PATH = os.path.join(os.getenv('OS_COLOR'),
                                  'PACE',
                                  'L2_AOP')
 PACE_L2_IOP_PATH = PACE_L2_AOP_PATH.replace('AOP', 'IOP')
-PACE_L1C_PATH = os.path.join(os.getenv('OS_COLOR'),
-                              'PACE',
-                              'L1C')
 PACE_L1B_PATH = os.path.join(os.getenv('OS_COLOR'),
-                              'PACE',
-                              'L1B')
+                              'PACE', 'L1B')
+PACE_L1C_PATH = os.path.join(os.getenv('OS_COLOR'),
+                              'PACE', 'L1C')
 
 # Short names for earthaccess searches
 PACE_SHORT_NAMES = {
+    'AOP': 'PACE_OCI_L2_AOP',
     'L1B': 'PACE_OCI_L1B_SCI',
     'L1C': 'PACE_OCI_L1C_SCI',
 }
@@ -39,7 +38,8 @@ PACE_L1_PATHS = {
     'L1C': PACE_L1C_PATH,
 }
 
-def build_json(outfile:str='PACE_50clouds.json', cloud_cover=(0,50)):
+def build_json(outfile:str='PACE_50clouds.json', dataset:str='AOP',
+    cloud_cover=(0,50)):
     """
     Fetches granules from the PACE dataset with specified cloud cover constraints,
     then saves the results to a JSON file.
@@ -66,7 +66,7 @@ def build_json(outfile:str='PACE_50clouds.json', cloud_cover=(0,50)):
 
     # Grab em
     all_results = earthaccess.search_data(
-        short_name="PACE_OCI_L2_AOP",
+        short_name=PACE_SHORT_NAMES[dataset],
         cloud_cover=cloud_cover,
     )
 
@@ -128,8 +128,9 @@ def build_json_l1(outfile:str=None,
     ocpy_io.savejson(outfile, jdict)
     print(f'Wrote {len(full_dict)} {level} granules to {outfile}')
 
+
 def download_l1(json_file:str=None,
-                level:str='L1C',
+                level:str='L1B',
                 max_granules:int=None,
                 output_path:str=None):
     """
@@ -138,7 +139,7 @@ def download_l1(json_file:str=None,
     Args:
         json_file (str): Path to the JSON file containing granule metadata.
                          Defaults to 'PACE_{level}.json'.
-        level (str): Data level, either 'L1B' or 'L1C'. Defaults to 'L1C'.
+        level (str): Data level, either 'L1B' or 'L1C'. Defaults to 'L1B'.
         max_granules (int, optional): Maximum number of granules to download.
                                       Set to 1 for testing. If None, downloads all.
         output_path (str, optional): Path to save downloaded files.
@@ -197,12 +198,13 @@ def download_l1(json_file:str=None,
     print(f'Downloaded {len(downloaded_files)} {level} granule(s) to {output_path}')
     return downloaded_files
 
-def download_matched(match_file:str, IOP:bool=False):
+def download_matched(match_file:str, IOP:bool=False, L1B:bool=False):
     """ Downloads PACE granules matched to Argo profiles from a given CSV file.
 
     Args:
         match_file (str): Path to the CSV file containing matched Argo profiles and PACE IDs.
         IOP (bool, optional): If True, downloads IOP granules instead of AOP granules. Defaults to False.
+        L1B (bool, optional): If True, downloads L1B granules instead of AOP granules. Defaults to False.
 
     """
 
@@ -230,6 +232,11 @@ def download_matched(match_file:str, IOP:bool=False):
                 path = PACE_L2_IOP_PATH
                 url = url.replace('AOP', 'IOP')
                 url = url.replace('V3_0', 'V3_1')
+            elif L1B: 
+                path = PACE_L1B_PATH
+                #embed(header='234 1B')
+                url = url.replace('L2.OC_AOP', 'L1B')
+                url = url.replace('V3_0', 'V3')
             else:
                 path = PACE_L2_AOP_PATH
             outfile = os.path.join(path,
@@ -422,10 +429,10 @@ def load_from_json(json_file:str):
 if __name__ == '__main__':
 
     build = False
-    download = False
+    download = True
     closest = False
-    build_l1c = True
-    download_l1c_flag = False
+    build_l1 = False
+    download_l1b_flag = False
 
     if build:
         # Build the JSON file for L2 AOP
@@ -438,14 +445,17 @@ if __name__ == '__main__':
         #download_matched('matched_argo_bgc_profiles_bbp.csv')
 
         # IOP granules
-        download_matched('matched_argo_bgc_profiles_bbp.csv', IOP=True)
+        #download_matched('matched_argo_bgc_profiles_bbp.csv', IOP=True)
+
+        # L1B granules
+        download_matched('matched_argo_bgc_profiles_bbp.csv', L1B=True)
 
     if closest:
         # Find closest granules
         find_closest('matched_argo_bgc_profiles_bbp.csv',
                      debug=False)#, skip_to=799)
 
-    if build_l1c:
+    if build_l1:
         # Build the JSON file for L1B or L1C granules
         # Example with temporal and spatial constraints:
         # build_json_l1(level='L1C',
@@ -453,13 +463,17 @@ if __name__ == '__main__':
         #               bounding_box=(-180, -60, 180, 60))
         #
         # For L1B:
-        # build_json_l1(level='L1B')
-        build_json_l1(level='L1C')
+        build_json(outfile='PACE_L1B_50clouds.json', 
+            dataset='L1B', cloud_cover=(0,50))
+        #build_json_l1(level='L1C')
+        #build_json_l1(level='L1B')
 
+"""
     if download_l1c_flag:
         # Download L1B or L1C granules
         # Set max_granules=1 to download just 1 image for testing
         #
         # For L1B:
-        # download_l1(level='L1B', max_granules=1)
-        download_l1(level='L1C', max_granules=1)
+        download_l1(level='L1B', max_granules=1)
+        #download_l1(level='L1C', max_granules=1)
+"""
