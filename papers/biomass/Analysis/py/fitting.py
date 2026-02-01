@@ -7,6 +7,8 @@ from matplotlib import pyplot as plt
 import matplotlib as mpl
 import matplotlib.gridspec as gridspec
 import matplotlib.image as mpimg
+
+from papers.biomass.Analysis.py import biomass_io
 mpl.rcParams['font.family'] = 'stixgeneral'
 
 from functools import partial
@@ -484,7 +486,7 @@ def slurp_fits(matched, debug:bool=False):
         KeyError: If the expected keys ('med') are not found in the loaded data.
 
     Notes:
-        - The function assumes the existence of a helper function `set_outfile` to determine
+        - The function assumes the existence of a helper function `get_fit_file_path` to determine
           the output file path for each profile.
         - The function uses the `embed` function for debugging when a file is missing.
 
@@ -494,7 +496,7 @@ def slurp_fits(matched, debug:bool=False):
 
     Dependencies:
         - Requires the `pandas` and `numpy` libraries.
-        - Assumes the presence of the `set_outfile` and `embed` functions.
+        - Assumes the presence of the `get_fit_file_path` and `embed` functions.
     """
 
     # Load up Argo profiles, already matched to PACE
@@ -510,7 +512,7 @@ def slurp_fits(matched, debug:bool=False):
 
     for ss in range(len(matched)):
         imatched = matched.iloc[ss]
-        outfile = set_outfile(imatched)
+        outfile = biomass_io.get_fit_file_path(imatched)
         print(f'Working on {ss+1}/{len(matched)}: {os.path.basename(outfile)}...')
 
         # Load
@@ -560,10 +562,10 @@ def slurp_fits(matched, debug:bool=False):
     matched.to_csv(match_file, index=False)
     print(f'Wrote {len(matched)} profiles to {match_file}')
 
-def set_outfile(imatched:pandas.Series):
-    outfile = os.path.join(os.getenv('OS_COLOR'), 'Biomass', 'Fits',
-            f'Argo_{imatched.cruise}_{imatched.profile:03d}_fits.npz')
-    return outfile
+#def set_outfile(imatched:pandas.Series):
+#    outfile = os.path.join(os.getenv('OS_COLOR'), 'Biomass', 'Fits',
+#            f'Argo_{imatched.cruise}_{imatched.profile:03d}_fits.npz')
+#    return outfile
 
 # Command line
 if __name__ == '__main__':
@@ -599,7 +601,7 @@ if __name__ == '__main__':
             print("*"*50)
 
             # Check
-            outfile = set_outfile(imatched)
+            outfile = biomass_io.get_fit_file_path(imatched)
             if os.path.exists(outfile) and not clobber:
                 print(f"Already fitted {outfile}, skipping...")
                 continue

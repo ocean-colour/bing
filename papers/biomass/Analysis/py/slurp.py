@@ -6,23 +6,66 @@ PACE slurping
 import os
 import numpy as np
 import pandas
-from matplotlib import pyplot as plt
 
 # OCPY imports
-from ocpy.utils import plotting
 from ocpy.pace import io as pace_io
 
 # BING imports
-from bing.parameters import standard
-from bing.models import utils as model_utils
 
 # Local imports
-from grab_pace_granules import load_from_json
 import fitting as m_fitting
+import biomass_io
 
 from IPython import embed
 
 match_file = 'matched_argo_bgc_profiles_bbp.csv'
+
+
+def slurp_pace_lat_lon(debug:bool=False):
+
+    # Load data
+    matched, granules, pace = biomass_io.load_matched_data()
+
+    PACE_lats = []
+    PACE_lons = []
+
+    # Loop me
+    for ss in range(len(matched)):
+        print(ss)
+
+        imatched = matched.iloc[ss]
+
+        # Fits
+        fit_file = biomass_io.get_fit_file_path(imatched)
+        try:
+            fits = biomass_io.load_fit_data(fit_file)
+        except:
+            PACE_lats.append(np.nan)
+            PACE_lons.append(np.nan)
+            continue
+
+        # x,y of closest
+        try:
+            ix0, iy0 = fits['Rrs_idx'][0]
+        except:
+            PACE_lats.append(np.nan)
+            PACE_lons.append(np.nan)
+            continue
+
+        # Save
+
+    # Add to dataframe
+    matched['PACE_lat'] = PACE_lats
+    matched['PACE_lon'] = PACE_lons
+
+    # Write
+    if debug:
+        outfile = 'debug_matched_profiles.csv'
+        embed(header='64 of slupr')
+    else:
+        outfile = match_file
+    matched.to_csv(outfile, index=False)
+    print(f'Wrote {len(matched)} profiles to {outfile}')
 
 def slurp_flh_giop(debug:bool=False):
 
@@ -128,5 +171,9 @@ def slurp_flh_giop(debug:bool=False):
 
 # Run it
 if __name__ == '__main__':
-    slurp_flh_giop(debug=False)
     
+    # PACE FLH and GIOP
+    #slurp_flh_giop(debug=False)
+    
+    # PACE lat, lon of Rrs analysis
+    slurp_pace_lat_lon(debug=True)
