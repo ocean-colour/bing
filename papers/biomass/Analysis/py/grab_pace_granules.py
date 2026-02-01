@@ -13,6 +13,9 @@ from ocpy.utils import coords as ocpy_coords
 
 from remote_sensing.download import earthaccess as rs_ea
 
+# Locals
+import biomass_io
+
 from IPython import embed
 
 # PACE Granule paths
@@ -165,7 +168,7 @@ def download_l1(json_file:str=None,
     os.makedirs(output_path, exist_ok=True)
 
     # Load granules from JSON
-    granules, pace_df = load_from_json(json_file)
+    granules, pace_df = biomass_io.load_from_json(json_file)
 
     # Limit number of granules if specified
     if max_granules is not None:
@@ -212,7 +215,7 @@ def download_matched(match_file:str, IOP:bool=False, L1B:bool=False):
     matched = pandas.read_csv(match_file)
 
     # Load up PACE granules
-    granules, pace = load_from_json('PACE_50clouds.json')
+    granules, pace = biomass_io.load_from_json('PACE_50clouds.json')
 
     # Loop on Argo profiles
     for irow in range(len(matched)):
@@ -280,7 +283,7 @@ def find_closest(match_file:str, iRrs:int=38,
     matched = pandas.read_csv(match_file)
 
     # Load up PACE granules
-    granules, pace = load_from_json('PACE_50clouds.json')
+    granules, pace = biomass_io.load_from_json('PACE_50clouds.json')
 
     # Items to add to the table
     sv_ids = []
@@ -298,6 +301,7 @@ def find_closest(match_file:str, iRrs:int=38,
         pace_ids = row['pace_ids'].split(',')
 
         mind = 1e9
+        best_g = None
         # Find the granules
         for jj, pace_id in enumerate(pace_ids):
             print(f'Processing {irow+1}/{len(matched)}: {pace_id} ({jj+1}/{len(pace_ids)})')
@@ -401,28 +405,6 @@ def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38, nclosest:int=1):
 
     return d[idx_srt], dmin_ij
 
-def load_from_json(json_file:str):
-    """
-    Load granule data from a JSON file and build a corresponding data table.
-
-    Args:
-        json_file (str): Path to the JSON file containing granule data.
-
-    Returns:
-        tuple: A tuple containing:
-            - granules (dict): The loaded granule data as a dictionary.
-            - df (pandas.DataFrame): A DataFrame representing the granule data table,
-                with optional antimeridian fixes applied.
-    """
-    # Load
-    granules = ocpy_io.loadjson(json_file)
-
-    # Build the table
-    df = rs_ea.build_granule_table(granules, 
-                                   fix_antimeridian=True)
-
-    # Return
-    return granules, df
         
 
 # Command line

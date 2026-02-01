@@ -17,7 +17,6 @@ Dependencies:
 
 import os
 import numpy as np
-import pandas
 from matplotlib import pyplot as plt
 
 # OCPY imports
@@ -28,86 +27,8 @@ from bing.parameters import standard
 from bing.models import utils as model_utils
 
 # Local imports
-from grab_pace_granules import load_from_json
 import fitting as m_fitting
-
-
-def load_matched_data(match_file='matched_argo_bgc_profiles_bbp.csv', 
-                      pace_json='PACE_50clouds.json'):
-    """
-    Load matched Argo BGC profiles and PACE granules.
-    
-    Parameters
-    ----------
-    match_file : str, optional
-        Path to CSV file containing matched Argo profiles (default: 'matched_argo_bgc_profiles_bbp.csv')
-    pace_json : str, optional
-        Path to JSON file containing PACE granule information (default: 'PACE_50clouds.json')
-    
-    Returns
-    -------
-    matched : pandas.DataFrame
-        DataFrame containing matched Argo profile data
-    granules : list
-        List of PACE granules
-    pace : dict or object
-        PACE data structure from JSON
-    """
-    # Load up Argo profiles, already matched to PACE
-    matched = pandas.read_csv(match_file)
-    
-    # Load up PACE granules
-    granules, pace = load_from_json(pace_json)
-    
-    return matched, granules, pace
-
-
-def get_fit_file_path(matched_profile, base_dir=None):
-    """
-    Construct the path to a fit file for a given matched profile.
-    
-    Parameters
-    ----------
-    matched_profile : pandas.Series
-        A row from the matched profiles DataFrame containing 'cruise' and 'profile' fields
-    base_dir : str, optional
-        Base directory for fits. If None, uses OS_COLOR environment variable
-    
-    Returns
-    -------
-    str
-        Full path to the fit file
-    
-    Raises
-    ------
-    AssertionError
-        If the fit file does not exist
-    """
-    if base_dir is None:
-        base_dir = os.getenv('OS_COLOR')
-    
-    fit_file = os.path.join(base_dir, 'Biomass', 'Fits',
-                            f'Argo_{matched_profile.cruise}_{matched_profile.profile:03d}_fits.npz')
-    assert os.path.isfile(fit_file), f"Fit file not found: {fit_file}"
-    
-    return fit_file
-
-
-def load_fit_data(fit_file):
-    """
-    Load fit data from an NPZ file.
-    
-    Parameters
-    ----------
-    fit_file : str
-        Path to the fit file (.npz format)
-    
-    Returns
-    -------
-    numpy.lib.npyio.NpzFile
-        Loaded fit data containing arrays for 'Rrs', 'Rrs_sig', 'wave', 'chains', 'model_names', etc.
-    """
-    return np.load(fit_file)
+from papers.biomass.Analysis.py import biomass_io
 
 
 def plot_rrs_spectrum(fit_data, output_file='Rrs_example.png', figsize=(12, 7), 
@@ -237,10 +158,10 @@ def analyze_profile(match_index, matched_df, base_dir=None,
     matched_profile = matched_df.iloc[match_index]
     
     # Get fit file path
-    fit_file = get_fit_file_path(matched_profile, base_dir=base_dir)
+    fit_file = biomass_io.get_fit_file_path(matched_profile, base_dir=base_dir)
     
     # Load fit data
-    fit_data = load_fit_data(fit_file)
+    fit_data = biomass_io.load_fit_data(fit_file)
     
     # Plot spectrum if requested
     if plot_spectrum:
@@ -261,7 +182,7 @@ def analyze_profile(match_index, matched_df, base_dir=None,
 # Example usage when run as script
 if __name__ == '__main__':
     # Load data
-    matched, granules, pace = load_matched_data()
+    matched, granules, pace = biomass_io.load_matched_data()
     
     print(f"Loaded {len(matched)} matched profiles")
     print("\nFirst few profiles:")
