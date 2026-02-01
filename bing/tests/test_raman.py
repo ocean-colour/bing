@@ -426,7 +426,7 @@ def test_raman_wavelength_conversion():
 
 # Raman related methods
 
-def test_raman_in_models()
+def test_raman_in_models():
     # Init
     p_expb = standard.expb_pow(satellite='SBG', add_noise=True,
                             variable_Gordon=False, include_Raman=True)
