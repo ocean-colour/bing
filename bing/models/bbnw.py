@@ -103,6 +103,9 @@ class bbNWModel:
         self.wave = wave
         self.internals = {}
 
+        # Initialize for Raman
+        self.init_raman()
+
         # Initialize water
         self.init_bbw()
 

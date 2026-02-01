@@ -129,6 +129,9 @@ class aNWModel:
         self.wave = wave
         self.internals = {}
 
+        # Initialize for Raman
+        self.init_raman()
+
         # Initialize water
         self.init_aw()
 
@@ -150,8 +153,10 @@ class aNWModel:
             np.ndarray: The absorption coefficient of water
         """
         self.a_w = water_abs.a_water(self.wave, data=data)
+        self.a_w_ex = water_abs.a_water(self.wave_ex, data=data)
 
-    def eval_anw(self, params:np.ndarray, retsub_comps:bool=False):
+    def eval_anw(self, params:np.ndarray, retsub_comps:bool=False,
+                 wave:np.ndarray=None):
         """
         Evaluate the non-water absorption coefficient
 
@@ -170,19 +175,24 @@ class aNWModel:
                 params[...,0] = log10(Adg)
                 params[...,1] = log10(Sdg)
                 params[...,2] = log10(Aph)
+            wave (np.ndarray): Wavelength for evaluation
 
         Returns:
             np.ndarray: The non-water absorption coefficient
                 This is always a multi-dimensional array
         """
+        # Wavelengths for evaluation
+        if wave is None:
+            wave = self.wave  # Model values
+
         if self.name == 'Cst':
-            return functions.constant(self.wave, params)
+            return functions.constant(wave, params)
         elif self.name == 'Every':
             return 10**params
         elif self.name == 'Exp':
-            return functions.exponential(self.wave, params, pivot=self.pivot)
+            return functions.exponential(wave, params, pivot=self.pivot)
         elif self.name == 'ExpFix':
-            return functions.exponential(self.wave, params, pivot=self.pivot, S=self.Sdg)
+            return functions.exponential(wave, params, pivot=self.pivot, S=self.Sdg)
         elif self.name == 'Bricaud':
             Chl = 10**params[...,-1:] / 0.05582
             self.set_aph(Chl)
@@ -193,7 +203,7 @@ class aNWModel:
             return a_ph
         elif self.name in ['ExpBricaudFix', 'ExpBricaud', 'ExpBricaudFree']:
             # a_dg
-            a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
+            a_dg = functions.exponential(wave, params, pivot=self.pivot)
             # a_ph
             if not self.fix_Chl:
                 if self.name == 'ExpBricaud':
@@ -213,14 +223,14 @@ class aNWModel:
             else:
                 return a_dg + a_ph
         elif self.name in ['GIOP', 'GSM']:
-            a_dg = functions.exponential(self.wave, params, pivot=self.pivot, S=self.Sdg)
+            a_dg = functions.exponential(wave, params, pivot=self.pivot, S=self.Sdg)
             a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
             if retsub_comps:
                 return a_dg, a_ph
             else:
                 return a_dg + a_ph
         elif self.name == 'ExpNMF':
-            a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
+            a_dg = functions.exponential(wave, params, pivot=self.pivot)
             a_ph = functions.gen_basis(params[...,-2:], 
                                        [self.W1, self.W2])
             if retsub_comps:
@@ -241,6 +251,22 @@ class aNWModel:
             np.ndarray: The absorption coefficient
         """
         return self.a_w + self.eval_anw(params)
+
+    def eval_a_ex(self, params:np.ndarray):
+        """
+        Evaluate the absorption coefficient at Raman 
+        excitation wavelengths    
+
+        Parameters:
+            params (np.ndarray): The parameters for the model
+
+        Returns:
+            np.ndarray: The absorption coefficient
+        """
+        anw_ex = self.eval_anw(params, wave=self.wave_ex)
+        embed(header='261 of anw.py')
+        return self.a_w_ex + self.eval_anw(params)
+
 
     def init_guess(self, a_nw:np.ndarray):
         """
@@ -414,8 +440,11 @@ class aNWBricaud(aNWModel):
         self.i440 = np.argmin(np.abs(self.wave-440))
 
 
-    def set_aph(self, Chla):
+    def set_aph(self, Chla, wave:np.ndarray=None):
         # Bricaud
+
+        if wave is None:
+            wave = self.wave  # Model values
 
         # Normalize
         if len(Chla.shape) == 2:
@@ -428,9 +457,9 @@ class aNWBricaud(aNWModel):
             self.a_ph /= self.a_ph[self.i440]
 
         # Extrapolate to <400nm, as necessary
-        if self.wave.min() < 400:
-            iwave = np.argmin(np.abs(self.wave-400))
-            wv_ext = self.wave < 400.
+        if wave.min() < 400:
+            iwave = np.argmin(np.abs(wave-400))
+            wv_ext = wave < 400.
             if len(Chla.shape) == 2:
                 a400 = np.outer(self.a_ph[:,iwave], np.ones(np.sum(wv_ext)))
             else:
@@ -439,12 +468,12 @@ class aNWBricaud(aNWModel):
             # 
             if len(Chla.shape) == 2:
                 self.a_ph[:,wv_ext] = scl_400*a400 + (
-                    np.outer(np.ones(a400.shape[0]), self.wave[wv_ext]-350) * a400 *
+                    np.outer(np.ones(a400.shape[0]), wave[wv_ext]-350) * a400 *
                     (1-scl_400) / 50.)
                     #self.wave[wv_ext]-350) * a400 * (1-scl_400) / 50.
             else:
                 self.a_ph[wv_ext] = scl_400*a400 + (
-                    self.wave[wv_ext]-350) * a400 * (1-scl_400) / 50.
+                    wave[wv_ext]-350) * a400 * (1-scl_400) / 50.
 
     def init_guess(self, a_nw:np.ndarray):
         """

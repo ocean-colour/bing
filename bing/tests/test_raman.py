@@ -7,8 +7,12 @@ import pytest
 import matplotlib.pyplot as plt
 
 from ocpy.utils import plotting
+from ocpy.satellites import pace as sat_pace
+
 from bing.rt import raman
 from bing.rt import rrs
+from bing.parameters import standard
+from bing.models import utils as model_utils
 
 
 from IPython import embed
@@ -419,3 +423,18 @@ def test_raman_wavelength_conversion():
     # Round-trip conversion should return original
     lambda_ex_back = raman.emission_to_excitation_wavelength(lambda_em)
     assert np.isclose(lambda_ex, lambda_ex_back, rtol=0.001)
+
+# Raman related methods
+
+# Init
+p_expb = standard.expb_pow(satellite='SBG', add_noise=True,
+                           variable_Gordon=False, include_Raman=True)
+model_wave = sat_pace.wave(wv_min=p_expb.wv_min,
+                                   wv_max=p_expb.wv_max)                        
+model_names=['ExpBricaud', 'Pow']
+a_model, _ = model_utils.init(model_names, model_wave)
+
+# Wave ex
+a_model.init_raman()
+
+# a_ex

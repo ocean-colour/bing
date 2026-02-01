@@ -5,11 +5,10 @@ import numpy as np
 
 import pytest
 
+
 from bing.models import anw as bing_anw
 from bing.parameters import standard
-from bing.priors import priors as bing_priors
 from bing.models import utils as model_utils
-
 
 from IPython import embed
 

@@ -231,9 +231,6 @@ def prep_one_l23(p, idx, chk:bool=False):
 
     ## Raman
     if p.include_Raman:
-        models[0].init_raman()
-        models[1].init_raman()
-        #
         a_ex = odict['f_a'](models[0].wave_ex)
         bb_ex = odict['f_bb'](models[1].wave_ex)
     else:
