@@ -53,8 +53,12 @@ def slurp_pace_lat_lon(debug:bool=False):
             continue
 
         # Save
+        PACE_lats.append(fits['lat'][0])
+        PACE_lons.append(fits['lon'][0])
 
     # Add to dataframe
+    if debug:
+        embed(header='59 of slurp')
     matched['PACE_lat'] = PACE_lats
     matched['PACE_lon'] = PACE_lons
 
