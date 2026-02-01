@@ -5,11 +5,11 @@ from functools import partial
 
 from scipy.optimize import curve_fit
 
-from bing.rt import rrs as bing_rrs
+from bing import evaluate as bing_eval
 
 from IPython import embed
 
-def fit(items:tuple, models:list, bounds:tuple=None):
+def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None):
     """
     Fits the given Rrs data to the specified models using curve fitting.
 
@@ -20,6 +20,7 @@ def fit(items:tuple, models:list, bounds:tuple=None):
             initial parameters 
             index (for running in parallel; it is not used and can be None)
         models (list): The models to fit the data to.
+        rt_dict (dict): dict describing the RT
         bounds (tuple, optonal):
             Bounds on the parameters
 
@@ -34,7 +35,7 @@ def fit(items:tuple, models:list, bounds:tuple=None):
     # Unpack
     Rrs, varRrs, params, idx = items
 
-    partial_func = partial(fit_func, models=models)
+    partial_func = partial(fit_func, models=models, rt_dict=rt_dict)
     ans, cov =  curve_fit(partial_func, None, 
                           Rrs, p0=params, sigma=np.sqrt(varRrs),
                           full_output=False, bounds=bounds)
@@ -42,7 +43,7 @@ def fit(items:tuple, models:list, bounds:tuple=None):
     return ans, cov, idx
 
 def fit_func(wave:np.ndarray, *params, models:list=None,
-             return_full:bool=False):
+             return_full:bool=False, rt_dict:dict=None):
     """
     Calculate the predicted values of Rrs based on the given wave array and parameters.
 
@@ -61,13 +62,12 @@ def fit_func(wave:np.ndarray, *params, models:list=None,
     bparams = np.array(params[models[0].nparam:])
 
     # Calculate
-    a = models[0].eval_a(aparams)
-    bb = models[1].eval_bb(bparams)
-
-    pred = bing_rrs.calc_Rrs(a, bb)
-    #embed(header='fit_func 33')
+    pred = bing_eval.calc_Rrs_from_models(models[0], aparams, models[1],
+        bparams, rt_dict)
 
     if return_full:
+        a = models[0].eval_a(aparams)
+        bb = models[1].eval_bb(bparams)
         return pred.flatten(), a.flatten(), bb.flatten()
     else:
         return pred.flatten()

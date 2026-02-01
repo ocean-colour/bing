@@ -21,6 +21,7 @@ from bing.models import utils as model_utils
 from bing.models import functions
 from bing.priors import priors as bing_priors
 from bing.fitting import inference as bing_inf
+from bing.fitting import chisq_fit
 
 from bing.preproc import convert_to_satwave
 from bing.noise import scale_noise, add_noise
@@ -405,7 +406,32 @@ def fit_one(p:namedtuple, idx:int,
     # Return
     return chains, models, prep_dict, idx, extras
 
+def fit_with_LM(p:namedtuple, idx:int, p0:np.ndarray=None):
 
+    prep_dict = prep_one_l23(p, idx)
+    models = prep_dict['models']
+    model_Rrs = prep_dict['model_Rrs']
+    model_varRrs = prep_dict['model_varRrs']
+    if p0 is None:
+        p0 = prep_dict['p0']
+
+    # Bounds
+    low_bounds, high_bounds = [], []
+    low_bounds += [item['pmin'] for item in p.apriors]
+    low_bounds += [item['pmin'] for item in p.bpriors]
+    high_bounds += [item['pmax'] for item in p.apriors]
+    high_bounds += [item['pmax'] for item in p.bpriors]
+    bounds = (np.array(low_bounds), np.array(high_bounds))
+
+    # Radiative transfer dict
+    rt_dict = rt_defs.rt_dict_from_p(p)
+
+    # Do it
+    items = [(model_Rrs, model_varRrs, p0, idx)]
+    ans, cov, idx = chisq_fit.fit(items[0], models, rt_dict,
+                bounds=bounds)
+
+    return ans, cov, models, prep_dict, idx
 
 def batch_fit(p, n_batch:int=5, n_cores:int=15, debug:bool=False,
         seed:bool=None, out_dir:str='../Analysis/Fits/'): 

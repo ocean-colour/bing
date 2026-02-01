@@ -124,7 +124,7 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
     return a_mean, bb_mean, a_low, a_high, bb_low, bb_high, Rrs, sigRs 
 
 
-def reconstruct_chisq_fits(models:list, params:np.ndarray,
+def reconstruct_chisq_fits(models:list, params:np.ndarray, rt_dict:dict,
                            Chl:np.ndarray=None,
                            bb_basis_params:np.ndarray=None):
     """
@@ -135,6 +135,7 @@ def reconstruct_chisq_fits(models:list, params:np.ndarray,
         - params (ndarray): An array of the best-fit paramerers
             if ndim==1, then it is one fit
             if ndim==2, then it is an (nfits, nparams) array of fits
+        - rt_dict (dict): dict describing the Radiative transfer
         - Chl (ndarray): The chlorophyll values to use for the fits. Default is None.
         - bb_basis_params (ndarray): The basis parameters to use for the fits. Default is None.
             (nspec, nparams)
@@ -167,7 +168,8 @@ def reconstruct_chisq_fits(models:list, params:np.ndarray,
         if models[1].uses_basis_params:
             models[1].set_basis_func(np.atleast_1d(bb_basis_params)[ss])
         model_Rrs, a_mean, bb_mean = chisq_fit.fit_func(
-            models[0].wave, *param, models=models, return_full=True)
+            models[0].wave, *param, models=models, return_full=True,
+            rt_dict=rt_dict)
         # Save
         all_Rrs.append(model_Rrs)
         all_a.append(a_mean)
