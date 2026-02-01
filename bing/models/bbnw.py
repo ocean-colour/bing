@@ -84,6 +84,11 @@ class bbNWModel:
     The backscattering of water
     """
 
+    bb_w_ex:np.ndarray = None
+    """
+    The backscattering of water at Raman excitation wavelengths
+    """
+
     priors:bing_priors.Priors = None
     """
     The priors for the model
@@ -123,7 +128,7 @@ class bbNWModel:
         Args:
 
         Returns:
-            np.ndarray: The absorption coefficient of water
+            np.ndarray: The backscattering coefficient of water
         """
         # TODO -- replace this with a proper calculation!
         #_, _, b_w = water_bb.betasw_ZHH2009(
@@ -136,8 +141,10 @@ class bbNWModel:
         # Interpolate
         f = interp1d(wave, bbw, kind='linear', fill_value='extrapolate')
         self.bb_w = f(self.wave)
+        # Raman
+        self.bb_w_ex = f(self.wave_ex)
         
-    def eval_bbnw(self, params:np.ndarray):
+    def eval_bbnw(self, params:np.ndarray, wave:np.ndarray=None):
         """
         Evaluate the non-water backscattering coefficients
 
@@ -150,15 +157,21 @@ class bbNWModel:
             Cst:
                 params[0] = log10(Bnw)
 
+            wave (np.ndarray, optional): Wavelengths for evaluation
+
         Returns:
             np.ndarray: The non-water backscattering coefficient
         """
+        # Wavelengths for evaluation
+        if wave is None:
+            wave = self.wave  # Model values
+
         if self.name == 'Pow':
-            return functions.powerlaw(self.wave, params, pivot=self.pivot)
+            return functions.powerlaw(wave, params, pivot=self.pivot)
         elif self.name == 'Every':
             return 10**params
         elif self.name == 'Cst':
-            return functions.constant(self.wave, params)
+            return functions.constant(wave, params)
         elif self.name == 'Lee':
             return functions.gen_basis(params[...,-1:], [self.basis_func])
         elif self.name == 'GSM':
@@ -166,18 +179,32 @@ class bbNWModel:
         else:
             raise ValueError(f"Unknown model: {self.name}")
 
-
     def eval_bb(self, params:np.ndarray):
         """
-        Evaluate the absorption coefficient
+        Evaluate the backscattering coefficient
 
         Parameters:
             params (np.ndarray): The parameters for the model
 
         Returns:
-            np.ndarray: The absorption coefficient
+            np.ndarray: The backscattering coefficients
         """
+        # Add water and return
         return self.bb_w + self.eval_bbnw(params)
+
+    def eval_bb_ex(self, params:np.ndarray):
+        """
+        Evaluate the backscatattering coefficient at Raman 
+        excitation wavelengths    
+
+        Parameters:
+            params (np.ndarray): The parameters for the model
+
+        Returns:
+            np.ndarray: The backscatattering coefficients
+        """
+        # Add water and return
+        return self.bb_w_ex + self.eval_bbnw(params, wave=self.wave_ex)
 
     def init_guess(self, bb_nw:np.ndarray):
         """

@@ -175,7 +175,7 @@ class aNWModel:
                 params[...,0] = log10(Adg)
                 params[...,1] = log10(Sdg)
                 params[...,2] = log10(Aph)
-            wave (np.ndarray): Wavelength for evaluation
+            wave (np.ndarray, optional): Wavelengths for evaluation
 
         Returns:
             np.ndarray: The non-water absorption coefficient
@@ -265,7 +265,6 @@ class aNWModel:
         """
         # Add water and return
         return self.a_w_ex + self.eval_anw(params, wave=self.wave_ex)
-
 
     def init_guess(self, a_nw:np.ndarray):
         """
