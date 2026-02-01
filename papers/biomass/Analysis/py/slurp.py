@@ -180,4 +180,4 @@ if __name__ == '__main__':
     #slurp_flh_giop(debug=False)
     
     # PACE lat, lon of Rrs analysis
-    slurp_pace_lat_lon(debug=True)
+    slurp_pace_lat_lon(debug=False)
