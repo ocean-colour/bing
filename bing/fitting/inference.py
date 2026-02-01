@@ -5,8 +5,8 @@ from functools import partial
 from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
 
-from bing.rt import rrs as bing_rrs
 from bing.models import utils as model_utils 
+from bing import evaluate as bing_eval
 
 import emcee
 
@@ -39,11 +39,8 @@ def log_prob(params, models:list, Rrs:np.ndarray,
         return -np.inf
 
     # Proceed
-    a = models[0].eval_a(aparams)
-    bb = models[1].eval_bb(bparams)
-
-    # TODO -- allow for non-standard Gordon coefficients
-    pred = bing_rrs.calc_Rrs(a, bb, in_G1=models[0].G1, in_G2=models[0].G2) 
+    pred = bing_eval.calc_Rrs_from_models(models[0], aparams, models[1],
+        bparams, rt_dict)
 
     # Evaluate
     eeval = (pred-Rrs)**2 / varRrs

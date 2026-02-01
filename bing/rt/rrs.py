@@ -112,7 +112,7 @@ def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
 
     # Raman?
     if a_ex is not None:
-        if bb_ex is None or bb_R is None :
+        if bb_ex is None or bb_R is None:
             raise IOError("bb_ex/bb_R must be set if a_ex is provided")
         corr = calc_raman_correction_factor(a, bb, a_ex, bb_ex, bb_R)
         # Apply
@@ -122,20 +122,6 @@ def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
     return Rrs
 
 
-def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params, rt_dict:dict):
-
-    # IOPs for model wave
-    a = a_model.eval_a(a_params)
-    bb = bb_model.eval_bb(bb_params)
-
-    # Elastic
-    if rt_dict['variable_Gordon'] and a_model.G1 is None:
-        raise ValueError("Need to set model G1, G2 for variable Gordon")
-    Rrs_E = calc_elastic_Rrs(a, bb, in_G1=a_model.G1, in_G2=a_model.G2) 
-
-    # Raman?
-    #if rt_dict['include_Raman']:
-        # a_ex, bb_ex
 
 def calc_elastic_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None):
     """

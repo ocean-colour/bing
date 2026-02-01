@@ -237,13 +237,12 @@ def prep_one_l23(p, idx, chk:bool=False):
         a_ex = None
         bb_ex = None
 
-    # Calculate Rrs
-    # FIX THIS!!!!!!!!!!!!!!
+    ## Calculate Rrs
     gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'],
         in_G1=G1, in_G2=G2, a_ex = a_ex, bb_ex=bb_ex,
         bb_R=models[1].bb_R)
 
-
+    # Gordon only
     orig_gordon_Rrs = bing_rt.calc_elastic_Rrs(odict['a'], odict['bb'],
                                  in_G1=G1, in_G2=G2)
 

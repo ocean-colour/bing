@@ -24,7 +24,7 @@ from bing import evaluate
 from IPython import embed
 
 # ############################################################
-def show_fits(models:list, inputs:np.ndarray,
+def show_fits(models:list, inputs:np.ndarray, rt_dict:dict,
              ex_a_params:np.ndarray, ex_bb_params:np.ndarray,
              outfile:str=None,
              figsize:tuple=(14,6),
@@ -48,6 +48,8 @@ def show_fits(models:list, inputs:np.ndarray,
             ans: The optimized parameters for the curve fitting.
             or 
             chains: The MCMC chains.
+        rt_dict (dict):
+            Radiative transfer dict
         ex_a_params (np.ndarray):
             Extra parameters for the a modegit config pull.rebase falsel.
             The extra parameters for `a_nw`, e.g. Chl
@@ -86,12 +88,12 @@ def show_fits(models:list, inputs:np.ndarray,
     # Reconstruc
     if use_LM:
         model_Rrs, a_mean, bb_mean = evaluate.reconstruct_chisq_fits(
-            models, params, Chl=ex_a_params, bb_basis_params=ex_bb_params)
+            models, params, rt_dict, Chl=ex_a_params, bb_basis_params=ex_bb_params)
             #d_chains['Chl'], bb_basis_params=d_chains['Y']) # Lee
     else:
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
             model_Rrs, sigRs = evaluate.reconstruct_from_chains(
-            models, chains, perc=perc)
+            models, chains, rt_dict, perc=perc)
         # Generate params just in case
         params = np.median(chains, axis=[0,1])
         #embed(header='show_fit 70')

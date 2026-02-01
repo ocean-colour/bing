@@ -13,7 +13,7 @@ from bing.rt import raman
 from bing.rt import rrs
 from bing.parameters import standard
 from bing.models import utils as model_utils
-
+from bing import evaluate
 
 from IPython import embed
 
@@ -473,3 +473,14 @@ def test_raman_in_models():
         plotting.set_fontsize(ax, 17.)
         ax.legend(loc='upper left', fontsize=16.)
         plt.show()
+
+    # Generate Rrs
+    rt_dict = {}
+    rt_dict['variable_Gordon'] = True 
+    G1, G2 = rrs.wave_dependent_gordon(a_model.wave)
+    a_model.G1 = G1
+    a_model.G2 = G2
+    rt_dict['include_Raman'] = True 
+
+    # Calculate
+    Rrs = evaluate.calc_Rrs_from_models(a_model, aparam, bb_model, bparam, rt_dict)

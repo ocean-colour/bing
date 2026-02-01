@@ -11,19 +11,13 @@ from bing.fitting import l23 as fit_l23
 from bing.parameters import standard
 from bing import evaluate
 from bing import rt as bing_rt
-from bing.models import utils as model_utils
+from bing.rt import defs as rt_defs
 
 from IPython import embed
 
 def data_path(filename):
     data_dir = pathlib.Path(__file__).parent.absolute().joinpath('files')
     return str(data_dir.joinpath(filename).resolve())
-
-# Raman fitting
-p_expb = standard.expb_pow(satellite='SBG', add_noise=True,
-                           variable_Gordon=False, include_Raman=True)
-r_dict = fit_l23.prep_one_l23(p_expb, 170)
-embed(header='26 of test')
 
 # ===== Helper functions for validation =====
 
@@ -834,3 +828,16 @@ def test_process_all_structure():
     We'll skip it if files don't exist.
     """
     pytest.skip("Requires pre-existing chain files from batch_fit")
+
+# Raman fitting
+idx = 170
+p = standard.expb_pow(satellite='PACE', add_noise=False, variable_Gordon=False)
+       #nsteps=5000, nburn=1000)
+chains, models, prep_dict, idx, extras = fit_l23.fit_one(p, idx)
+
+# Evaluate
+rt_dict = rt_defs.rt_dict_from_p(p)
+a_mean, bb_mean, a_low, a_high, bb_low, bb_high, Rrs, sigRs =\
+     evaluate.reconstruct_from_chains(models, chains, rt_dict)
+
+embed(header='842 of test l23')

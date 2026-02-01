@@ -26,8 +26,32 @@ def calc_stats(chains, names:list=None,
 
     return stats
 
+def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params, rt_dict:dict):
 
-def reconstruct_from_chains(models:list, chains:np.ndarray, 
+    # IOPs for model wave
+    a = a_model.eval_a(a_params)
+    bb = bb_model.eval_bb(bb_params)
+
+    # Elastic
+    if rt_dict['variable_Gordon'] and a_model.G1 is None:
+        raise ValueError("Need to set model G1, G2 for variable Gordon")
+
+    # Raman?
+    if rt_dict['include_Raman']:
+        # a_ex, bb_ex
+        a_ex = a_model.eval_a_ex(a_params)
+        bb_ex = bb_model.eval_bb_ex(bb_params)
+        bb_R = bb_model.bb_R
+    else:
+        a_ex, bb_ex, bb_R = None, None, None
+
+    # Call me
+    Rrs = bing_rrs.calc_Rrs(a, bb, in_G1=a_model.G1, in_G2=a_model.G2,
+                            a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
+    # Return
+    return Rrs
+
+def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
                             perc=(5,95)):
     """
     Reconstructs the parameters and calculates statistics from chains of model parameters.
@@ -54,6 +78,13 @@ def reconstruct_from_chains(models:list, chains:np.ndarray,
     # Calc
     a = models[0].eval_a(chains[..., :models[0].nparam])
     bb = models[1].eval_bb(chains[..., models[0].nparam:])
+    if rt_dict['include_Raman']:
+        a_ex = models[0].eval_a_ex(chains[..., :models[0].nparam])
+        bb_ex = models[1].eval_bb_ex(chains[..., models[0].nparam:])
+        bb_R = np.outer(np.ones(chains.shape[0]), models[1].bb_R)
+    else:
+        a_ex, bb_ex, bb_R = None, None, None
+
     del chains
 
     # Calculate the mean and standard deviation
@@ -65,7 +96,25 @@ def reconstruct_from_chains(models:list, chains:np.ndarray,
     #bb_std = np.std(bb, axis=0)
 
     # Calculate the model Rrs
-    Rrs = bing_rrs.calc_Rrs(a, bb)
+    '''
+    from importlib import reload
+    from bing.rt import raman
+
+    mu_d = raman.MU_D_DEFAULT
+    mu_u = raman.MU_U_DEFAULT
+    mu_R = raman.MU_R_DEFAULT
+    s_E= 1.
+    R_E = raman.calc_R_elastic(a, bb, s_E, mu_d, mu_u)
+
+    R_raman = raman.calc_R_raman_total(
+        a, bb, a_ex, bb_ex, bb_R, 1.,
+        s_E, mu_d, mu_u, mu_R, True,
+    )
+
+    embed(header='81 of evaluate')
+    '''
+    Rrs = bing_rrs.calc_Rrs(a, bb, in_G1=models[0].G1, in_G2=models[0].G2,
+            a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
 
     # Stats
     sigRs = np.std(Rrs, axis=0)

@@ -25,7 +25,6 @@ from .rrs import (
     A_Rrs,
     B_Rrs,
     calc_Rrs,
-    calc_Rrs_from_models,
     calc_elastic_Rrs,
     calc_Rrs_fluorescence,
     calc_Rrs_fluorescence_simple,
@@ -54,7 +53,6 @@ __all__ = [
     'B_Rrs',
     # Rrs
     'calc_Rrs',
-    'calc_Rrs_from_models',
     'calc_elastic_Rrs',
     # Fluorescence Rrs
     'calc_Rrs_fluorescence',
