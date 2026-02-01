@@ -195,7 +195,7 @@ class aNWModel:
             return functions.exponential(wave, params, pivot=self.pivot, S=self.Sdg)
         elif self.name == 'Bricaud':
             Chl = 10**params[...,-1:] / 0.05582
-            self.set_aph(Chl)
+            self.set_aph(Chl, wave=wave)
             if len(params.shape) == 2:
                 a_ph = (10**params[...,-1:]) * self.a_ph
             else:
@@ -212,7 +212,7 @@ class aNWModel:
                     Chl = 10**params[...,-2] 
                 else:
                     raise ValueError(f"Unknown model: {self.name}")
-                self.set_aph(Chl)
+                self.set_aph(Chl, wave=wave)
             if len(params.shape) == 2:
                 a_ph = (10**params[...,-1:]) * self.a_ph
             else:
@@ -263,9 +263,8 @@ class aNWModel:
         Returns:
             np.ndarray: The absorption coefficient
         """
-        anw_ex = self.eval_anw(params, wave=self.wave_ex)
-        embed(header='261 of anw.py')
-        return self.a_w_ex + self.eval_anw(params)
+        # Add water and return
+        return self.a_w_ex + self.eval_anw(params, wave=self.wave_ex)
 
 
     def init_guess(self, a_nw:np.ndarray):
@@ -431,13 +430,47 @@ class aNWBricaud(aNWModel):
     uses_Chl = True
     fix_Chl = False
 
+    L23_A:np.ndarray = None
+    """
+    Pre-evaluation of Bricaud parameters at model wavelengths
+    """
+
+    L23_E:np.ndarray = None
+    """
+    Pre-evaluation of Bricaud parameters at model wavelengths
+    """
+
+    L23_A_440:np.ndarray = None
+    """
+    Pre-evaluation of Bricaud parameter at 440nm
+    """
+
+    L23_E_440:np.ndarray = None
+    """
+    Pre-evaluation of Bricaud parameter at 440nm
+    """
+
+    L23_A_ex:np.ndarray = None
+    """
+    Pre-evaluation of Bricaud parameters at excitation wavelengths (Raman)
+    """
+
+    L23_E_ex:np.ndarray = None
+    """
+    Pre-evaluation of Bricaud parameters at excitation wavelengths (Raman)
+    """
+
+
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         aNWModel.__init__(self, wave, prior_dicts)
 
-        # Apply
+        # Save parameterization
         self.L23_A = f_b1998_A(self.wave)
         self.L23_E = f_b1998_E(self.wave)
-        self.i440 = np.argmin(np.abs(self.wave-440))
+        self.L23_A_440 = f_b1998_A(440.)
+        self.L23_E_440 = f_b1998_E(440.)
+        self.L23_A_ex = f_b1998_A(self.wave_ex)
+        self.L23_E_ex = f_b1998_E(self.wave_ex)
 
 
     def set_aph(self, Chla, wave:np.ndarray=None):
@@ -445,16 +478,32 @@ class aNWBricaud(aNWModel):
 
         if wave is None:
             wave = self.wave  # Model values
+        
+        # Load up the coefficients
+        if np.all(np.isclose(wave, self.wave)):
+            L23_A = self.L23_A
+            L23_E = self.L23_E
+        elif np.all(np.isclose(wave, self.wave_ex)):
+            L23_A = self.L23_A_ex
+            L23_E = self.L23_E_ex
+        else:
+            L23_A = f_b1998_A(wave)
+            L23_E = f_b1998_E(wave)
 
-        # Normalize
+        # Calculate
         if len(Chla.shape) == 2:
-            Chla_array = np.outer(Chla, np.ones(self.L23_E.size))
-            self.a_ph = self.L23_A * Chla_array**self.L23_E
-            norm = np.outer(self.a_ph[:,self.i440], np.ones(self.a_ph.shape[1]))
+            Chla_array = np.outer(Chla, np.ones(L23_E.size))
+            self.a_ph = L23_A * Chla_array**L23_E
+            # Normalize
+            aph_440 = self.L23_A_440 * Chla[:,0]**self.L23_E_440
+            norm = np.outer(aph_440, np.ones(self.a_ph.shape[1]))
             self.a_ph /= norm
         else:
-            self.a_ph = self.L23_A * Chla**self.L23_E
-            self.a_ph /= self.a_ph[self.i440]
+            self.a_ph = L23_A * Chla**L23_E
+            aph_440 = self.L23_A_440 * Chla**self.L23_E_440
+            self.a_ph /= aph_440
+
+        #embed(header='498 of anw.py')
 
         # Extrapolate to <400nm, as necessary
         if wave.min() < 400:
@@ -671,7 +720,10 @@ class aNWGIOP(aNWModel):
         # Sdg
         self.Sdg = 0.018
 
-    def set_aph(self, Chla):
+    def set_aph(self, Chla, wave:np.ndarray=None):
+
+        if wave is None:
+            wave = self.wave  # Model values
         # ##################################
         # Bricaud
         b1998 = ph_absorption.load_bricaud1998()
@@ -681,14 +733,16 @@ class aNWGIOP(aNWModel):
         f_b1998_E = interp1d(b1998['lambda'], b1998.Ephi, bounds_error=False, fill_value=0.)
 
         # Apply
-        L23_A = f_b1998_A(self.wave)
-        L23_E = f_b1998_E(self.wave)
+        L23_A = f_b1998_A(wave)
+        L23_E = f_b1998_E(wave)
 
         self.a_ph = L23_A * Chla**L23_E
 
         # Normalize at 440
-        iwave = np.argmin(np.abs(self.wave-440))
-        self.a_ph /= self.a_ph[iwave]
+        L23_A = f_b1998_A(440.)
+        L23_E = f_b1998_E(440.)
+        a_ph_440 = L23_A * Chla**L23_E
+        self.a_ph /= a_ph_440
 
     def init_guess(self, a_nw:np.ndarray):
         """
@@ -783,7 +837,10 @@ class aNWGSM(aNWModel):
         # Sdg 
         self.Sdg = 0.0206
 
-    def set_aph(self, Chla, version:str='Maritorena2002'):
+    def set_aph(self, Chla, wave:np.ndarray=None, version:str='Maritorena2002'):
+
+        if wave is None:
+            wave = self.wave  # Model values
 
         if version == 'Maritorena2002':
             # ##################################

@@ -247,7 +247,7 @@ def prep_one_l23(p, idx, chk:bool=False):
     orig_gordon_Rrs = bing_rt.calc_elastic_Rrs(odict['a'], odict['bb'],
                                  in_G1=G1, in_G2=G2)
 
-    embed(header='254 of l23.py')
+    #embed(header='254 of l23.py')
 
     # Other bits and pieces
     model_Rrs = convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
@@ -309,6 +309,7 @@ def fit_one(p:namedtuple, idx:int,
     Args:
         model_names (list): List of model names.
         idx (int): Index of the data.
+        p0 (np.ndarray, optional): Different starting guess
     Returns:
         tuple: Tuple containing the fitted parameters,
             models, the index, and additional information.

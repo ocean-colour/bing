@@ -434,7 +434,27 @@ model_wave = sat_pace.wave(wv_min=p_expb.wv_min,
 model_names=['ExpBricaud', 'Pow']
 a_model, _ = model_utils.init(model_names, model_wave)
 
-# Wave ex
-a_model.init_raman()
-
 # a_ex
+aparam = np.array([-1.6029689 ,  0.01230832, -2.3059037])
+a_ex = a_model.eval_a_ex(aparam)
+
+anw_ex = a_model.eval_anw(aparam, wave=a_model.wave_ex)
+anw = a_model.eval_anw(aparam)
+
+fig = plt.figure(figsize=(7,7))
+ax = plt.gca()
+#
+#ax.plot(models[0].wave, a.flatten(), label='a', color='black')
+#ax.plot(models[0].wave_ex, a_ex.flatten(), label='a_ex', color='red')
+ax.plot(a_model.wave, anw.flatten(), label='anw', color='black')
+ax.plot(a_model.wave_ex, anw_ex.flatten(), label='anw_ex', color='red')
+#
+ax.set_xlabel('Wavelength (nm)')
+ax.set_ylabel(r'$a \; \rm [m^{-1}]$')
+#ax.set_yscale('log')
+#ax.set_ylim(1e-6, 1e-2)
+plotting.set_fontsize(ax, 17.)
+ax.legend(loc='upper left', fontsize=16.)
+plt.show()
+
+embed(header='441 of test_raman')
