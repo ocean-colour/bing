@@ -101,10 +101,46 @@ def rrs_to_Rrs(rrs: np.ndarray, A: float = A_Rrs, B: float = B_Rrs) -> np.ndarra
     """
     return A * rrs / (1 - B * rrs)
 
+def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
+    a_ex: Union[float, np.ndarray]=None,
+    bb_ex: Union[float, np.ndarray]=None,
+    bb_R: Union[float, np.ndarray]=None,
+    ):
 
-def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None):
+    # Elastic
+    Rrs = calc_elastic_Rrs(a, bb, in_G1=in_G1, in_G2=in_G2)
+
+    # Raman?
+    if a_ex is not None:
+        if bb_ex is None or bb_R is None :
+            raise IOError("bb_ex/bb_R must be set if a_ex is provided")
+        corr = calc_raman_correction_factor(a, bb, a_ex, bb_ex, bb_R)
+        # Apply
+        Rrs *= corr
+
+    # Return
+    return Rrs
+
+
+def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params, rt_dict:dict):
+
+    # IOPs for model wave
+    a = a_model.eval_a(a_params)
+    bb = bb_model.eval_bb(bb_params)
+
+    # Elastic
+    if rt_dict['variable_Gordon'] and a_model.G1 is None:
+        raise ValueError("Need to set model G1, G2 for variable Gordon")
+    Rrs_E = calc_elastic_Rrs(a, bb, in_G1=a_model.G1, in_G2=a_model.G2) 
+
+    # Raman?
+    #if rt_dict['include_Raman']:
+        # a_ex, bb_ex
+
+def calc_elastic_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None):
     """
-    Calculates the remote sensing reflectance (Rrs) using the given absorption (a) and backscattering (bb) coefficients.
+    Calculates the remote sensing reflectance (Rrs) using 
+    the given absorption (a) and backscattering (bb) coefficients.
 
     Parameters:
         a (float or array-like): Absorption coefficient.

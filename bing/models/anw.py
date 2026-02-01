@@ -11,6 +11,7 @@ from ocpy.ph import absorption as ph_absorption
 
 from bing.priors import priors as bing_priors
 from bing.models import functions
+from bing.rt import raman
 
 from IPython import embed
 
@@ -74,6 +75,11 @@ class aNWModel:
     """
     Gordon G2 coefficients
         If None, the default will be used (if the Gordon approx is done)
+    """
+
+    wave_ex:np.ndarray = None
+    """
+    Excitation wavelengths for Raman scattering
     """
 
     nparam:int = None
@@ -243,6 +249,13 @@ class aNWModel:
         Parameters:
             a_nw (np.ndarray): The non-water absorption coefficient
         """
+
+    def init_raman(self):
+        """
+        Initialize for Raman calculations
+        """
+        self.wave_ex = raman.emission_to_excitation_wavelength(self.wave)
+
     def __repr__(self):
         return f"<aNWModel: {self.name}, nparam={self.nparam}>"
 

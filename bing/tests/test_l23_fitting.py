@@ -19,6 +19,11 @@ def data_path(filename):
     data_dir = pathlib.Path(__file__).parent.absolute().joinpath('files')
     return str(data_dir.joinpath(filename).resolve())
 
+# Raman fitting
+p_expb = standard.expb_pow(satellite='SBG', add_noise=True,
+                           variable_Gordon=False, include_Raman=True)
+r_dict = fit_l23.prep_one_l23(p_expb, 170)
+embed(header='26 of test')
 
 # ===== Helper functions for validation =====
 

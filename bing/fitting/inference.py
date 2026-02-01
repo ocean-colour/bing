@@ -12,20 +12,21 @@ import emcee
 
 from IPython import embed
 
-def log_prob(params, models:list, Rrs:np.ndarray, varRrs:np.ndarray):
+def log_prob(params, models:list, Rrs:np.ndarray, 
+             varRrs:np.ndarray, rt_dict:dict):
     """
     Calculate the logarithm of the probability of the given parameters.
 
     Args:
         params (array-like): The parameters to be used in the model prediction.
-        model (str): The model name
-        Rs (array-like): The observed values.
-        var (array-like): The variance of the observed values.
+        model (list): List of model objects [a, bb]
+        Rrs (array-like): The observed values.
+        varRrs (array-like): The variance of the observed values.
 
     Returns:
         float: The logarithm of the probability.
     """
-    # Unpack for convenienceHigh Chla
+    # Unpack for convenience
     aparams = params[:models[0].nparam]
     bparams = params[models[0].nparam:]
 
@@ -76,7 +77,8 @@ def init_mcmc(models:list, nsteps:int=10000, nburn:int=1000):
     return pdict
 
 
-def fit_one(items:list, models:list=None, pdict:dict=None, chains_only:bool=False):
+def fit_one(items:list, models:list=None, pdict:dict=None, 
+            chains_only:bool=False, rt_dict:dict=None):
     """
     Fits a model to a set of input data using the MCMC algorithm.
 
@@ -88,6 +90,7 @@ def fit_one(items:list, models:list=None, pdict:dict=None, chains_only:bool=Fals
             idx (int): The index of the item.
         models (list): The list of model objects, a_nw, bb_nw
         pdict (dict, optional): A dictionary containing the model and fitting parameters. Defaults to None.
+        rt_dict (dict, optional): A dictionary containing the radiative tranfser parameters.
         chains_only (bool, optional): If True, only the chains are returned. Defaults to False.
 
     Returns:
@@ -106,7 +109,7 @@ def fit_one(items:list, models:list=None, pdict:dict=None, chains_only:bool=Fals
     # Run
     print(f"idx={idx}")
     sampler = run_emcee(
-        models, Rrs, varRrs,
+        models, Rrs, varRrs, rt_dict,
         nwalkers=pdict['nwalkers'],
         nsteps=pdict['nsteps'],
         nburn=pdict['nburn'],
@@ -120,7 +123,8 @@ def fit_one(items:list, models:list=None, pdict:dict=None, chains_only:bool=Fals
     else:
         return sampler, idx
 
-def run_emcee(models:list, Rrs, varRrs, nwalkers:int=32, 
+def run_emcee(models:list, Rrs, varRrs, rt_dict,
+              nwalkers:int=32, 
               nburn:int=1000,
               nsteps:int=20000, save_file:str=None, 
               p0=None, skip_check:bool=False, ndim:int=None):
@@ -131,6 +135,7 @@ def run_emcee(models:list, Rrs, varRrs, nwalkers:int=32,
         models (list): The list of model objects, a_nw, bb_nw
         Rrs (numpy.ndarray): The input data.
         varRrs (numpy.ndarray): The error data.
+        rt_dict (dict): dict specifyig the Radiative Transfer
         nwalkers (int, optional): The number of walkers in the ensemble. Defaults to 32.
         nsteps (int, optional): The number of steps to run the sampler. Defaults to 20000.
         save_file (str, optional): The file path to save the backend. Defaults to None.
@@ -169,7 +174,7 @@ def run_emcee(models:list, Rrs, varRrs, nwalkers:int=32,
     # Init
     sampler = emcee.EnsembleSampler(
         nwalkers, ndim, log_prob,
-        args=[models, Rrs, varRrs],
+        args=[models, Rrs, varRrs, rt_dict],
         backend=backend)#, pool=pool)
 
     # Burn in

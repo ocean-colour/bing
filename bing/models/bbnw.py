@@ -10,6 +10,7 @@ from abc import ABCMeta
 
 from bing.models import functions
 from bing.priors import priors as bing_priors
+from bing.rt import raman
 
 def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
     """
@@ -58,6 +59,15 @@ class bbNWModel:
         If None, the default will be used (if the Gordon approx is done)
     """
 
+    wave_ex:np.ndarray = None
+    """
+    Excitation wavelengths for Raman scattering
+    """
+
+    bb_R:np.ndarray = None
+    """
+    Raman backscattering coefficient
+    """
 
     nparam:int = None
     """
@@ -181,6 +191,13 @@ class bbNWModel:
         Parameters:
             param (float): The basis function
         """
+
+    def init_raman(self):
+        """
+        Initialize for Raman calculations
+        """
+        self.wave_ex = raman.emission_to_excitation_wavelength(self.wave)
+        self.bb_R = raman.raman_backscattering_coeff(self.wave_ex)
 
     def __repr__(self):
         return f"<bbNWModel: {self.name}, nparam={self.nparam}>"

@@ -25,6 +25,8 @@ from .rrs import (
     A_Rrs,
     B_Rrs,
     calc_Rrs,
+    calc_Rrs_from_models,
+    calc_elastic_Rrs,
     calc_Rrs_fluorescence,
     calc_Rrs_fluorescence_simple,
     calc_Rrs_with_fluorescence,
@@ -50,9 +52,10 @@ __all__ = [
     # Constants
     'A_Rrs',
     'B_Rrs',
-    # Elastic Rrs
+    # Rrs
     'calc_Rrs',
-    'calc_Rrs_with_raman',
+    'calc_Rrs_from_models',
+    'calc_elastic_Rrs',
     # Fluorescence Rrs
     'calc_Rrs_fluorescence',
     'calc_Rrs_fluorescence_simple',
@@ -60,9 +63,9 @@ __all__ = [
     'calc_fluorescence_spectrum',
     'calc_fluorescence_correction_factor',
     # IOP functions
-    'calc_a_ph_bricaud',
-    'calc_a_water',
-    'calc_bb_water',
+    #'calc_a_ph_bricaud',
+    #'calc_a_water',
+    #'calc_bb_water',
     # Low-level fluorescence
     'calc_R_fluorescence',
     'calc_fluorescence_line_height',

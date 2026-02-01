@@ -3,7 +3,7 @@ from collections import namedtuple
 import os
 
 import numpy as np
-import pandas
+from scipy.interpolate import interp1d
 
 from functools import partial
 from concurrent.futures import ProcessPoolExecutor
@@ -15,6 +15,8 @@ from ocpy.satellites import pace as sat_pace
 from ocpy.hydrolight import loisel23
 
 from bing import rt as bing_rt
+from bing.rt import defs as rt_defs
+from bing.rt import raman
 from bing.models import utils as model_utils
 from bing.models import functions
 from bing.priors import priors as bing_priors
@@ -23,8 +25,7 @@ from bing.fitting import inference as bing_inf
 from bing.preproc import convert_to_satwave
 from bing.noise import scale_noise, add_noise
 
-#import anly_utils_20
-
+from IPython import embed
 
 def load_one_l23(idx:int, step:int=1, 
                   ds=None, 
@@ -119,12 +120,16 @@ def load_one_l23(idx:int, step:int=1,
     ans, _ = functions.fit_Sdg(wave, adg,
                                  wv_min=wv_min)
 
-    # Cut down to 40 bands
+    # Cut down?
     Rrs = Rrs[::step]
     wave = wave[::step]
 
-    # Gordon
-    gordon_Rrs = bing_rt.calc_Rrs(a, bb)
+    # Prep for Raman
+    f_a = interp1d(ds.Lambda.data, ds.a.data[idx])
+    f_bb = interp1d(ds.Lambda.data, ds.bb.data[idx])
+
+    # Standard Gordon
+    gordon_Rrs = bing_rt.calc_elastic_Rrs(a, bb)
 
     # Error
     #varRrs = (scl_noise * Rrs)**2
@@ -138,7 +143,7 @@ def load_one_l23(idx:int, step:int=1,
                  aw=ds.a.data[idx,iwave]-ds.anw.data[idx,iwave],
                  anw=ds.anw.data[idx,iwave],
                  adg=adg, aph=aph, Sdg=float(ans[1]),
-                 ag=ag,
+                 ag=ag, f_a=f_a, f_bb=f_bb,
                  Y=Y, Chl=Chl)
 
     return odict
@@ -212,18 +217,40 @@ def prep_one_l23(p, idx, chk:bool=False):
     # Initialize the MCMC
     pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
     
-    # Gordon Rrs
+    # Radiative Transfer
+
+    ## Gordon coefficients
     if p.variable_Gordon:
         G1, G2 = bing_rt.rrs.wave_dependent_gordon(model_wave)
     else: 
         G1, G2 = None, None
-    gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'],
-                                  in_G1=G1, in_G2=G2)
-
     models[0].G1 = G1
     models[0].G2 = G2
     models[1].G1 = G1
     models[1].G2 = G2
+
+    ## Raman
+    if p.include_Raman:
+        models[0].init_raman()
+        models[1].init_raman()
+        #
+        a_ex = odict['f_a'](models[0].wave_ex)
+        bb_ex = odict['f_bb'](models[1].wave_ex)
+    else:
+        a_ex = None
+        bb_ex = None
+
+    # Calculate Rrs
+    # FIX THIS!!!!!!!!!!!!!!
+    gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'],
+        in_G1=G1, in_G2=G2, a_ex = a_ex, bb_ex=bb_ex,
+        bb_R=models[1].bb_R)
+
+
+    orig_gordon_Rrs = bing_rt.calc_elastic_Rrs(odict['a'], odict['bb'],
+                                 in_G1=G1, in_G2=G2)
+
+    embed(header='254 of l23.py')
 
     # Other bits and pieces
     model_Rrs = convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
@@ -316,10 +343,13 @@ def fit_one(p:namedtuple, idx:int,
     #p0 -= 1
     items = [(model_Rrs, model_varRrs, p0, idx)]
 
+    # Radiative transfer dict
+    rt_dict = rt_defs.rt_dict_from_p(p)
 
     # Fit
     chains, idx = bing_inf.fit_one(
-            items[0], models=models, pdict=pdict, chains_only=True)
+            items[0], models=models, pdict=pdict, 
+            chains_only=True, rt_dict=rt_dict)
 
     # Show?
     if False:
