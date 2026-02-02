@@ -10,6 +10,7 @@ import pytest
 from bing.fitting import l23 as fit_l23
 from bing.parameters import standard
 from bing import evaluate
+from bing import plotting as bing_plot
 from bing import rt as bing_rt
 from bing.rt import defs as rt_defs
 
@@ -115,10 +116,11 @@ def validate_fitted_parameters(chains, models, models_info=None):
     return med_params, pnames, stats
 
 
-def validate_reconstructed_rrs(models, chains, model_Rrs, model_varRrs, wave, nparams):
+def validate_reconstructed_rrs(models, chains, model_Rrs, model_varRrs, wave, nparams,
+    rt_dict:dict):
     """Validate reconstructed Rrs and IOPs from chains."""
     a, bb, a_lo, a_hi, bb_lo, bb_hi, Rrs_pred, sigRrs = \
-        evaluate.reconstruct_from_chains(models, chains, perc=(5, 95))
+        evaluate.reconstruct_from_chains(models, chains, rt_dict, perc=(5, 95))
 
     # Check shapes
     assert len(Rrs_pred) == len(wave), "Predicted Rrs should match wavelength array"
@@ -284,6 +286,7 @@ def test_single_fit_standard_Gordon():
     p_expb = standard.expb_pow(satellite='SBG', add_noise=True,
                                variable_Gordon=False)
     outfile = fit_l23.chain_filename(p_expb, idx=idx, path='./')
+    rt_dict = rt_defs.rt_dict_from_p(p_expb)
 
     # L23 data
     l23_dict = fit_l23.load_one_l23(idx)
@@ -300,7 +303,8 @@ def test_single_fit_standard_Gordon():
     med_params, pnames, stats = validate_fitted_parameters(chains, models)
 
     a, bb, a_lo, a_hi, bb_lo, bb_hi, Rrs_pred, reduced_chi2 = \
-        validate_reconstructed_rrs(models, chains, model_Rrs, model_varRrs, wave, nparams)
+        validate_reconstructed_rrs(models, chains, model_Rrs, 
+                        model_varRrs, wave, nparams, rt_dict)
 
     comparison_metrics = validate_l23_comparison(
         l23_dict, models, chains, wave, med_params, a, bb, model_Rrs, Rrs_pred)
@@ -333,6 +337,7 @@ def test_single_fit_variable_Gordon():
     p_expb = standard.expb_pow(satellite='SBG', add_noise=True,
                                variable_Gordon=True)
     outfile = fit_l23.chain_filename(p_expb, idx=idx, path='./')
+    rt_dict = rt_defs.rt_dict_from_p(p_expb)
 
     # L23 data
     l23_dict = fit_l23.load_one_l23(idx)
@@ -349,7 +354,7 @@ def test_single_fit_variable_Gordon():
     med_params, pnames, stats = validate_fitted_parameters(chains, models)
 
     a, bb, a_lo, a_hi, bb_lo, bb_hi, Rrs_pred, reduced_chi2 = \
-        validate_reconstructed_rrs(models, chains, model_Rrs, model_varRrs, wave, nparams)
+        validate_reconstructed_rrs(models, chains, model_Rrs, model_varRrs, wave, nparams, rt_dict)
 
     comparison_metrics = validate_l23_comparison(
         l23_dict, models, chains, wave, med_params, a, bb, model_Rrs, Rrs_pred)
@@ -829,16 +834,31 @@ def test_process_all_structure():
     """
     pytest.skip("Requires pre-existing chain files from batch_fit")
 
-def test_raman_fitting():
-# Raman fitting
-idx = 170
-p = standard.expb_pow(satellite='PACE', add_noise=False, variable_Gordon=False)
-       #nsteps=5000, nburn=1000)
-chains, models, prep_dict, idx, extras = fit_l23.fit_one(p, idx)
 
-# Evaluate
-rt_dict = rt_defs.rt_dict_from_p(p)
-a_mean, bb_mean, a_low, a_high, bb_low, bb_high, Rrs, sigRs =\
-     evaluate.reconstruct_from_chains(models, chains, rt_dict)
 
-embed(header='842 of test l23')
+def test_raman_fitting_LM():
+    idx = 170
+    # Prep
+    p_R = standard.expb_pow(satellite='PACE', add_noise=False, variable_Gordon=True, include_Raman=True)
+    # Fit
+    ans, cov, models_LM, prep_dict_LM, idx = fit_l23.fit_with_LM(p_R, idx)
+    # Plot as an additional test
+    rt_dict_R = rt_defs.rt_dict_from_p(p_R)
+    Chl = 10**ans[2]/0.05582
+    _ = bing_plot.show_fits(models_LM, ans, rt_dict_R, Chl, None,
+                figsize=(12,4), fontsize=13., show=True,
+                Rrs_true=dict(wave=models_LM[0].wave, spec=prep_dict_LM['model_Rrs'], var=prep_dict_LM['model_varRrs']),
+                log_abb=True )
+
+def test_raman_fitting_MCMC():
+    idx = 170
+    p_R = standard.expb_pow(satellite='PACE', add_noise=False, variable_Gordon=True, 
+        include_Raman=True, nsteps=10000, nburn=1000)
+    chains_R, models_R, prep_dict_R, idx, extras_R = fit_l23.fit_one(p_R, idx)
+    # Plot
+    rt_dict_R = rt_defs.rt_dict_from_p(p_R)
+    _ = bing_plot.show_fits(models_R, chains_R, rt_dict_R, None, None,
+                figsize=(12,4), fontsize=13., show=True,
+                Rrs_true=dict(wave=models_R[0].wave, 
+                    spec=prep_dict_R['model_Rrs'], var=prep_dict_R['model_varRrs']),
+                log_abb=True )

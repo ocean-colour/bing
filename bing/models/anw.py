@@ -509,7 +509,7 @@ class aNWExp(aNWModel):
     """
     name = 'Exp'
     nparam = 2
-    pnames = ['Anw', 'Snw']
+    pnames = ['Anw', 'Snw']  # log10, linear
     pivot = 400.
 
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):

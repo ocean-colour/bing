@@ -1,30 +1,93 @@
-""" Inference methods for bing """
+"""
+MCMC Inference Module for BING
+==============================
+
+This module implements Markov Chain Monte Carlo (MCMC) inference for
+bio-optical parameter retrieval using the emcee ensemble sampler.
+
+The module provides functions for:
+- Computing log-probability for Bayesian inference
+- Initializing and running MCMC sampling
+- Single-spectrum and batch fitting workflows
+- Parallel processing support for large datasets
+
+The inference framework follows a standard Bayesian approach:
+    posterior ∝ likelihood × prior
+
+where the likelihood is Gaussian based on Rrs measurement uncertainties,
+and priors are specified via the model objects.
+
+References
+----------
+- Foreman-Mackey, D. et al. (2013). "emcee: The MCMC Hammer,"
+  PASP 125, 306-312.
+
+Examples
+--------
+>>> from bing.fitting import inference
+>>> from bing.models import utils as model_utils
+>>>
+>>> # Initialize models and MCMC configuration
+>>> models = model_utils.init(['ExpBricaud', 'Pow'], wave)
+>>> pdict = inference.init_mcmc(models, nsteps=40000, nburn=1000)
+>>>
+>>> # Fit a single spectrum
+>>> items = (Rrs, varRrs, p0, idx)
+>>> chains, idx = inference.fit_one(items, models=models, pdict=pdict,
+...                                  chains_only=True, rt_dict=rt_dict)
+"""
 import numpy as np
 
 from functools import partial
 from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
 
-from bing.models import utils as model_utils 
+from bing.models import utils as model_utils
 from bing import evaluate as bing_eval
 
 import emcee
 
 from IPython import embed
 
-def log_prob(params, models:list, Rrs:np.ndarray, 
+def log_prob(params, models:list, Rrs:np.ndarray,
              varRrs:np.ndarray, rt_dict:dict):
     """
-    Calculate the logarithm of the probability of the given parameters.
+    Compute the log-posterior probability for given parameters.
 
-    Args:
-        params (array-like): The parameters to be used in the model prediction.
-        model (list): List of model objects [a, bb]
-        Rrs (array-like): The observed values.
-        varRrs (array-like): The variance of the observed values.
+    This is the objective function for MCMC sampling. It combines the
+    log-prior (from model priors) with the log-likelihood (Gaussian,
+    based on Rrs residuals and measurement variance).
 
-    Returns:
-        float: The logarithm of the probability.
+    Parameters
+    ----------
+    params : np.ndarray
+        Combined parameter vector [a_params, bb_params] in model-specific
+        space (typically log10 for amplitudes, linear for slopes).
+    models : list
+        List of two model objects: [absorption_model, backscattering_model].
+        Each must have `priors` attribute and `nparam` count.
+    Rrs : np.ndarray
+        Observed remote sensing reflectance [sr^-1].
+    varRrs : np.ndarray
+        Variance of Rrs measurements [sr^-2].
+    rt_dict : dict
+        Radiative transfer configuration dictionary with keys:
+        - 'variable_Gordon' : bool - Use wavelength-dependent Gordon coefficients
+        - 'include_Raman' : bool - Include Raman scattering correction
+
+    Returns
+    -------
+    float
+        Log-posterior probability. Returns -np.inf if parameters are
+        outside prior bounds or if calculation produces NaN.
+
+    Notes
+    -----
+    The log-likelihood is computed as:
+        log(L) = -0.5 × Σ[(Rrs_model - Rrs_obs)² / varRrs]
+
+    The total log-posterior is:
+        log(P) = log(L) + log(prior_a) + log(prior_bb)
     """
     # Unpack for convenience
     aparams = params[:models[0].nparam]
@@ -53,16 +116,44 @@ def log_prob(params, models:list, Rrs:np.ndarray,
 
 def init_mcmc(models:list, nsteps:int=10000, nburn:int=1000):
     """
-    Initializes the MCMC parameters.
+    Initialize MCMC configuration dictionary.
 
-    Args:
-        emulator: The emulator model.
-        ndim (int): The number of dimensions.
-        nsteps (int, optional): The number of steps to run the sampler. Defaults to 10000.
-        nburn (int, optional): The number of steps to run the burn-in. Defaults to 1000.
+    Creates a configuration dictionary with parameters needed for emcee
+    ensemble sampling. The number of walkers is automatically set based
+    on the total number of model parameters.
 
-    Returns:
-        dict: A dictionary containing the MCMC parameters.
+    Parameters
+    ----------
+    models : list
+        List of two model objects: [absorption_model, backscattering_model].
+        Used to determine total number of parameters (ndim).
+    nsteps : int, optional
+        Number of MCMC steps to run after burn-in. Default is 10000.
+    nburn : int, optional
+        Number of burn-in steps (discarded). Default is 1000.
+
+    Returns
+    -------
+    dict
+        MCMC configuration dictionary with keys:
+        - 'nwalkers' : int - Number of ensemble walkers (max(16, 2×ndim))
+        - 'nsteps' : int - Steps after burn-in
+        - 'nburn' : int - Burn-in steps
+        - 'save_file' : str or None - Path for HDF5 backend (None = no save)
+        - 'Chl' : np.ndarray or None - Chlorophyll values for batch processing
+        - 'Y' : np.ndarray or None - Backscattering slope values for batch
+
+    Notes
+    -----
+    The number of walkers must be at least 2×ndim for emcee. We use
+    max(16, 2×ndim) to ensure adequate sampling even for low-dimensional
+    problems.
+
+    Examples
+    --------
+    >>> pdict = init_mcmc(models, nsteps=40000, nburn=2000)
+    >>> print(pdict['nwalkers'])
+    16
     """
     pdict = {}
     ndim = np.sum([model.nparam for model in models])
@@ -74,24 +165,51 @@ def init_mcmc(models:list, nsteps:int=10000, nburn:int=1000):
     return pdict
 
 
-def fit_one(items:list, models:list=None, pdict:dict=None, 
+def fit_one(items:list, models:list=None, pdict:dict=None,
             chains_only:bool=False, rt_dict:dict=None):
     """
-    Fits a model to a set of input data using the MCMC algorithm.
+    Fit a single spectrum using MCMC.
 
-    Args:
-        items (list): A list containing the 
-            Rrs (numpy.ndarray): The reflectance data.
-            varRrs (numpy.ndarray): The variance of the reflectance data.
-            params (numpy.ndarray): The initial guess for the parameters.
-            idx (int): The index of the item.
-        models (list): The list of model objects, a_nw, bb_nw
-        pdict (dict, optional): A dictionary containing the model and fitting parameters. Defaults to None.
-        rt_dict (dict, optional): A dictionary containing the radiative tranfser parameters.
-        chains_only (bool, optional): If True, only the chains are returned. Defaults to False.
+    Runs emcee ensemble sampling for a single Rrs spectrum, automatically
+    handling model initialization (Chl, Y parameters) and walker setup.
 
-    Returns:
-        tuple: A tuple containing the MCMC sampler object and the index.
+    Parameters
+    ----------
+    items : tuple
+        Tuple containing (Rrs, varRrs, params, idx):
+        - Rrs : np.ndarray - Observed remote sensing reflectance [sr^-1]
+        - varRrs : np.ndarray - Variance of Rrs [sr^-2]
+        - params : np.ndarray - Initial parameter guess
+        - idx : int - Spectrum index (for batch tracking and Chl/Y lookup)
+    models : list
+        List of two model objects: [absorption_model, backscattering_model].
+    pdict : dict
+        MCMC configuration from init_mcmc(), plus:
+        - 'Chl' : np.ndarray - Chlorophyll values indexed by spectrum idx
+        - 'Y' : np.ndarray - Backscattering slope values indexed by idx
+    chains_only : bool, optional
+        If True, returns only the chain array (float32) instead of the
+        full sampler object. Useful for memory efficiency. Default is False.
+    rt_dict : dict
+        Radiative transfer configuration dictionary.
+
+    Returns
+    -------
+    sampler_or_chains : emcee.EnsembleSampler or np.ndarray
+        If chains_only=False: Full emcee sampler object
+        If chains_only=True: Chain array with shape (nsteps, nwalkers, nparam)
+    idx : int
+        Input index (echoed for tracking in batch processing)
+
+    Notes
+    -----
+    The function updates model internals (Chl for Bricaud, Y for Lee)
+    before running MCMC. These values are looked up from pdict using idx.
+
+    See Also
+    --------
+    fit_batch : Fit multiple spectra in parallel
+    run_emcee : Lower-level emcee interface
     """
     # Unpack
     Rrs, varRrs, params, idx = items
@@ -121,26 +239,73 @@ def fit_one(items:list, models:list=None, pdict:dict=None,
         return sampler, idx
 
 def run_emcee(models:list, Rrs, varRrs, rt_dict,
-              nwalkers:int=32, 
+              nwalkers:int=32,
               nburn:int=1000,
-              nsteps:int=20000, save_file:str=None, 
+              nsteps:int=20000, save_file:str=None,
               p0=None, skip_check:bool=False, ndim:int=None):
     """
-    Run the emcee sampler for Bayesian inference.
+    Run the emcee ensemble sampler for Bayesian inference.
 
-    Args:
-        models (list): The list of model objects, a_nw, bb_nw
-        Rrs (numpy.ndarray): The input data.
-        varRrs (numpy.ndarray): The error data.
-        rt_dict (dict): dict specifyig the Radiative Transfer
-        nwalkers (int, optional): The number of walkers in the ensemble. Defaults to 32.
-        nsteps (int, optional): The number of steps to run the sampler. Defaults to 20000.
-        save_file (str, optional): The file path to save the backend. Defaults to None.
-        p0 (numpy.ndarray, optional): The initial positions of the walkers. Defaults to None.
-        skip_check (bool, optional): Whether to skip the initial state check. Defaults to False.
+    Low-level interface to emcee that handles walker initialization,
+    burn-in, and production sampling. Supports optional HDF5 backend
+    for saving chains.
 
-    Returns:
-        emcee.EnsembleSampler: The emcee sampler object.
+    Parameters
+    ----------
+    models : list
+        List of two model objects: [absorption_model, backscattering_model].
+    Rrs : np.ndarray
+        Observed remote sensing reflectance [sr^-1].
+    varRrs : np.ndarray
+        Variance of Rrs measurements [sr^-2].
+    rt_dict : dict
+        Radiative transfer configuration dictionary.
+    nwalkers : int, optional
+        Number of ensemble walkers. Must be ≥ 2×ndim. Default is 32.
+    nburn : int, optional
+        Number of burn-in steps (discarded after equilibration). Default is 1000.
+    nsteps : int, optional
+        Number of production steps after burn-in. Default is 20000.
+    save_file : str, optional
+        Path to HDF5 file for saving chains via emcee backend.
+        If None, chains are kept in memory only. Default is None.
+    p0 : np.ndarray, optional
+        Initial parameter guess (1D array). Walkers are initialized by
+        replicating p0 and adding small perturbations (±1%). Required.
+    skip_check : bool, optional
+        Skip emcee's initial state validation. Useful when starting from
+        known good positions. Default is False.
+    ndim : int, optional
+        Number of parameters (inferred from p0 if not provided).
+
+    Returns
+    -------
+    emcee.EnsembleSampler
+        The emcee sampler object containing chains and metadata.
+        Access chains via sampler.get_chain().
+
+    Raises
+    ------
+    ValueError
+        If p0 is not provided.
+
+    Notes
+    -----
+    The sampling proceeds in two phases:
+    1. Burn-in: nburn steps, then sampler is reset
+    2. Production: nsteps steps, chains are retained
+
+    Walker initialization:
+    - p0 is replicated nwalkers times
+    - Each walker is perturbed by ±1% random noise
+    - This "ball" initialization helps ensure walker diversity
+
+    Examples
+    --------
+    >>> sampler = run_emcee(models, Rrs, varRrs, rt_dict,
+    ...                     nwalkers=32, nburn=2000, nsteps=40000,
+    ...                     p0=initial_params)
+    >>> chains = sampler.get_chain()  # Shape: (nsteps, nwalkers, ndim)
     """
 
     # Initialize
@@ -193,20 +358,53 @@ def run_emcee(models:list, Rrs, varRrs, rt_dict,
     # Return
     return sampler
 
-def fit_batch(models:list, pdict:dict, items:list, 
-              n_cores:int=1, fit_method=None): 
+def fit_batch(models:list, pdict:dict, items:list,
+              n_cores:int=1, fit_method=None):
     """
-    Fits a batch of items using parallel processing.
+    Fit multiple spectra in parallel using ProcessPoolExecutor.
 
-    Args:
-        models (list): The list of model objects, a_nw, bb_nw
-        pdict (dict): A dictionary containing the parameters for fitting.
-        items (list): A list of items to be fitted.
-        n_cores (int, optional): The number of CPU cores to use for parallel processing. Defaults to 1.
-        fit_method (function, optional): The fitting method to be used. Defaults to None.
+    Distributes MCMC fitting across multiple CPU cores for efficient
+    batch processing of large datasets.
 
-    Returns:
-        tuple: A tuple containing the fitted samples and their corresponding indices.
+    Parameters
+    ----------
+    models : list
+        List of two model objects: [absorption_model, backscattering_model].
+    pdict : dict
+        MCMC configuration from init_mcmc(), including Chl and Y arrays
+        for all spectra to be fitted.
+    items : list of tuple
+        List of (Rrs, varRrs, params, idx) tuples, one per spectrum.
+        Each tuple contains:
+        - Rrs : np.ndarray - Observed reflectance
+        - varRrs : np.ndarray - Variance
+        - params : np.ndarray - Initial parameter guess
+        - idx : int - Spectrum index
+    n_cores : int, optional
+        Number of CPU cores for parallel processing. Default is 1.
+    fit_method : callable, optional
+        Fitting function to use. Default is fit_one.
+
+    Returns
+    -------
+    all_samples : np.ndarray
+        Array of MCMC chains with shape (n_spectra, nsteps, nwalkers, nparam).
+        Stored as float32 for memory efficiency.
+    all_idx : np.ndarray
+        Array of spectrum indices corresponding to each chain.
+
+    Notes
+    -----
+    - Chains are returned as float32 to reduce memory usage
+    - Progress is displayed via tqdm
+    - Chunk size is automatically set to len(items) // n_cores
+
+    Examples
+    --------
+    >>> items = [(Rrs[i], varRrs[i], p0[i], i) for i in range(n_spectra)]
+    >>> chains, indices = fit_batch(models, pdict, items, n_cores=16)
+    >>> for chain, idx in zip(chains, indices):
+    ...     process_result(chain, idx)
     """
     if fit_method is None:
         fit_method = fit_one

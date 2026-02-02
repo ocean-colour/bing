@@ -1,4 +1,34 @@
-""" Routines for plotting """
+"""
+Visualization Module for BING
+==============================
+
+This module provides plotting functions for visualizing bio-optical
+parameter retrievals, MCMC diagnostics, and fit quality assessment.
+
+Key plotting functions:
+- show_fits: Multi-panel plot showing Rrs, absorption, and backscattering fits
+- show_anw_fits: Detailed absorption component plots (a_dg, a_ph)
+- corner_plot: MCMC posterior corner plots using the corner package
+- hist2d: 2D histogram/contour plots for posterior visualization
+
+All plots use STIX fonts for publication-quality figures and support
+both MCMC chain inputs and least-squares fit results.
+
+Examples
+--------
+>>> from bing import plotting
+>>> from bing.models import utils as model_utils
+>>>
+>>> # Show fit results
+>>> axes, model_Rrs = plotting.show_fits(
+...     models, chains, rt_dict,
+...     ex_a_params=Chl, ex_bb_params=Y,
+...     Rrs_true={'wave': wave, 'spec': Rrs, 'var': varRrs},
+...     perc=(5, 95))
+>>>
+>>> # Corner plot for MCMC diagnostics
+>>> fig = plotting.corner_plot(chains, models=models)
+"""
 import numpy as np
 
 from scipy.interpolate import interp1d
@@ -29,7 +59,7 @@ def show_fits(models:list, inputs:np.ndarray, rt_dict:dict,
              outfile:str=None,
              figsize:tuple=(14,6),
              fontsize:float=12.,
-             anw_true:dict=None, 
+             anw_true:dict=None,
              bbnw_true:dict=None,
              xqaa:dict=None,
              Rrs_true:dict=None,
@@ -38,42 +68,77 @@ def show_fits(models:list, inputs:np.ndarray, rt_dict:dict,
              log_Rrs:bool=True,
              show:bool=False,
              log_abb:bool=False):
-
     """
-    Plots the fit results for the given models and inputs.
+    Create multi-panel figure showing Rrs, absorption, and backscattering fits.
 
-    Parameters:
-        models (list): A list of models.
-        inputs (np.ndarray): The input data for the models.
-            ans: The optimized parameters for the curve fitting.
-            or 
-            chains: The MCMC chains.
-        rt_dict (dict):
-            Radiative transfer dict
-        ex_a_params (np.ndarray):
-            Extra parameters for the a modegit config pull.rebase falsel.
-            The extra parameters for `a_nw`, e.g. Chl
-        ex_bb_params (np.ndarray):
-            The extra parameters for `b_bnw`.
-        outfile (str, optional): The path to save the plot as an image file. Default is None.
-        figsize (tuple, optional): The size of the figure. Default is (14, 6).
-        fontsize (float, optional): The font size of the plot labels. Default is 12.0.
-        anw_true (dict, optional): The true values for `a_nw`. Default is None.
-        bbnw_true (dict, optional): The true values for `b_bnw`. Default is None.
-        Rrs_true (dict, optional): 
-            The true values for `R_rs`. Default is None.
-            wave: Wavelength values
-            spec: 
-        show_params (bool, optional): Whether to show the parameters. Default is False.
-        log_Rrs (bool, optional): Whether to use a logarithmic scale for the y-axis of `R_rs`. Default is True.
-        perc (tuple, optional): The percentiles to calculate. Default is (5, 95).
-        log_abb (bool, optional):
-            Whether to use a logarithmic scale for the y-axis of a_nw and
-            b_bnw`. Default is False.
-        show (bool, optional): Whether to display the plot. Default is False.
+    Generates a publication-quality figure with three panels:
+    1. Rrs: Observed vs modeled remote sensing reflectance
+    2. a_nw: Non-water absorption coefficient
+    3. bb_nw: Non-water backscattering coefficient
 
-    Returns:
-        axes (list): A list of the axes objects used in the plot.
+    Supports both MCMC chains (with uncertainty bands) and least-squares
+    results (point estimates only).
+
+    Parameters
+    ----------
+    models : list
+        List of two model objects: [absorption_model, backscattering_model].
+    inputs : np.ndarray
+        Either:
+        - MCMC chains with shape (nsteps, nwalkers, nparam)
+        - Least-squares parameters with shape (nparam,)
+        The function auto-detects based on ndim.
+    rt_dict : dict
+        Radiative transfer configuration dictionary.
+    ex_a_params : float or np.ndarray
+        Extra parameters for absorption model (e.g., Chl for Bricaud).
+    ex_bb_params : float or np.ndarray
+        Extra parameters for backscattering model (e.g., Y for Lee).
+    outfile : str, optional
+        Path to save figure (PNG, PDF, etc.). If None, figure is not saved.
+    figsize : tuple, optional
+        Figure size in inches (width, height). Default is (14, 6).
+    fontsize : float, optional
+        Font size for axis labels and legends. Default is 12.
+    anw_true : dict, optional
+        True non-water absorption for comparison:
+        {'wave': wavelengths, 'spec': a_nw values}
+    bbnw_true : dict, optional
+        True non-water backscattering for comparison:
+        {'wave': wavelengths, 'spec': bb_nw values}
+    xqaa : dict, optional
+        XQAA algorithm results for comparison:
+        {'wave': wavelengths, 'anw': a_nw, 'bbnw': bb_nw}
+    Rrs_true : dict, optional
+        Observed Rrs for comparison:
+        {'wave': wavelengths, 'spec': Rrs, 'var': variance (optional)}
+        If 'var' is provided, reduced chi-squared is computed and displayed.
+    show_params : bool, optional
+        Display fitted parameter values on the Rrs panel. Default is False.
+    perc : tuple, optional
+        Percentiles for uncertainty bands. Default is (5, 95).
+    log_Rrs : bool, optional
+        Use logarithmic y-axis for Rrs panel. Default is True.
+    log_abb : bool, optional
+        Use logarithmic y-axis for absorption/backscattering panels.
+        Default is False.
+    show : bool, optional
+        Display the figure interactively. Default is False.
+
+    Returns
+    -------
+    axes : list
+        List of matplotlib axes objects [ax_anw, ax_bb, ax_Rrs].
+    model_Rrs : np.ndarray
+        Modeled Rrs values at model wavelengths.
+
+    Notes
+    -----
+    For MCMC inputs, uncertainty bands show the credible interval defined
+    by the perc parameter. For least-squares, only point estimates are shown.
+
+    Water contributions (a_w, bb_w) are automatically subtracted to show
+    non-water components.
     """
     # Unpack a little
     wave = models[0].wave
@@ -227,12 +292,55 @@ def show_anw_fits(models:list, prep_chains:np.ndarray,
              outfile:str=None,
              figsize:tuple=(9,6),
              fontsize:float=12.,
-             perc:tuple=(5,95), 
+             perc:tuple=(5,95),
              ax_anw=None,
              no_show:bool=False,
              adg_clr = 'blue', aph_clr = 'green',
-             anw_true:dict=None): 
+             anw_true:dict=None):
+    """
+    Plot absorption component retrievals (a_dg and a_ph separately).
 
+    Creates a detailed view of the absorption decomposition, showing
+    dissolved/detrital (a_dg) and phytoplankton (a_ph) components with
+    uncertainty bands from MCMC chains.
+
+    Parameters
+    ----------
+    models : list
+        List of two model objects: [absorption_model, backscattering_model].
+        The absorption model must support retsub_comps=True in eval_anw().
+    prep_chains : np.ndarray
+        Pre-processed MCMC chains (after burn-in removal) with shape
+        (nsamples, nparam). Use evaluate.thin_burn_chains() to prepare.
+    outfile : str, optional
+        Path to save figure. If None, figure is not saved.
+    figsize : tuple, optional
+        Figure size in inches. Default is (9, 6).
+    fontsize : float, optional
+        Font size for labels. Default is 12.
+    perc : tuple, optional
+        Percentiles for uncertainty bands. Default is (5, 95).
+    ax_anw : matplotlib.Axes, optional
+        Existing axes to plot on. If None, creates new figure.
+    no_show : bool, optional
+        If True, suppress plt.show(). Default is False.
+    adg_clr : str, optional
+        Color for a_dg lines and bands. Default is 'blue'.
+    aph_clr : str, optional
+        Color for a_ph lines and bands. Default is 'green'.
+    anw_true : dict, optional
+        True absorption components for comparison:
+        {'wave': wavelengths, 'a_dg': a_dg values, 'a_ph': a_ph values}
+
+    Returns
+    -------
+    ax_anw : matplotlib.Axes
+        The axes object with the plot.
+
+    Notes
+    -----
+    Prints a_ph(440) retrieval statistics to stdout for quick validation.
+    """
     # Unpack a little
     wave = models[0].wave
 
@@ -293,10 +401,43 @@ def show_anw_fits(models:list, prep_chains:np.ndarray,
 
     return ax_anw
 
-def corner_plot(chains, models:list=None, 
+def corner_plot(chains, models:list=None,
            outfile:str=None,
            show:bool=True, show_log:bool=True):
+    """
+    Create corner plot showing MCMC posterior distributions.
 
+    Generates a corner plot (triangle plot) showing 1D and 2D marginal
+    posterior distributions for all model parameters. Uses the corner
+    package with customizations for BING.
+
+    Parameters
+    ----------
+    chains : np.ndarray
+        MCMC chains with shape (nsteps, nwalkers, nparam).
+    models : list, optional
+        List of two model objects for parameter naming. If None, generic
+        labels are used.
+    outfile : str, optional
+        Path to save figure. If None, figure is not saved.
+    show : bool, optional
+        Display the figure interactively. Default is True.
+    show_log : bool, optional
+        Show parameters in log10 space (as fitted). If False, converts
+        to linear space. Default is True.
+
+    Returns
+    -------
+    fig : matplotlib.Figure
+        The corner plot figure object.
+
+    Notes
+    -----
+    - Burn-in of 7000 steps is applied internally
+    - 90% credible intervals (5th and 95th percentiles) are shown as
+      vertical dashed lines on the 1D histograms
+    - Parameter labels include log10 notation when show_log=True
+    """
     # Init the models
     #models = model_utils.init(p.model_names, d_chains['wave'])
 

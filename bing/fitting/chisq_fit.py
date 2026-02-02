@@ -1,4 +1,34 @@
-""" Perform a chi-squared fitting instead of Bayesian inference """
+"""
+Least-Squares (Chi-Squared) Fitting Module for BING
+====================================================
+
+This module provides an alternative to MCMC inference using non-linear
+least-squares optimization via scipy.optimize.curve_fit (Levenberg-Marquardt).
+
+Advantages over MCMC:
+- Much faster (seconds vs minutes)
+- Provides point estimates and covariance matrix
+
+Disadvantages:
+- No full posterior distribution
+- May not capture multi-modal solutions
+- Uncertainty estimates assume Gaussian posterior
+
+Use this module for:
+- Quick initial fits to guide MCMC starting positions
+- Large-scale processing where full posteriors aren't needed
+- Validation and comparison with MCMC results
+
+Examples
+--------
+>>> from bing.fitting import chisq_fit
+>>> from bing.models import utils as model_utils
+>>>
+>>> models = model_utils.init(['ExpBricaud', 'Pow'], wave)
+>>> items = (Rrs, varRrs, p0, idx)
+>>> bounds = (lower_bounds, upper_bounds)
+>>> ans, cov, idx = chisq_fit.fit(items, models, rt_dict, bounds=bounds)
+"""
 import numpy as np
 
 from functools import partial
@@ -11,24 +41,50 @@ from IPython import embed
 
 def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None):
     """
-    Fits the given Rrs data to the specified models using curve fitting.
+    Fit Rrs data using Levenberg-Marquardt least-squares optimization.
 
-    Parameters:
-        items: A tuple containing 
-            the Rrs data 
-            variance of Rrs data 
-            initial parameters 
-            index (for running in parallel; it is not used and can be None)
-        models (list): The models to fit the data to.
-        rt_dict (dict): dict describing the RT
-        bounds (tuple, optonal):
-            Bounds on the parameters
+    Minimizes the weighted chi-squared statistic:
+        χ² = Σ[(Rrs_model - Rrs_obs)² / varRrs]
 
-    Returns:
-        ans (np.ndarray): The optimized parameters for the curve fitting.
-        cov (np.ndarray): The estimated covariance of ans.
-        idx (int): The index of the fitted data. (for book-keeping)
+    using scipy.optimize.curve_fit.
 
+    Parameters
+    ----------
+    items : tuple
+        Tuple containing (Rrs, varRrs, params, idx):
+        - Rrs : np.ndarray - Observed remote sensing reflectance [sr^-1]
+        - varRrs : np.ndarray - Variance of Rrs [sr^-2]
+        - params : np.ndarray - Initial parameter guess
+        - idx : int - Spectrum index (echoed in return for batch tracking)
+    models : list
+        List of two model objects: [absorption_model, backscattering_model].
+    rt_dict : dict
+        Radiative transfer configuration dictionary with keys:
+        - 'variable_Gordon' : bool - Use wavelength-dependent Gordon coefficients
+        - 'include_Raman' : bool - Include Raman scattering correction
+    bounds : tuple, optional
+        Parameter bounds as (lower_bounds, upper_bounds) where each is
+        a 1D array matching the parameter vector. Default is (-inf, inf).
+
+    Returns
+    -------
+    ans : np.ndarray
+        Best-fit parameters (in model space, typically log10 for amplitudes).
+    cov : np.ndarray
+        Estimated covariance matrix of the parameters. Diagonal elements
+        give variance; sqrt of diagonal gives 1-sigma uncertainties.
+    idx : int
+        Input index (echoed for batch processing tracking).
+
+    Notes
+    -----
+    The covariance matrix assumes the model is correct and residuals are
+    Gaussian. For more robust uncertainty estimates, use MCMC inference.
+
+    See Also
+    --------
+    bing.fitting.inference.fit_one : MCMC-based fitting
+    fit_func : Forward model function used by curve_fit
     """
     if bounds is None:
         bounds = (-np.inf, np.inf)
@@ -45,16 +101,47 @@ def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None):
 def fit_func(wave:np.ndarray, *params, models:list=None,
              return_full:bool=False, rt_dict:dict=None):
     """
-    Calculate the predicted values of Rrs based on the given wave array and parameters.
+    Forward model function for curve_fit optimization.
 
-    Parameters:
-        wave (np.ndarray): Array of wavelengths.
-        *params: Variable number of parameters.
-        models (list): List of models.
-        return_full (bool): Whether to return the full predicted values.
+    Computes model Rrs from absorption and backscattering parameters
+    using the Gordon radiative transfer approximation, optionally
+    including Raman scattering correction.
 
-    Returns:
-        np.ndarray: Predicted values of Rrs.
+    Parameters
+    ----------
+    wave : np.ndarray
+        Wavelength array [nm]. Note: This parameter is required by
+        scipy.curve_fit interface but is not used directly (wavelengths
+        come from model objects).
+    *params : float
+        Variable-length parameter tuple. First models[0].nparam values
+        are absorption parameters, remainder are backscattering parameters.
+    models : list
+        List of two model objects: [absorption_model, backscattering_model].
+    return_full : bool, optional
+        If True, returns (Rrs, a, bb) instead of just Rrs.
+        Useful for diagnostics. Default is False.
+    rt_dict : dict
+        Radiative transfer configuration dictionary.
+
+    Returns
+    -------
+    np.ndarray or tuple
+        If return_full=False:
+            Rrs : np.ndarray - Predicted remote sensing reflectance [sr^-1]
+        If return_full=True:
+            Rrs : np.ndarray - Predicted Rrs
+            a : np.ndarray - Total absorption coefficient [m^-1]
+            bb : np.ndarray - Total backscattering coefficient [m^-1]
+
+    Notes
+    -----
+    Parameters are split between absorption and backscattering models:
+        aparams = params[:models[0].nparam]
+        bparams = params[models[0].nparam:]
+
+    The function delegates to evaluate.calc_Rrs_from_models() for the
+    actual radiative transfer calculation.
     """
 
     # Unpack for convenience

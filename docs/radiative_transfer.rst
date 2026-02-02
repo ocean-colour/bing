@@ -237,38 +237,148 @@ Typical relative differences:
 
 Differences are largest in oligotrophic waters and at longer wavelengths.
 
+Raman Scattering Correction
+---------------------------
+
+BING supports Raman scattering corrections to account for the inelastic scattering
+contribution to Rrs. This is particularly important for clear (oligotrophic) waters
+at wavelengths > 500 nm.
+
+Integrated Raman Correction in calc_Rrs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The main ``calc_Rrs`` function accepts optional Raman parameters:
+
+.. code-block:: python
+
+    from bing.rt import rrs, raman
+    import numpy as np
+
+    # Define wavelengths
+    wave = np.arange(400, 701, 5)
+
+    # IOPs at emission (model) wavelengths
+    a = ...   # Total absorption [m^-1]
+    bb = ...  # Total backscattering [m^-1]
+
+    # Compute excitation wavelengths (~3400 cm^-1 Raman shift)
+    wave_ex = raman.emission_to_excitation_wavelength(wave)
+
+    # IOPs at excitation wavelengths
+    a_ex = ...   # Absorption at excitation wavelengths
+    bb_ex = ...  # Backscattering at excitation wavelengths
+
+    # Raman backscattering coefficient
+    bb_R = raman.raman_backscattering_coeff(wave_ex)
+
+    # Calculate Rrs with Raman correction
+    Rrs = rrs.calc_Rrs(a, bb, a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
+
+The Raman correction factor is computed using Sathyendranath & Platt (1998):
+
+.. code-block:: python
+
+    # Calculate correction factor separately
+    corr = rrs.calc_raman_correction_factor(a, bb, a_ex, bb_ex, bb_R)
+    print(f"Raman correction range: {corr.min():.3f} - {corr.max():.3f}")
+
+Raman Correction in Fitting Workflows
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When fitting with BING, enable Raman correction in the parameter configuration:
+
+.. code-block:: python
+
+    from bing.parameters import standard
+
+    params = standard.expb_pow(
+        satellite='PACE',
+        include_Raman=True,      # Enable Raman correction
+        variable_Gordon=True,    # Recommended for best accuracy
+        nsteps=40000
+    )
+
+The fitting module automatically:
+
+1. Initializes excitation wavelengths for each model
+2. Computes IOPs at both emission and excitation wavelengths
+3. Applies the Raman correction factor during forward modeling
+
+.. note::
+   For detailed Raman scattering physics and additional functions, see
+   :ref:`raman`.
+
 API Reference
 -------------
 
 Core Functions
 ~~~~~~~~~~~~~~
 
-.. py:function:: calc_Rrs(a, bb, in_G1=None, in_G2=None)
+.. py:function:: calc_Rrs(a, bb, in_G1=None, in_G2=None, a_ex=None, bb_ex=None, bb_R=None)
 
-   Calculate remote sensing reflectance from IOPs using Gordon model.
+   Calculate remote sensing reflectance from IOPs using Gordon model,
+   with optional Raman scattering correction.
 
-   :param a: Total absorption coefficient [m^-1]
+   :param a: Total absorption coefficient at emission wavelength [m^-1]
    :type a: float or ndarray
-   :param bb: Total backscattering coefficient [m^-1]
+   :param bb: Total backscattering coefficient at emission wavelength [m^-1]
    :type bb: float or ndarray
    :param in_G1: Gordon coefficient G1 (default: 0.0949)
    :type in_G1: float or ndarray, optional
    :param in_G2: Gordon coefficient G2 (default: 0.0794)
    :type in_G2: float or ndarray, optional
+   :param a_ex: Absorption at Raman excitation wavelength [m^-1]. Required for Raman correction.
+   :type a_ex: float or ndarray, optional
+   :param bb_ex: Backscattering at Raman excitation wavelength [m^-1]. Required for Raman correction.
+   :type bb_ex: float or ndarray, optional
+   :param bb_R: Raman backscattering coefficient [m^-1]. Required for Raman correction.
+   :type bb_R: float or ndarray, optional
    :return: Remote sensing reflectance [sr^-1]
    :rtype: float or ndarray
+   :raises IOError: If a_ex is provided but bb_ex or bb_R are not.
 
    **Examples:**
 
    .. code-block:: python
 
-       # Standard Gordon
+       # Elastic-only (standard Gordon)
        Rrs = calc_Rrs(a=0.05, bb=0.002)
 
        # Variable Gordon
        wavelengths = np.arange(400, 701, 5)
        G1, G2 = wave_dependent_gordon(wavelengths)
        Rrs = calc_Rrs(a, bb, in_G1=G1, in_G2=G2)
+
+       # With Raman correction
+       from bing.rt import raman
+       wave_ex = raman.emission_to_excitation_wavelength(wavelengths)
+       bb_R = raman.raman_backscattering_coeff(wave_ex)
+       Rrs = calc_Rrs(a, bb, in_G1=G1, in_G2=G2,
+                      a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
+
+.. py:function:: calc_raman_correction_factor(a_em, bb_em, a_ex, bb_ex, bb_R, Ed_ratio=1.0, include_second_order=True)
+
+   Calculate the multiplicative correction factor for Raman scattering.
+
+   :param a_em: Absorption at emission wavelength [m^-1]
+   :type a_em: float or ndarray
+   :param bb_em: Backscattering at emission wavelength [m^-1]
+   :type bb_em: float or ndarray
+   :param a_ex: Absorption at excitation wavelength [m^-1]
+   :type a_ex: float or ndarray
+   :param bb_ex: Backscattering at excitation wavelength [m^-1]
+   :type bb_ex: float or ndarray
+   :param bb_R: Raman backscattering coefficient [m^-1]
+   :type bb_R: float or ndarray
+   :param Ed_ratio: Ratio Ed(λ')/Ed(λ). Default is 1.0
+   :type Ed_ratio: float, optional
+   :param include_second_order: Include second-order Raman terms. Default is True
+   :type include_second_order: bool, optional
+   :return: Correction factor (R_elastic + R_raman) / R_elastic
+   :rtype: float or ndarray
+
+   Typical correction factors range from 1.0 to ~1.25, with largest
+   corrections in clear (oligotrophic) waters at longer wavelengths.
 
 .. py:function:: wave_dependent_gordon(wave, bounds_error=True)
 
@@ -613,6 +723,14 @@ References
 - Morel, A. and Gentili, B. (1996). "Diffuse reflectance of oceanic waters. III.
   Implication of bidirectionality for the remote-sensing problem,"
   *Applied Optics* 35(24), 4850-4862.
+
+**Raman Scattering:**
+
+- Sathyendranath, S. and Platt, T. (1998). "Ocean-colour model incorporating
+  transspectral processes," *Applied Optics* 37, 2216-2227.
+
+- Bartlett, J.S. et al. (1998). "Raman scattering by pure water and seawater,"
+  *Applied Optics* 37, 3324-3332.
 
 **Related BING Documentation:**
 

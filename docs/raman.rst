@@ -1,8 +1,10 @@
+.. _raman:
+
 ================
-Raman Scattering 
+Raman Scattering
 ================
 
-A Python module for calculating Raman scattering coefficients, backscattering 
+A Python module for calculating Raman scattering coefficients, backscattering
 coefficients, and related optical properties for pure water and seawater.
 
 Overview
@@ -864,22 +866,145 @@ especially in clear waters at red wavelengths:
         print(f"Light at {lam_ex:.0f} nm → {lam_em} nm, b_R = {b_R:.2e} m⁻¹")
 
 
+Integration with BING Fitting
+=============================
+
+BING supports Raman scattering correction during bio-optical parameter retrieval.
+When enabled, the fitting algorithms account for the Raman contribution to measured
+Rrs, improving IOP retrievals especially in clear oligotrophic waters at longer
+wavelengths.
+
+Enabling Raman Correction in Fitting
+------------------------------------
+
+When setting up fitting parameters, enable Raman correction:
+
+.. code-block:: python
+
+    from bing.parameters import standard
+    from bing.fitting import l23
+
+    # Enable Raman correction in parameter configuration
+    params = standard.expb_pow(
+        satellite='PACE',
+        nsteps=40000,
+        include_Raman=True,  # Enable Raman correction
+        variable_Gordon=True  # Recommended with Raman correction
+    )
+
+    # Fit using L23 synthetic dataset
+    chains, models, prep_dict, idx, extras = l23.fit_one(params, idx=170)
+
+How Raman Correction Works in Fitting
+-------------------------------------
+
+When ``include_Raman=True``, the forward model:
+
+1. Computes IOPs at emission wavelengths (model wavelengths) using the bio-optical models
+2. Computes IOPs at Raman excitation wavelengths (~3400 cm\ :sup:`-1` shift)
+3. Calculates the Raman correction factor at each wavelength
+4. Applies the correction to the elastic Rrs
+
+The models automatically initialize Raman-related quantities:
+
+.. code-block:: python
+
+    # Models automatically compute excitation wavelengths
+    print(f"Emission wavelengths: {models[0].wave[:5]}...")
+    print(f"Excitation wavelengths: {models[0].wave_ex[:5]}...")
+
+    # Backscattering model provides Raman backscattering coefficient
+    print(f"bb_R: {models[1].bb_R[:5]}...")
+
+Direct Calculation with calc_Rrs
+--------------------------------
+
+The main ``calc_Rrs`` function in ``bing.rt.rrs`` accepts optional Raman parameters:
+
+.. code-block:: python
+
+    from bing.rt import rrs
+    from bing.rt import raman
+    import numpy as np
+
+    # Define wavelengths
+    wave = np.arange(400, 701, 5)
+    wave_ex = raman.emission_to_excitation_wavelength(wave)
+
+    # IOPs at emission and excitation wavelengths
+    a_em = ...      # Absorption at emission wavelengths
+    bb_em = ...     # Backscattering at emission wavelengths
+    a_ex = ...      # Absorption at excitation wavelengths
+    bb_ex = ...     # Backscattering at excitation wavelengths
+
+    # Raman backscattering coefficient
+    bb_R = raman.raman_backscattering_coeff(wave_ex)
+
+    # Calculate Rrs with Raman correction
+    Rrs = rrs.calc_Rrs(a_em, bb_em,
+                       a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
+
+Using the Correction Factor
+---------------------------
+
+You can also compute the Raman correction factor separately:
+
+.. code-block:: python
+
+    from bing.rt.rrs import calc_raman_correction_factor
+
+    # Calculate correction factor
+    corr = calc_raman_correction_factor(a_em, bb_em, a_ex, bb_ex, bb_R)
+
+    # Apply to elastic Rrs
+    Rrs_with_raman = Rrs_elastic * corr
+
+    # Or remove Raman from measured Rrs
+    Rrs_elastic_only = Rrs_measured / corr
+
+Typical Correction Magnitudes
+-----------------------------
+
+The Raman correction factor varies with water type and wavelength:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 30 40
+
+   * - Water Type
+     - Correction Range
+     - Notes
+   * - Oligotrophic
+     - 1.05 - 1.25
+     - Largest corrections at red wavelengths
+   * - Mesotrophic
+     - 1.02 - 1.15
+     - Moderate corrections
+   * - Eutrophic
+     - 1.01 - 1.08
+     - Absorption dominates, smaller corrections
+
+.. note::
+   Raman corrections are most important for clear waters (Chl < 0.5 mg m\ :sup:`-3`) at
+   wavelengths > 500 nm. For turbid waters, the correction is typically < 5%.
+
+
 Limitations and Notes
 =====================
 
-1. **Temperature/Salinity Dependence**: The current implementation uses 
-   Walrafen (1967) parameters for pure water at 25°C. The emission spectrum 
+1. **Temperature/Salinity Dependence**: The current implementation uses
+   Walrafen (1967) parameters for pure water at 25°C. The emission spectrum
    shape varies slightly with temperature and salinity (see Artlett & Pask 2017).
 
-2. **Pure Water vs Seawater**: Bartlett et al. (1998) found no statistically 
-   significant difference between pure water and seawater Raman scattering 
+2. **Pure Water vs Seawater**: Bartlett et al. (1998) found no statistically
+   significant difference between pure water and seawater Raman scattering
    coefficients.
 
-3. **Polarization**: The phase function averages over all polarization states. 
+3. **Polarization**: The phase function averages over all polarization states.
    For polarized radiative transfer, a full Mueller matrix treatment is required.
 
-4. **Energy vs Photon Units**: Use ``units='energy'`` for radiative transfer 
-   codes like HydroLight that work in energy units (W m\ :sup:`-2` nm\ :sup:`-1`), 
+4. **Energy vs Photon Units**: Use ``units='energy'`` for radiative transfer
+   codes like HydroLight that work in energy units (W m\ :sup:`-2` nm\ :sup:`-1`),
    and ``units='photon'`` for Monte Carlo simulations that track photon numbers.
 
 

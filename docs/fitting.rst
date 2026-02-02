@@ -142,7 +142,9 @@ Analyzing Results
 L23 Fitting
 -----------
 
-Specialized fitting for Loisel et al. (2023) synthetic dataset.
+Specialized fitting for Loisel et al. (2023) synthetic dataset, which contains
+~3300 Hydrolight radiative transfer simulations spanning diverse ocean conditions.
+This provides a valuable validation dataset with known "true" IOPs.
 
 Single Profile
 ~~~~~~~~~~~~~~
@@ -151,21 +153,64 @@ Single Profile
 
     from bing.fitting import l23
     from bing.parameters import standard
-    
+
     # Define parameters
     params = standard.expb_pow(
         satellite='PACE',
         nsteps=40000,
         add_noise=True
     )
-    
+
     # Fit single profile
-    idx = 170  # Profile index
+    idx = 170  # Profile index (0-3319)
     chains, models, prep_dict, idx, extras = l23.fit_one(params, idx)
-    
+
     # Save results
     outfile = l23.chain_filename(params, idx=idx, path='./fits/')
     l23.save_chains(chains, idx, outfile, extras=extras)
+
+Fitting with Raman Correction
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Enable Raman scattering correction for improved accuracy in clear waters:
+
+.. code-block:: python
+
+    from bing.fitting import l23
+    from bing.parameters import standard
+
+    # Enable Raman and variable Gordon coefficients
+    params = standard.expb_pow(
+        satellite='PACE',
+        nsteps=40000,
+        include_Raman=True,      # Enable Raman correction
+        variable_Gordon=True,    # Wavelength-dependent Gordon coefficients
+        add_noise=True
+    )
+
+    # Fit with Raman correction
+    chains, models, prep_dict, idx, extras = l23.fit_one(params, idx=170)
+
+    # The models now have Raman-related attributes
+    print(f"Excitation wavelengths: {models[0].wave_ex[:5]}")
+    print(f"Raman backscatter coeff: {models[1].bb_R[:5]}")
+
+Least-Squares Fitting
+~~~~~~~~~~~~~~~~~~~~~
+
+For quick fits without full MCMC posterior estimation, use Levenberg-Marquardt:
+
+.. code-block:: python
+
+    from bing.fitting import l23
+
+    # Least-squares fit (much faster than MCMC)
+    ans, cov, models, prep_dict, idx = l23.fit_with_LM(params, idx=170)
+
+    # ans: best-fit parameters
+    # cov: covariance matrix
+    print(f"Best-fit params: {ans}")
+    print(f"Parameter uncertainties: {np.sqrt(np.diag(cov))}")
 
 Batch Processing
 ~~~~~~~~~~~~~~~~

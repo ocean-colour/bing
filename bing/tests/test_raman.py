@@ -151,7 +151,7 @@ def test_calc_R_elastic():
     a = 0.05   # m^-1
     bb = 0.002  # m^-1
 
-    R_E = rrs.calc_R_elastic(a, bb)
+    R_E = raman.calc_R_elastic(a, bb)
 
     # Reflectance should be positive and reasonable (< 0.1 for these values)
     assert R_E > 0
@@ -160,7 +160,7 @@ def test_calc_R_elastic():
     # Test with arrays
     a_arr = np.array([0.03, 0.05, 0.1])
     bb_arr = np.array([0.003, 0.002, 0.001])
-    R_E_arr = rrs.calc_R_elastic(a_arr, bb_arr)
+    R_E_arr = raman.calc_R_elastic(a_arr, bb_arr)
     assert R_E_arr.shape == (3,)
     # Higher bb/a ratio should give higher reflectance
     assert R_E_arr[0] > R_E_arr[2]
@@ -173,12 +173,12 @@ def test_calc_R_raman_first_order():
     a_ex, bb_ex = 0.03, 0.003
     bb_R = raman.raman_backscattering_coeff(443)
 
-    R_R = rrs.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_R = raman.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
 
     # Should be positive
     assert R_R > 0
     # Typically smaller than elastic reflectance but significant
-    R_E = rrs.calc_R_elastic(a_em, bb_em)
+    R_E = raman.calc_R_elastic(a_em, bb_em)
     assert R_R < R_E
     assert R_R > 0.001  # Should be non-negligible
 
@@ -189,9 +189,9 @@ def test_calc_R_raman_second_order():
     a_ex, bb_ex = 0.03, 0.003
     bb_R = raman.raman_backscattering_coeff(443)
 
-    R_R = rrs.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
-    R_RE = rrs.calc_R_raman_RE(a_em, bb_em, a_ex, bb_ex, bb_R)
-    R_ER = rrs.calc_R_raman_ER(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_R = raman.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_RE = raman.calc_R_raman_RE(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_ER = raman.calc_R_raman_ER(a_em, bb_em, a_ex, bb_ex, bb_R)
 
     # Second-order terms should be positive
     assert R_RE > 0
@@ -214,12 +214,12 @@ def test_calc_R_raman_total():
     bb_R = raman.raman_backscattering_coeff(443)
 
     # With second-order terms
-    R_total = rrs.calc_R_raman_total(
+    R_total = raman.calc_R_raman_total(
         a_em, bb_em, a_ex, bb_ex, bb_R, include_second_order=True
     )
 
     # Without second-order terms
-    R_first_only = rrs.calc_R_raman_total(
+    R_first_only = raman.calc_R_raman_total(
         a_em, bb_em, a_ex, bb_ex, bb_R, include_second_order=False
     )
 
@@ -227,7 +227,7 @@ def test_calc_R_raman_total():
     assert R_total > R_first_only
 
     # Difference should be the second-order contribution
-    R_R = rrs.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_R = raman.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
     assert np.isclose(R_first_only, R_R)
 
 
@@ -264,7 +264,7 @@ def test_calc_Rrs_with_raman():
     Rrs_elastic = rrs.calc_Rrs(a_em, bb_em)
 
     # With Raman
-    Rrs_with_raman = rrs.calc_Rrs_with_raman(
+    Rrs_with_raman = raman.calc_Rrs_with_raman(
         a_em, bb_em, a_ex, bb_ex, bb_R
     )
 
@@ -291,13 +291,13 @@ def test_array_calculations():
     bb_R = raman.raman_backscattering_coeff(wavelengths_ex)
 
     # Test all functions with arrays
-    R_E = rrs.calc_R_elastic(a_em, bb_em)
-    R_R = rrs.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
-    R_RE = rrs.calc_R_raman_RE(a_em, bb_em, a_ex, bb_ex, bb_R)
-    R_ER = rrs.calc_R_raman_ER(a_em, bb_em, a_ex, bb_ex, bb_R)
-    R_total = rrs.calc_R_raman_total(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_E = raman.calc_R_elastic(a_em, bb_em)
+    R_R = raman.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_RE = raman.calc_R_raman_RE(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_ER = raman.calc_R_raman_ER(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_total = raman.calc_R_raman_total(a_em, bb_em, a_ex, bb_ex, bb_R)
     corr = rrs.calc_raman_correction_factor(a_em, bb_em, a_ex, bb_ex, bb_R)
-    Rrs = rrs.calc_Rrs_with_raman(a_em, bb_em, a_ex, bb_ex, bb_R)
+    Rrs = raman.calc_Rrs_with_raman(a_em, bb_em, a_ex, bb_ex, bb_R)
 
     # Check shapes
     assert R_E.shape == (4,)
@@ -348,12 +348,12 @@ def test_Ed_ratio_effect():
     bb_R = raman.raman_backscattering_coeff(443)
 
     # Ed_ratio = 1 (equal irradiance at both wavelengths)
-    R_R_1 = rrs.calc_R_raman_first_order(
+    R_R_1 = raman.calc_R_raman_first_order(
         a_em, bb_em, a_ex, bb_ex, bb_R, Ed_ratio=1.0
     )
 
     # Ed_ratio = 1.5 (more irradiance at excitation wavelength)
-    R_R_1p5 = rrs.calc_R_raman_first_order(
+    R_R_1p5 = raman.calc_R_raman_first_order(
         a_em, bb_em, a_ex, bb_ex, bb_R, Ed_ratio=1.5
     )
 
@@ -370,17 +370,17 @@ def test_mean_cosine_sensitivity():
     bb_R = raman.raman_backscattering_coeff(443)
 
     # Default mean cosines
-    R_default = rrs.calc_R_raman_total(
+    R_default = raman.calc_R_raman_total(
         a_em, bb_em, a_ex, bb_ex, bb_R
     )
 
     # Higher mu_d (more direct sunlight)
-    R_high_mud = rrs.calc_R_raman_total(
+    R_high_mud = raman.calc_R_raman_total(
         a_em, bb_em, a_ex, bb_ex, bb_R, mu_d=0.95
     )
 
     # Lower mu_d (more diffuse light)
-    R_low_mud = rrs.calc_R_raman_total(
+    R_low_mud = raman.calc_R_raman_total(
         a_em, bb_em, a_ex, bb_ex, bb_R, mu_d=0.7
     )
 
@@ -398,7 +398,7 @@ def test_consistency_with_gordon():
     Rrs_gordon = rrs.calc_Rrs(a, bb)
 
     # Our elastic reflectance converted to Rrs
-    R_E = rrs.calc_R_elastic(a, bb, mu_d=0.9, mu_u=0.5)
+    R_E = raman.calc_R_elastic(a, bb, mu_d=0.9, mu_u=0.5)
 
     # Both should be in the same ballpark (within factor of 2-3)
     # They use different formulations but should give similar magnitude
