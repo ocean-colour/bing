@@ -829,6 +829,7 @@ def test_process_all_structure():
     """
     pytest.skip("Requires pre-existing chain files from batch_fit")
 
+def test_raman_fitting():
 # Raman fitting
 idx = 170
 p = standard.expb_pow(satellite='PACE', add_noise=False, variable_Gordon=False)

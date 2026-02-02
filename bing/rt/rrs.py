@@ -39,7 +39,38 @@ G1_STANDARD, G2_STANDARD = 0.0949, 0.0794  # Standard Gordon factors
 
 
 def wave_dependent_gordon(wave:np.ndarray, bounds_error:bool=True):
+    """
+    Load and interpolate wavelength-dependent Gordon coefficients G1 and G2.
 
+    The Gordon coefficients parameterize the relationship between inherent
+    optical properties (IOPs) and remote sensing reflectance. Wavelength-dependent
+    coefficients provide improved accuracy over constant values, especially in
+    the UV and red wavelength ranges.
+
+    Parameters
+    ----------
+    wave : np.ndarray
+        Wavelengths in nanometers at which to interpolate the Gordon coefficients.
+    bounds_error : bool, optional
+        If True (default), raises an error if wavelengths are outside the
+        tabulated range. If False, extrapolates using cubic spline.
+
+    Returns
+    -------
+    G1 : np.ndarray
+        First-order Gordon coefficient G₀ at each wavelength.
+    G2 : np.ndarray
+        Second-order Gordon coefficient G₁ at each wavelength.
+
+    Notes
+    -----
+    The coefficients are loaded from 'bing/data/RT/gordon_coefficients.csv'
+    and interpolated using cubic splines.
+
+    See Also
+    --------
+    calc_elastic_Rrs : Uses these coefficients to compute Rrs from IOPs.
+    """
     # Load
     gordon_file = os.path.join(
             resources.files('bing'), 
@@ -106,7 +137,66 @@ def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
     bb_ex: Union[float, np.ndarray]=None,
     bb_R: Union[float, np.ndarray]=None,
     ):
+    """
+    Calculate remote sensing reflectance (Rrs) including optional Raman correction.
 
+    This is the main Rrs calculation function that combines elastic scattering
+    (Gordon model) with an optional Raman scattering correction based on
+    Sathyendranath & Platt (1998).
+
+    Parameters
+    ----------
+    a : float or np.ndarray
+        Total absorption coefficient at emission wavelength(s) [m^-1].
+    bb : float or np.ndarray
+        Total backscattering coefficient at emission wavelength(s) [m^-1].
+    in_G1 : float or np.ndarray, optional
+        First-order Gordon coefficient. If None, uses default (0.0949).
+    in_G2 : float or np.ndarray, optional
+        Second-order Gordon coefficient. If None, uses default (0.0794).
+    a_ex : float or np.ndarray, optional
+        Absorption coefficient at Raman excitation wavelength(s) [m^-1].
+        Required for Raman correction.
+    bb_ex : float or np.ndarray, optional
+        Backscattering coefficient at Raman excitation wavelength(s) [m^-1].
+        Required for Raman correction.
+    bb_R : float or np.ndarray, optional
+        Raman backscattering coefficient [m^-1].
+        Required for Raman correction. Can be computed using
+        bing.rt.raman.raman_backscattering_coeff().
+
+    Returns
+    -------
+    np.ndarray
+        Remote sensing reflectance Rrs [sr^-1].
+
+    Raises
+    ------
+    IOError
+        If a_ex is provided but bb_ex or bb_R are not.
+
+    Notes
+    -----
+    When Raman parameters (a_ex, bb_ex, bb_R) are provided, the elastic Rrs
+    is multiplied by a correction factor that accounts for the Raman scattering
+    contribution. This correction is typically 1.0-1.25, with largest values
+    in clear oligotrophic waters at longer wavelengths.
+
+    Examples
+    --------
+    >>> # Elastic-only calculation
+    >>> Rrs = calc_Rrs(a=0.05, bb=0.002)
+    >>>
+    >>> # With Raman correction
+    >>> from bing.rt import raman
+    >>> bb_R = raman.raman_backscattering_coeff(wave_ex)
+    >>> Rrs = calc_Rrs(a, bb, a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
+
+    See Also
+    --------
+    calc_elastic_Rrs : Calculate elastic-only Rrs.
+    calc_raman_correction_factor : Compute the Raman correction factor.
+    """
     # Elastic
     Rrs = calc_elastic_Rrs(a, bb, in_G1=in_G1, in_G2=in_G2)
 

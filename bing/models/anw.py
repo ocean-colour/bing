@@ -1,4 +1,62 @@
-""" Models for non-water absorption """
+"""
+Non-Water Absorption Models for BING
+=====================================
+
+This module implements various bio-optical models for non-water absorption
+(a_nw) used in ocean color remote sensing retrievals. Non-water absorption
+consists of contributions from:
+
+- Phytoplankton pigments (a_ph): Primarily chlorophyll-a and accessory pigments
+- Colored dissolved organic matter (CDOM, a_g): Exponentially decaying with wavelength
+- Non-algal particles/detritus (NAP, a_d): Also exponentially decaying
+
+The combined dissolved + detrital absorption is often modeled together as a_dg.
+
+Available Models
+----------------
+- **Cst**: Spectrally constant absorption
+- **Exp**: Single exponential decay (for a_dg-dominated waters)
+- **ExpFix**: Exponential with fixed spectral slope
+- **Bricaud**: Phytoplankton-only using Bricaud et al. (1995) parameterization
+- **ExpBricaud**: Exponential a_dg + Bricaud a_ph (most common for BING)
+- **ExpBricaudFix**: Like ExpBricaud but with fixed chlorophyll
+- **ExpBricaudFree**: Like ExpBricaud but with Chl as free parameter
+- **GIOP**: Fixed-slope exponential + Bricaud (Werdell et al. 2013)
+- **GSM**: Garver-Siegel-Maritorena model (Maritorena et al. 2002)
+- **ExpNMF**: Exponential + NMF basis functions for a_ph
+- **Chase2017**: Gaussian decomposition (Chase et al. 2017)
+- **Every**: Fully flexible (one parameter per wavelength)
+
+Parameter Conventions
+---------------------
+All amplitude parameters are stored and fitted in log10 space for numerical
+stability. Spectral slopes (S, Sdg) remain in linear space.
+
+References
+----------
+- Bricaud, A. et al. (1995). "Variability in the chlorophyll-specific absorption
+  coefficients of natural phytoplankton," J. Geophys. Res. 100, 13321-13332.
+- Werdell, P.J. et al. (2013). "Generalized ocean color inversion model (GIOP),"
+  Appl. Opt. 52, 2019-2037.
+- Maritorena, S. et al. (2002). "Ocean color chlorophyll algorithms for SeaWiFS,"
+  J. Geophys. Res. 107, 3108.
+- Chase, A.P. et al. (2017). "Decomposition of in situ particulate absorption
+  spectra," Methods in Oceanography 7, 110-124.
+
+Examples
+--------
+>>> from bing.models import anw
+>>> import numpy as np
+>>> wave = np.arange(400, 701, 5)
+>>>
+>>> # Initialize ExpBricaud model
+>>> model = anw.init_model('ExpBricaud', wave)
+>>> model.set_aph(Chl=1.0)  # Set chlorophyll for Bricaud parameterization
+>>>
+>>> # Evaluate at given parameters (log10 space for amplitudes)
+>>> params = np.array([-1.0, 0.017, -1.2])  # log10(Adg), Sdg, log10(Aph)
+>>> a_nw = model.eval_anw(params)
+"""
 import numpy as np
 import warnings
 
@@ -53,10 +111,55 @@ def init_model(model_name:str, wave:np.ndarray,
 
 class aNWModel:
     """
-    Abstract base class for non-water absoprtion
+    Abstract base class for non-water absorption models.
 
-    Attributes:
+    This class defines the interface and common functionality for all
+    non-water absorption models in BING. Subclasses implement specific
+    bio-optical parameterizations (exponential, Bricaud, etc.).
 
+    All models share a common structure:
+    1. Initialization sets up wavelengths, water absorption, and Raman parameters
+    2. Priors are attached for Bayesian inference
+    3. eval_anw() computes non-water absorption from parameters
+    4. eval_a() adds water absorption to get total absorption
+
+    Parameters are typically stored and fitted in log10 space for amplitudes
+    to ensure positivity and improve sampling efficiency.
+
+    Attributes
+    ----------
+    name : str
+        Model identifier (e.g., 'Exp', 'ExpBricaud', 'GIOP')
+    wave : np.ndarray
+        Wavelengths at which the model operates [nm]
+    nparam : int
+        Number of free parameters
+    pnames : list of str
+        Names of the parameters
+    a_w : np.ndarray
+        Pure water absorption coefficient at model wavelengths [m^-1]
+    a_w_ex : np.ndarray
+        Pure water absorption at Raman excitation wavelengths [m^-1]
+    wave_ex : np.ndarray
+        Raman excitation wavelengths corresponding to model wavelengths [nm]
+    priors : bing.priors.Priors
+        Prior distributions for Bayesian inference
+    uses_Chl : bool
+        Whether model requires chlorophyll input for phytoplankton absorption
+    fix_Chl : bool
+        If uses_Chl, whether chlorophyll is fixed or fitted
+    G1, G2 : float or np.ndarray or None
+        Gordon coefficients for radiative transfer (can be wavelength-dependent)
+    pivot : float
+        Reference wavelength for spectral parameterizations [nm]
+    internals : dict
+        Storage for intermediate calculations
+
+    See Also
+    --------
+    aNWExp : Exponential decay model
+    aNWExpBricaud : Exponential + Bricaud phytoplankton
+    aNWGIOP : GIOP algorithm implementation
     """
     __metaclass__ = ABCMeta
 
@@ -276,7 +379,21 @@ class aNWModel:
 
     def init_raman(self):
         """
-        Initialize for Raman calculations
+        Initialize wavelengths for Raman scattering calculations.
+
+        Computes the excitation wavelengths that correspond to each emission
+        (model) wavelength via the Raman shift (~3400 cm^-1 for water).
+        These are needed for computing the Raman correction to Rrs.
+
+        Sets
+        ----
+        wave_ex : np.ndarray
+            Excitation wavelengths corresponding to self.wave via Raman shift.
+            For example, emission at 550 nm corresponds to excitation at ~470 nm.
+
+        See Also
+        --------
+        bing.rt.raman.emission_to_excitation_wavelength : Wavelength conversion function
         """
         self.wave_ex = raman.emission_to_excitation_wavelength(self.wave)
 
@@ -473,11 +590,41 @@ class aNWBricaud(aNWModel):
 
 
     def set_aph(self, Chla, wave:np.ndarray=None):
+        """
+        Set the phytoplankton absorption spectrum using Bricaud (1995) parameterization.
+
+        Computes normalized phytoplankton absorption a*_ph(λ) such that:
+            a_ph(λ) = Aph × a*_ph(λ)
+
+        where a*_ph is normalized to have value 1.0 at 440 nm. The shape varies
+        with chlorophyll concentration following Bricaud et al. (1995):
+            a_ph(λ) = A(λ) × Chl^E(λ)
+
+        Parameters
+        ----------
+        Chla : float or np.ndarray
+            Chlorophyll-a concentration in mg m^-3. Can be a single value or
+            an array for batch processing (e.g., MCMC chains).
+        wave : np.ndarray, optional
+            Wavelengths for evaluation. If None, uses self.wave.
+            Can also be self.wave_ex for Raman excitation wavelengths.
+
+        Notes
+        -----
+        - The result is stored in self.a_ph as a normalized spectrum
+        - For wavelengths < 400 nm, linear extrapolation is applied
+        - Pre-computed coefficients (L23_A, L23_E) are used when possible
+          for efficiency
+
+        See Also
+        --------
+        aNWExpBricaud : Model combining exponential a_dg with Bricaud a_ph
+        """
         # Bricaud
 
         if wave is None:
             wave = self.wave  # Model values
-        
+
         # Load up the coefficients
         if np.all(np.isclose(wave, self.wave)):
             L23_A = self.L23_A
@@ -541,12 +688,57 @@ class aNWBricaud(aNWModel):
 
 class aNWExpBricaud(aNWBricaud):
     """
-    Exponential model + Bricaud aph for non-water absorption
-        adg = Adg * exp(-Sdg*(wave-400))
-        aph = a_ph(440) * A_B * chlA**B_B
+    Exponential CDOM/detrital + Bricaud phytoplankton absorption model.
 
-    Attributes:
+    This is the most commonly used absorption model in BING, combining:
+    - Exponential decay for dissolved and detrital matter (a_dg)
+    - Bricaud et al. (1995) parameterization for phytoplankton (a_ph)
 
+    Model equations:
+        a_dg(λ) = Adg × exp(-Sdg × (λ - 400))
+        a_ph(λ) = Aph × a*_ph(λ, Chl)
+        a_nw(λ) = a_dg(λ) + a_ph(λ)
+
+    where a*_ph is the Bricaud spectral shape normalized at 440 nm.
+
+    Parameters (in fitting space)
+    -----------------------------
+    Adg : float (log10)
+        CDOM + detrital absorption amplitude at 400 nm [m^-1]
+    Sdg : float (linear)
+        Spectral slope of a_dg, typically 0.010-0.020 [nm^-1]
+    Aph : float (log10)
+        Phytoplankton absorption amplitude at 440 nm [m^-1]
+
+    Attributes
+    ----------
+    name : str
+        'ExpBricaud'
+    nparam : int
+        3 (Adg, Sdg, Aph)
+    pnames : list
+        ['Adg', 'Sdg', 'Aph']
+    pivot : float
+        Reference wavelength = 400 nm
+    uses_Chl : bool
+        True - requires Chl for Bricaud shape
+    fix_Chl : bool
+        False - Chl is derived from fitted Aph
+
+    Notes
+    -----
+    Chlorophyll is derived from the fitted Aph using:
+        Chl = 10^Aph / 0.05582
+
+    where 0.05582 is the Bricaud coefficient at 440 nm for Chl = 1 mg/m³.
+
+    Examples
+    --------
+    >>> model = aNWExpBricaud(wave)
+    >>> model.set_aph(Chl=1.0)  # Initialize Bricaud shape
+    >>> params = np.array([-1.5, 0.017, -1.3])  # log10(Adg), Sdg, log10(Aph)
+    >>> a_nw = model.eval_anw(params)
+    >>> a_dg, a_ph = model.eval_anw(params, retsub_comps=True)
     """
     name = 'ExpBricaud'
     nparam = 3
@@ -698,14 +890,38 @@ class aNWExpBricaudFree(aNWExpBricaud):
 
 class aNWGIOP(aNWModel):
     """
-    GIOP (Werdell+2013)
-    Exponential model with Sdg fixed + Bricaud aph for non-water absorption
-        aexp = Adg * exp(-Sdg*(wave-400))
-            Sdg = 0.018
-        aph = Aph * [A_B * chlA**E_B]
+    Generalized Inherent Optical Properties (GIOP) absorption model.
 
-    Attributes:
+    Implements the GIOP algorithm from Werdell et al. (2013). Uses a fixed
+    spectral slope for the exponential term to reduce parameter degeneracy.
 
+    Model equations:
+        a_dg(λ) = Aexp × exp(-0.018 × (λ - 400))
+        a_ph(λ) = Aph × a*_ph(λ, Chl)
+        a_nw(λ) = a_dg(λ) + a_ph(λ)
+
+    The spectral slope Sdg = 0.018 nm^-1 is fixed to the global average.
+
+    Parameters (in fitting space)
+    -----------------------------
+    Aexp : float (log10)
+        CDOM + detrital absorption amplitude at 400 nm [m^-1]
+    Aph : float (log10)
+        Phytoplankton absorption amplitude at 440 nm [m^-1]
+
+    Attributes
+    ----------
+    name : str
+        'GIOP'
+    nparam : int
+        2 (Aexp, Aph)
+    Sdg : float
+        Fixed spectral slope = 0.018 nm^-1
+
+    References
+    ----------
+    Werdell, P.J. et al. (2013). "Generalized ocean color inversion model
+    for retrieving marine inherent optical properties," Appl. Opt. 52, 2019-2037.
     """
     name = 'GIOP'
     nparam = 2
