@@ -617,6 +617,8 @@ def batch_fit(p, n_batch:int=5, n_cores:int=15, debug:bool=False,
         out_dir (str): The directory to save the output files. Default is '../Analysis/Fits/'.
 
     """
+    # RT
+    rt_dict = rt_defs.rt_dict_from_p(p)
     if seed is not None:
         np.random.seed(seed)
 
@@ -680,7 +682,7 @@ def batch_fit(p, n_batch:int=5, n_cores:int=15, debug:bool=False,
 
         # Fit
         all_samples, sub_idx = bing_inf.fit_batch(
-            models, pdict, items, n_cores=n_cores)
+            models, pdict, items, rt_dict, n_cores=n_cores)
 
         # Check
         assert np.all([item[3] for item in items] == sub_idx)

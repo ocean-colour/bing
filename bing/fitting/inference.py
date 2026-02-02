@@ -358,7 +358,7 @@ def run_emcee(models:list, Rrs, varRrs, rt_dict,
     # Return
     return sampler
 
-def fit_batch(models:list, pdict:dict, items:list,
+def fit_batch(models:list, pdict:dict, items:list, rt_dict:dict,
               n_cores:int=1, fit_method=None):
     """
     Fit multiple spectra in parallel using ProcessPoolExecutor.
@@ -380,6 +380,8 @@ def fit_batch(models:list, pdict:dict, items:list,
         - varRrs : np.ndarray - Variance
         - params : np.ndarray - Initial parameter guess
         - idx : int - Spectrum index
+    rt_dict : dict
+        Radiative transfer configuration dictionary.
     n_cores : int, optional
         Number of CPU cores for parallel processing. Default is 1.
     fit_method : callable, optional
@@ -410,7 +412,7 @@ def fit_batch(models:list, pdict:dict, items:list,
         fit_method = fit_one
 
     # Setup for parallel
-    map_fn = partial(fit_one, models=models, pdict=pdict, chains_only=True)
+    map_fn = partial(fit_one, models=models, pdict=pdict, chains_only=True, rt_dict=rt_dict)
     
     # Parallel
     with ProcessPoolExecutor(max_workers=n_cores) as executor:

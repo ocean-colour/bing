@@ -788,7 +788,7 @@ def test_fit_one_different_models():
     assert giop_nparam > 0
 
 
-@pytest.mark.slow
+#@pytest.mark.slow
 def test_batch_fit_small():
     """Test batch fitting with a small number of spectra.
 
