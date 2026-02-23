@@ -531,6 +531,8 @@ def calc_Rrs_fluorescence_simple(
     >>> peak_idx = np.argmax(Rrs_fl)
     >>> print(f"Peak at {wavelengths[peak_idx]:.0f} nm: {Rrs_fl[peak_idx]:.2e} sr^-1")
     """
+    # JXP thinks this calculation is wrong
+    raise NotImplementedError("calc_Rrs_fluorescence_simple is not implemented")
     from . import chl_fl, raman
 
     wavelength = np.atleast_1d(wavelength)
