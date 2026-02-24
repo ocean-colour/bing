@@ -588,84 +588,6 @@ def test_fluorescence_vs_raman_comparison():
 # Run all tests (for notebook integration)
 # =============================================================================
 
-# =============================================================================
-# Tests for rrs.py fluorescence Rrs functions
-# =============================================================================
-
-def test_calc_a_ph_bricaud():
-    """Test Bricaud phytoplankton absorption parameterization."""
-    from bing.rt import rrs
-
-    # Test single wavelength, single Chl
-    a_ph = rrs.calc_a_ph_bricaud(440, 1.0)
-    assert a_ph > 0
-    assert 0.01 < a_ph < 0.2  # Reasonable range for Chl=1
-
-    # Test wavelength dependence (blue peak > green)
-    a_ph_440 = rrs.calc_a_ph_bricaud(440, 1.0)
-    a_ph_550 = rrs.calc_a_ph_bricaud(550, 1.0)
-    assert a_ph_440 > a_ph_550
-
-    # Test Chl dependence (higher Chl = higher absorption)
-    a_ph_low = rrs.calc_a_ph_bricaud(440, 0.1)
-    a_ph_high = rrs.calc_a_ph_bricaud(440, 10.0)
-    assert a_ph_high > a_ph_low
-
-    # Test array wavelength input
-    wavelengths = np.array([400, 440, 500, 550, 675])
-    a_ph_arr = rrs.calc_a_ph_bricaud(wavelengths, 1.0)
-    assert a_ph_arr.shape == (5,)
-    assert np.all(a_ph_arr > 0)
-
-    # Test array Chl input
-    Chl_arr = np.array([0.1, 1.0, 10.0])
-    a_ph_multi = rrs.calc_a_ph_bricaud(440, Chl_arr)
-    assert a_ph_multi.shape == (3,)
-    assert np.all(np.diff(a_ph_multi) > 0)  # Increasing with Chl
-
-
-def test_calc_a_water():
-    """Test pure water absorption calculation."""
-    from bing.rt import rrs
-
-    # Test at key wavelengths
-    a_w_450 = rrs.calc_a_water(450)
-    a_w_550 = rrs.calc_a_water(550)
-    a_w_685 = rrs.calc_a_water(685)
-
-    # Water absorption increases with wavelength in red
-    assert a_w_685 > a_w_550 > a_w_450
-
-    # Test known approximate values
-    assert 0.005 < a_w_450 < 0.02   # Blue: low absorption
-    assert 0.4 < a_w_685 < 0.6     # Red: high absorption
-
-    # Test array input
-    wavelengths = np.array([400, 500, 600, 700])
-    a_w_arr = rrs.calc_a_water(wavelengths)
-    assert a_w_arr.shape == (4,)
-    assert np.all(a_w_arr > 0)
-
-
-def test_calc_bb_water():
-    """Test pure water backscattering calculation."""
-    from bing.rt import rrs
-
-    # Test at reference wavelength
-    bb_w_500 = rrs.calc_bb_water(500)
-    assert np.isclose(bb_w_500, 0.00144, rtol=0.01)
-
-    # Test wavelength dependence (decreases with wavelength)
-    bb_w_400 = rrs.calc_bb_water(400)
-    bb_w_600 = rrs.calc_bb_water(600)
-    assert bb_w_400 > bb_w_500 > bb_w_600
-
-    # Test array input
-    wavelengths = np.array([400, 500, 600, 700])
-    bb_w_arr = rrs.calc_bb_water(wavelengths)
-    assert bb_w_arr.shape == (4,)
-    assert np.all(np.diff(bb_w_arr) < 0)  # Decreasing with wavelength
-
 
 def test_calc_Rrs_fluorescence_simple():
     """Test simplified fluorescence Rrs calculation."""
@@ -1002,3 +924,5 @@ def run_all_tests():
     print("=" * 60)
 
     return passed, failed
+
+# Fluorescence Tests for Models

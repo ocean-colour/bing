@@ -12,6 +12,7 @@ def_dict = dict(model_names=[], # Name of models for a and bb, list
                 # Radiative Transfer
                 variable_Gordon=True, # Wavelength dependent Gordon coefficients?
                 include_Raman=False, # Include Raman corrections
+                include_Chl_fl=False, # Include chlorophyll fluorescence corrections
                 # IOPs
                 apriors=None,       # Priors for a params, list of dict
                 bpriors=None,       # Priors for bb params, list of dict

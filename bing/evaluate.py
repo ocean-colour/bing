@@ -151,6 +151,15 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params, rt_dict:dict):
     else:
         a_ex, bb_ex, bb_R = None, None, None
 
+    # Chl fluorescence?
+    if rt_dict['include_Chl_fl']:
+        a_chl_ex = a[a_model.i_Chl_ex]
+        a_chl_em = a[a_model.i_Chl_em]
+        bb_chl_ex = bb[a_model.i_Chl_ex]
+        bb_chl_em = bb[a_model.i_Chl_em]
+    else:
+        a_chl_ex, a_chl_em, bb_chl_ex, bb_chl_em = None, None, None, None
+
     # Call me
     Rrs = bing_rrs.calc_Rrs(a, bb, in_G1=a_model.G1, in_G2=a_model.G2,
                             a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)

@@ -197,7 +197,7 @@ class aNWModel:
 
     uses_Chl:bool = False
     """
-    Does the model use chlorophyll?
+    Does the model use chlorophyll (for absorption)?
     """
 
     fix_Chl:bool = None
@@ -205,10 +205,21 @@ class aNWModel:
     If Chl, is it fixed?
     """
 
+    i_Chl_ex:np.ndarray = None
+    """
+    The indices of the excitation wavelengths for chlorophyll fluorescence
+    """
+
+    i_Chl_em:np.ndarray = None
+    """
+    The indices of the emission wavelengths for chlorophyll fluorescence
+    """
+
     a_w:np.ndarray = None
     """
     The absorption coefficient of water
     """
+
     a_ph:np.ndarray = None
     """
     The absorption coefficient for phytoplankton
@@ -396,6 +407,27 @@ class aNWModel:
         bing.rt.raman.emission_to_excitation_wavelength : Wavelength conversion function
         """
         self.wave_ex = raman.emission_to_excitation_wavelength(self.wave)
+
+    def init_Chl_fluorescence(self, wv_ex_range:tuple=(400, 700),
+        wv_em_range:tuple=(650, 800), Ed:np.ndarray=None):
+        """
+        Initialize the chlorophyll fluorescence parameters
+
+        Parameters:
+            wv_ex_range (tuple, optional): The range of excitation wavelengths. Defaults to (400, 700).
+            wv_em_range (tuple, optional): The range of emission wavelengths. Defaults to (650, 800).
+        """
+        # Grab the indices
+        i_Chl_ex = np.where((self.wave >= wv_ex_range[0]) & (self.wave <= wv_ex_range[1]))[0]
+        i_Chl_em = np.where((self.wave >= wv_em_range[0]) & (self.wave <= wv_em_range[1]))[0]
+
+        # Multi-spectral checks here
+
+        if Ed is None:
+
+        # Save em
+        self.i_Chl_ex = i_Chl_ex
+        self.i_Chl_em = i_Chl_em
 
     def __repr__(self):
         return f"<aNWModel: {self.name}, nparam={self.nparam}>"

@@ -29,6 +29,7 @@ from typing import Union, Optional, Tuple
 from scipy import interpolate 
 
 from bing.rt import raman
+from bing.rt import chl_fl, raman
 
 # Conversion from rrs to Rrs
 A_Rrs, B_Rrs = 0.52, 1.7
@@ -351,11 +352,15 @@ MU_F_DEFAULT = 0.5
 
 def calc_Rrs_fluorescence(
     wavelength: Union[float, np.ndarray],
-    Chl: float,
-    phi_C: float = 0.02,
-    wavelength_ex: Optional[Union[float, np.ndarray]] = None,
+    a_em: Union[float, np.ndarray],
+    bb_em: Union[float, np.ndarray],
+    a_ex: np.ndarray,
+    bb_ex: np.ndarray,
+    aph_ex: np.ndarray,
+    wavelength_ex: np.ndarray,
     mu_d: Optional[float] = None,
     mu_f: Optional[float] = None,
+    phi_C: float = 0.02,
     double_gaussian: bool = False
 ) -> Union[float, np.ndarray]:
     """
@@ -369,16 +374,24 @@ def calc_Rrs_fluorescence(
     ----------
     wavelength : float or ndarray
         Emission wavelength(s) λ in nanometers. Typically in range 650-750 nm.
-    Chl : float
-        Chlorophyll-a concentration in mg m^-3.
-    phi_C : float, optional
-        Fluorescence quantum yield (0-1). Default is 0.02.
+    a_em: float or np.ndarray
+        Total absorption coefficient at emission wavelength(s) [m^-1].
+    bb_em: float or np.ndarray
+        Total backscattering coefficient at emission wavelength(s) [m^-1].
     wavelength_ex : float or ndarray, optional
         Excitation wavelength(s) for integration. If None, uses 400-680 nm range.
+    a_ex: float or np.ndarray
+        Total absorption coefficient at excitation wavelength(s) [m^-1].
+    bb_ex: float or np.ndarray
+        Total backscattering coefficient at excitation wavelength(s) [m^-1].
+    aph_ex: float or np.ndarray
+        Phytoplankton absorption coefficient at excitation wavelength(s) [m^-1].
     mu_d : float, optional
         Mean cosine for downwelling irradiance. Default is 0.9.
     mu_f : float, optional
         Mean cosine for fluorescence emission (isotropic). Default is 0.5.
+    phi_C : float, optional
+        Fluorescence quantum yield (0-1). Default is 0.02.
     double_gaussian : bool, optional
         If True, use double Gaussian emission (685 + 730 nm peaks). Default is False.
 
@@ -405,8 +418,6 @@ def calc_Rrs_fluorescence(
     >>> Rrs_fl = calc_Rrs_fluorescence(wavelengths, Chl=1.0)
     >>> print(f"Peak fluorescence Rrs: {Rrs_fl.max():.2e} sr^-1")
     """
-    from . import chl_fl, raman
-
     wavelength = np.atleast_1d(wavelength)
 
     # Use default mean cosines if not provided
@@ -414,32 +425,6 @@ def calc_Rrs_fluorescence(
         mu_d = raman.MU_D_DEFAULT
     if mu_f is None:
         mu_f = 0.5  # Default for fluorescence (isotropic)
-
-    # Set up excitation wavelength grid if not provided
-    if wavelength_ex is None:
-        wavelength_ex = np.arange(400, 681, 5)  # 5 nm resolution
-    else:
-        wavelength_ex = np.atleast_1d(wavelength_ex)
-
-    # Calculate IOPs at excitation wavelengths
-    a_ph_ex = calc_a_ph_bricaud(wavelength_ex, Chl)
-    a_w_ex = calc_a_water(wavelength_ex)
-    bb_w_ex = calc_bb_water(wavelength_ex)
-
-    # Total absorption and backscattering at excitation
-    a_ex = a_w_ex + a_ph_ex
-    bb_ex = bb_w_ex  # Assume particle backscatter is small for open ocean
-
-    # Calculate IOPs at emission wavelengths
-    a_ph_em = calc_a_ph_bricaud(wavelength, Chl)
-    a_w_em = calc_a_water(wavelength)
-    bb_w_em = calc_bb_water(wavelength)
-
-    a_em = a_w_em + a_ph_em
-    bb_em = bb_w_em
-
-    # Initialize output
-    Rrs_fl = np.zeros_like(wavelength, dtype=float)
 
     # Calculate fluorescence emission line shape at each emission wavelength
     if double_gaussian:
@@ -449,40 +434,29 @@ def calc_Rrs_fluorescence(
 
     # Upwelling attenuation at emission wavelengths
     kappa_F_em = (a_em + bb_em) / mu_f
+    # Calculate at peak excitation wavelength
+    ipeak = np.argmin(np.abs(wavelength - chl_fl.LAMBDA_FL_PRIMARY))
+    kappa_F_em_peak = kappa_F_em[ipeak]
 
     # Integrate over excitation wavelengths
-    for i, lambda_em in enumerate(wavelength):
-        if h_C[i] < 1e-12:
-            continue
+    K_ex = (a_ex + bb_ex) / mu_d
 
-        # For each excitation wavelength, calculate contribution
-        integrand = np.zeros(len(wavelength_ex))
+    # Fluorescence backscattering coefficient at excitation wavelength
+    bb_F = chl_fl.fluorescence_backscattering_coeff(aph_ex, phi_C)
 
-        for j, lambda_ex in enumerate(wavelength_ex):
-            # Skip wavelengths outside valid excitation range
-            if lambda_ex < chl_fl.LAMBDA_EX_MIN or lambda_ex > chl_fl.LAMBDA_EX_MAX:
-                continue
+    # Wavelength ratio (energy conversion)
+    lambda_ratio = wavelength_ex / wavelength[ipeak]
 
-            # Fluorescence backscattering coefficient at excitation wavelength
-            bb_F = chl_fl.fluorescence_backscattering_coeff(a_ph_ex[j], phi_C)
+    # Contribution (assume flat Ed spectrum, Ed_ratio = 1)
+    integrand = lambda_ratio * (bb_F / mu_d) / (K_ex + kappa_F_em_peak)
 
-            # Downwelling attenuation at excitation wavelength
-            K_ex = (a_ex[j] + bb_ex[j]) / mu_d
+    # Integrate
+    R_F = np.trapezoid(integrand, wavelength_ex)
 
-            # Wavelength ratio (energy conversion)
-            lambda_ratio = lambda_ex / lambda_em
+    # E_d ratio needed here
 
-            # Contribution (assume flat Ed spectrum, Ed_ratio = 1)
-            integrand[j] = h_C[i] * lambda_ratio * (bb_F / mu_d) / (K_ex + kappa_F_em[i])
-
-        # Integrate using trapezoidal rule
-        if len(wavelength_ex) > 1:
-            R_F = np.trapz(integrand, wavelength_ex)
-        else:
-            R_F = integrand[0]
-
-        # Convert subsurface reflectance to Rrs
-        Rrs_fl[i] = A_Rrs * R_F / (1 - B_Rrs * R_F)
+    # Convert subsurface reflectance to Rrs
+    Rrs_fl = h_C * A_Rrs * R_F / (1 - B_Rrs * R_F)
 
     return np.squeeze(Rrs_fl)
 
