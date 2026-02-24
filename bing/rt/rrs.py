@@ -358,6 +358,8 @@ def calc_Rrs_fluorescence(
     bb_ex: np.ndarray,
     aph_ex: np.ndarray,
     wavelength_ex: np.ndarray,
+    Ed_ex: np.ndarray,
+    Ed_em: np.ndarray,
     mu_d: Optional[float] = None,
     mu_f: Optional[float] = None,
     phi_C: float = 0.02,
