@@ -1,4 +1,62 @@
-""" Models for non-water absorption """
+"""
+Non-Water Absorption Models for BING
+=====================================
+
+This module implements various bio-optical models for non-water absorption
+(a_nw) used in ocean color remote sensing retrievals. Non-water absorption
+consists of contributions from:
+
+- Phytoplankton pigments (a_ph): Primarily chlorophyll-a and accessory pigments
+- Colored dissolved organic matter (CDOM, a_g): Exponentially decaying with wavelength
+- Non-algal particles/detritus (NAP, a_d): Also exponentially decaying
+
+The combined dissolved + detrital absorption is often modeled together as a_dg.
+
+Available Models
+----------------
+- **Cst**: Spectrally constant absorption
+- **Exp**: Single exponential decay (for a_dg-dominated waters)
+- **ExpFix**: Exponential with fixed spectral slope
+- **Bricaud**: Phytoplankton-only using Bricaud et al. (1995) parameterization
+- **ExpBricaud**: Exponential a_dg + Bricaud a_ph (most common for BING)
+- **ExpBricaudFix**: Like ExpBricaud but with fixed chlorophyll
+- **ExpBricaudFree**: Like ExpBricaud but with Chl as free parameter
+- **GIOP**: Fixed-slope exponential + Bricaud (Werdell et al. 2013)
+- **GSM**: Garver-Siegel-Maritorena model (Maritorena et al. 2002)
+- **ExpNMF**: Exponential + NMF basis functions for a_ph
+- **Chase2017**: Gaussian decomposition (Chase et al. 2017)
+- **Every**: Fully flexible (one parameter per wavelength)
+
+Parameter Conventions
+---------------------
+All amplitude parameters are stored and fitted in log10 space for numerical
+stability. Spectral slopes (S, Sdg) remain in linear space.
+
+References
+----------
+- Bricaud, A. et al. (1995). "Variability in the chlorophyll-specific absorption
+  coefficients of natural phytoplankton," J. Geophys. Res. 100, 13321-13332.
+- Werdell, P.J. et al. (2013). "Generalized ocean color inversion model (GIOP),"
+  Appl. Opt. 52, 2019-2037.
+- Maritorena, S. et al. (2002). "Ocean color chlorophyll algorithms for SeaWiFS,"
+  J. Geophys. Res. 107, 3108.
+- Chase, A.P. et al. (2017). "Decomposition of in situ particulate absorption
+  spectra," Methods in Oceanography 7, 110-124.
+
+Examples
+--------
+>>> from bing.models import anw
+>>> import numpy as np
+>>> wave = np.arange(400, 701, 5)
+>>>
+>>> # Initialize ExpBricaud model
+>>> model = anw.init_model('ExpBricaud', wave)
+>>> model.set_aph(Chl=1.0)  # Set chlorophyll for Bricaud parameterization
+>>>
+>>> # Evaluate at given parameters (log10 space for amplitudes)
+>>> params = np.array([-1.0, 0.017, -1.2])  # log10(Adg), Sdg, log10(Aph)
+>>> a_nw = model.eval_anw(params)
+"""
 import numpy as np
 import warnings
 
@@ -11,6 +69,7 @@ from ocpy.ph import absorption as ph_absorption
 
 from bing.priors import priors as bing_priors
 from bing.models import functions
+from bing.rt import raman
 
 from IPython import embed
 
@@ -52,16 +111,78 @@ def init_model(model_name:str, wave:np.ndarray,
 
 class aNWModel:
     """
-    Abstract base class for non-water absoprtion
+    Abstract base class for non-water absorption models.
 
-    Attributes:
+    This class defines the interface and common functionality for all
+    non-water absorption models in BING. Subclasses implement specific
+    bio-optical parameterizations (exponential, Bricaud, etc.).
 
+    All models share a common structure:
+    1. Initialization sets up wavelengths, water absorption, and Raman parameters
+    2. Priors are attached for Bayesian inference
+    3. eval_anw() computes non-water absorption from parameters
+    4. eval_a() adds water absorption to get total absorption
+
+    Parameters are typically stored and fitted in log10 space for amplitudes
+    to ensure positivity and improve sampling efficiency.
+
+    Attributes
+    ----------
+    name : str
+        Model identifier (e.g., 'Exp', 'ExpBricaud', 'GIOP')
+    wave : np.ndarray
+        Wavelengths at which the model operates [nm]
+    nparam : int
+        Number of free parameters
+    pnames : list of str
+        Names of the parameters
+    a_w : np.ndarray
+        Pure water absorption coefficient at model wavelengths [m^-1]
+    a_w_ex : np.ndarray
+        Pure water absorption at Raman excitation wavelengths [m^-1]
+    wave_ex : np.ndarray
+        Raman excitation wavelengths corresponding to model wavelengths [nm]
+    priors : bing.priors.Priors
+        Prior distributions for Bayesian inference
+    uses_Chl : bool
+        Whether model requires chlorophyll input for phytoplankton absorption
+    fix_Chl : bool
+        If uses_Chl, whether chlorophyll is fixed or fitted
+    G1, G2 : float or np.ndarray or None
+        Gordon coefficients for radiative transfer (can be wavelength-dependent)
+    pivot : float
+        Reference wavelength for spectral parameterizations [nm]
+    internals : dict
+        Storage for intermediate calculations
+
+    See Also
+    --------
+    aNWExp : Exponential decay model
+    aNWExpBricaud : Exponential + Bricaud phytoplankton
+    aNWGIOP : GIOP algorithm implementation
     """
     __metaclass__ = ABCMeta
 
     name:str = None
     """
     The name of the model
+    """
+
+    G1:float | np.ndarray = None
+    """
+    Gordon G1 coefficients
+        If None, the default will be used (if the Gordon approx is done)
+    """
+
+    G2:float | np.ndarray = None
+    """
+    Gordon G2 coefficients
+        If None, the default will be used (if the Gordon approx is done)
+    """
+
+    wave_ex:np.ndarray = None
+    """
+    Excitation wavelengths for Raman scattering
     """
 
     nparam:int = None
@@ -111,6 +232,9 @@ class aNWModel:
         self.wave = wave
         self.internals = {}
 
+        # Initialize for Raman
+        self.init_raman()
+
         # Initialize water
         self.init_aw()
 
@@ -132,8 +256,10 @@ class aNWModel:
             np.ndarray: The absorption coefficient of water
         """
         self.a_w = water_abs.a_water(self.wave, data=data)
+        self.a_w_ex = water_abs.a_water(self.wave_ex, data=data)
 
-    def eval_anw(self, params:np.ndarray, retsub_comps:bool=False):
+    def eval_anw(self, params:np.ndarray, retsub_comps:bool=False,
+                 wave:np.ndarray=None):
         """
         Evaluate the non-water absorption coefficient
 
@@ -152,22 +278,27 @@ class aNWModel:
                 params[...,0] = log10(Adg)
                 params[...,1] = log10(Sdg)
                 params[...,2] = log10(Aph)
+            wave (np.ndarray, optional): Wavelengths for evaluation
 
         Returns:
             np.ndarray: The non-water absorption coefficient
                 This is always a multi-dimensional array
         """
+        # Wavelengths for evaluation
+        if wave is None:
+            wave = self.wave  # Model values
+
         if self.name == 'Cst':
-            return functions.constant(self.wave, params)
+            return functions.constant(wave, params)
         elif self.name == 'Every':
             return 10**params
         elif self.name == 'Exp':
-            return functions.exponential(self.wave, params, pivot=self.pivot)
+            return functions.exponential(wave, params, pivot=self.pivot)
         elif self.name == 'ExpFix':
-            return functions.exponential(self.wave, params, pivot=self.pivot, S=self.Sdg)
+            return functions.exponential(wave, params, pivot=self.pivot, S=self.Sdg)
         elif self.name == 'Bricaud':
             Chl = 10**params[...,-1:] / 0.05582
-            self.set_aph(Chl)
+            self.set_aph(Chl, wave=wave)
             if len(params.shape) == 2:
                 a_ph = (10**params[...,-1:]) * self.a_ph
             else:
@@ -175,7 +306,7 @@ class aNWModel:
             return a_ph
         elif self.name in ['ExpBricaudFix', 'ExpBricaud', 'ExpBricaudFree']:
             # a_dg
-            a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
+            a_dg = functions.exponential(wave, params, pivot=self.pivot)
             # a_ph
             if not self.fix_Chl:
                 if self.name == 'ExpBricaud':
@@ -184,7 +315,7 @@ class aNWModel:
                     Chl = 10**params[...,-2] 
                 else:
                     raise ValueError(f"Unknown model: {self.name}")
-                self.set_aph(Chl)
+                self.set_aph(Chl, wave=wave)
             if len(params.shape) == 2:
                 a_ph = (10**params[...,-1:]) * self.a_ph
             else:
@@ -195,14 +326,14 @@ class aNWModel:
             else:
                 return a_dg + a_ph
         elif self.name in ['GIOP', 'GSM']:
-            a_dg = functions.exponential(self.wave, params, pivot=self.pivot, S=self.Sdg)
+            a_dg = functions.exponential(wave, params, pivot=self.pivot, S=self.Sdg)
             a_ph = functions.gen_basis(params[...,-1:], [self.a_ph])
             if retsub_comps:
                 return a_dg, a_ph
             else:
                 return a_dg + a_ph
         elif self.name == 'ExpNMF':
-            a_dg = functions.exponential(self.wave, params, pivot=self.pivot)
+            a_dg = functions.exponential(wave, params, pivot=self.pivot)
             a_ph = functions.gen_basis(params[...,-2:], 
                                        [self.W1, self.W2])
             if retsub_comps:
@@ -224,6 +355,20 @@ class aNWModel:
         """
         return self.a_w + self.eval_anw(params)
 
+    def eval_a_ex(self, params:np.ndarray):
+        """
+        Evaluate the absorption coefficient at Raman 
+        excitation wavelengths    
+
+        Parameters:
+            params (np.ndarray): The parameters for the model
+
+        Returns:
+            np.ndarray: The absorption coefficient
+        """
+        # Add water and return
+        return self.a_w_ex + self.eval_anw(params, wave=self.wave_ex)
+
     def init_guess(self, a_nw:np.ndarray):
         """
         Initialize the model with a guess
@@ -231,6 +376,27 @@ class aNWModel:
         Parameters:
             a_nw (np.ndarray): The non-water absorption coefficient
         """
+
+    def init_raman(self):
+        """
+        Initialize wavelengths for Raman scattering calculations.
+
+        Computes the excitation wavelengths that correspond to each emission
+        (model) wavelength via the Raman shift (~3400 cm^-1 for water).
+        These are needed for computing the Raman correction to Rrs.
+
+        Sets
+        ----
+        wave_ex : np.ndarray
+            Excitation wavelengths corresponding to self.wave via Raman shift.
+            For example, emission at 550 nm corresponds to excitation at ~470 nm.
+
+        See Also
+        --------
+        bing.rt.raman.emission_to_excitation_wavelength : Wavelength conversion function
+        """
+        self.wave_ex = raman.emission_to_excitation_wavelength(self.wave)
+
     def __repr__(self):
         return f"<aNWModel: {self.name}, nparam={self.nparam}>"
 
@@ -343,7 +509,7 @@ class aNWExp(aNWModel):
     """
     name = 'Exp'
     nparam = 2
-    pnames = ['Anw', 'Snw']
+    pnames = ['Anw', 'Snw']  # log10, linear
     pivot = 400.
 
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
@@ -380,32 +546,115 @@ class aNWBricaud(aNWModel):
     uses_Chl = True
     fix_Chl = False
 
+    L23_A:np.ndarray = None
+    """
+    Pre-evaluation of Bricaud parameters at model wavelengths
+    """
+
+    L23_E:np.ndarray = None
+    """
+    Pre-evaluation of Bricaud parameters at model wavelengths
+    """
+
+    L23_A_440:np.ndarray = None
+    """
+    Pre-evaluation of Bricaud parameter at 440nm
+    """
+
+    L23_E_440:np.ndarray = None
+    """
+    Pre-evaluation of Bricaud parameter at 440nm
+    """
+
+    L23_A_ex:np.ndarray = None
+    """
+    Pre-evaluation of Bricaud parameters at excitation wavelengths (Raman)
+    """
+
+    L23_E_ex:np.ndarray = None
+    """
+    Pre-evaluation of Bricaud parameters at excitation wavelengths (Raman)
+    """
+
+
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         aNWModel.__init__(self, wave, prior_dicts)
 
-        # Apply
+        # Save parameterization
         self.L23_A = f_b1998_A(self.wave)
         self.L23_E = f_b1998_E(self.wave)
-        self.i440 = np.argmin(np.abs(self.wave-440))
+        self.L23_A_440 = f_b1998_A(440.)
+        self.L23_E_440 = f_b1998_E(440.)
+        self.L23_A_ex = f_b1998_A(self.wave_ex)
+        self.L23_E_ex = f_b1998_E(self.wave_ex)
 
 
-    def set_aph(self, Chla):
+    def set_aph(self, Chla, wave:np.ndarray=None):
+        """
+        Set the phytoplankton absorption spectrum using Bricaud (1995) parameterization.
+
+        Computes normalized phytoplankton absorption a*_ph(λ) such that:
+            a_ph(λ) = Aph × a*_ph(λ)
+
+        where a*_ph is normalized to have value 1.0 at 440 nm. The shape varies
+        with chlorophyll concentration following Bricaud et al. (1995):
+            a_ph(λ) = A(λ) × Chl^E(λ)
+
+        Parameters
+        ----------
+        Chla : float or np.ndarray
+            Chlorophyll-a concentration in mg m^-3. Can be a single value or
+            an array for batch processing (e.g., MCMC chains).
+        wave : np.ndarray, optional
+            Wavelengths for evaluation. If None, uses self.wave.
+            Can also be self.wave_ex for Raman excitation wavelengths.
+
+        Notes
+        -----
+        - The result is stored in self.a_ph as a normalized spectrum
+        - For wavelengths < 400 nm, linear extrapolation is applied
+        - Pre-computed coefficients (L23_A, L23_E) are used when possible
+          for efficiency
+
+        See Also
+        --------
+        aNWExpBricaud : Model combining exponential a_dg with Bricaud a_ph
+        """
         # Bricaud
 
-        # Normalize
+        if wave is None:
+            wave = self.wave  # Model values
+
+        # Load up the coefficients
+        if np.all(np.isclose(wave, self.wave)):
+            L23_A = self.L23_A
+            L23_E = self.L23_E
+        elif np.all(np.isclose(wave, self.wave_ex)):
+            L23_A = self.L23_A_ex
+            L23_E = self.L23_E_ex
+        else:
+            L23_A = f_b1998_A(wave)
+            L23_E = f_b1998_E(wave)
+
+        # Calculate
         if len(Chla.shape) == 2:
-            Chla_array = np.outer(Chla, np.ones(self.L23_E.size))
-            self.a_ph = self.L23_A * Chla_array**self.L23_E
-            norm = np.outer(self.a_ph[:,self.i440], np.ones(self.a_ph.shape[1]))
+            Chla_array = np.outer(Chla, np.ones(L23_E.size))
+            self.a_ph = L23_A * Chla_array**L23_E
+            # Normalize
+            aph_440 = self.L23_A_440 * Chla[:,0]**self.L23_E_440
+            norm = np.outer(aph_440, np.ones(self.a_ph.shape[1]))
             self.a_ph /= norm
         else:
-            self.a_ph = self.L23_A * Chla**self.L23_E
-            self.a_ph /= self.a_ph[self.i440]
+            self.a_ph = L23_A * Chla**L23_E
+            aph_440 = self.L23_A_440 * Chla**self.L23_E_440
+            self.a_ph /= aph_440
+
+        #embed(header='498 of anw.py')
 
         # Extrapolate to <400nm, as necessary
-        if self.wave.min() < 400:
-            iwave = np.argmin(np.abs(self.wave-400))
-            wv_ext = self.wave < 400.
+        if wave.min() < 400:
+            iwave = np.argmin(np.abs(wave-400))
+            wv_ext = wave < 400.
             if len(Chla.shape) == 2:
                 a400 = np.outer(self.a_ph[:,iwave], np.ones(np.sum(wv_ext)))
             else:
@@ -414,12 +663,12 @@ class aNWBricaud(aNWModel):
             # 
             if len(Chla.shape) == 2:
                 self.a_ph[:,wv_ext] = scl_400*a400 + (
-                    np.outer(np.ones(a400.shape[0]), self.wave[wv_ext]-350) * a400 *
+                    np.outer(np.ones(a400.shape[0]), wave[wv_ext]-350) * a400 *
                     (1-scl_400) / 50.)
                     #self.wave[wv_ext]-350) * a400 * (1-scl_400) / 50.
             else:
                 self.a_ph[wv_ext] = scl_400*a400 + (
-                    self.wave[wv_ext]-350) * a400 * (1-scl_400) / 50.
+                    wave[wv_ext]-350) * a400 * (1-scl_400) / 50.
 
     def init_guess(self, a_nw:np.ndarray):
         """
@@ -439,12 +688,57 @@ class aNWBricaud(aNWModel):
 
 class aNWExpBricaud(aNWBricaud):
     """
-    Exponential model + Bricaud aph for non-water absorption
-        adg = Adg * exp(-Sdg*(wave-400))
-        aph = a_ph(440) * A_B * chlA**B_B
+    Exponential CDOM/detrital + Bricaud phytoplankton absorption model.
 
-    Attributes:
+    This is the most commonly used absorption model in BING, combining:
+    - Exponential decay for dissolved and detrital matter (a_dg)
+    - Bricaud et al. (1995) parameterization for phytoplankton (a_ph)
 
+    Model equations:
+        a_dg(λ) = Adg × exp(-Sdg × (λ - 400))
+        a_ph(λ) = Aph × a*_ph(λ, Chl)
+        a_nw(λ) = a_dg(λ) + a_ph(λ)
+
+    where a*_ph is the Bricaud spectral shape normalized at 440 nm.
+
+    Parameters (in fitting space)
+    -----------------------------
+    Adg : float (log10)
+        CDOM + detrital absorption amplitude at 400 nm [m^-1]
+    Sdg : float (linear)
+        Spectral slope of a_dg, typically 0.010-0.020 [nm^-1]
+    Aph : float (log10)
+        Phytoplankton absorption amplitude at 440 nm [m^-1]
+
+    Attributes
+    ----------
+    name : str
+        'ExpBricaud'
+    nparam : int
+        3 (Adg, Sdg, Aph)
+    pnames : list
+        ['Adg', 'Sdg', 'Aph']
+    pivot : float
+        Reference wavelength = 400 nm
+    uses_Chl : bool
+        True - requires Chl for Bricaud shape
+    fix_Chl : bool
+        False - Chl is derived from fitted Aph
+
+    Notes
+    -----
+    Chlorophyll is derived from the fitted Aph using:
+        Chl = 10^Aph / 0.05582
+
+    where 0.05582 is the Bricaud coefficient at 440 nm for Chl = 1 mg/m³.
+
+    Examples
+    --------
+    >>> model = aNWExpBricaud(wave)
+    >>> model.set_aph(Chl=1.0)  # Initialize Bricaud shape
+    >>> params = np.array([-1.5, 0.017, -1.3])  # log10(Adg), Sdg, log10(Aph)
+    >>> a_nw = model.eval_anw(params)
+    >>> a_dg, a_ph = model.eval_anw(params, retsub_comps=True)
     """
     name = 'ExpBricaud'
     nparam = 3
@@ -596,14 +890,38 @@ class aNWExpBricaudFree(aNWExpBricaud):
 
 class aNWGIOP(aNWModel):
     """
-    GIOP (Werdell+2013)
-    Exponential model with Sdg fixed + Bricaud aph for non-water absorption
-        aexp = Adg * exp(-Sdg*(wave-400))
-            Sdg = 0.018
-        aph = Aph * [A_B * chlA**E_B]
+    Generalized Inherent Optical Properties (GIOP) absorption model.
 
-    Attributes:
+    Implements the GIOP algorithm from Werdell et al. (2013). Uses a fixed
+    spectral slope for the exponential term to reduce parameter degeneracy.
 
+    Model equations:
+        a_dg(λ) = Aexp × exp(-0.018 × (λ - 400))
+        a_ph(λ) = Aph × a*_ph(λ, Chl)
+        a_nw(λ) = a_dg(λ) + a_ph(λ)
+
+    The spectral slope Sdg = 0.018 nm^-1 is fixed to the global average.
+
+    Parameters (in fitting space)
+    -----------------------------
+    Aexp : float (log10)
+        CDOM + detrital absorption amplitude at 400 nm [m^-1]
+    Aph : float (log10)
+        Phytoplankton absorption amplitude at 440 nm [m^-1]
+
+    Attributes
+    ----------
+    name : str
+        'GIOP'
+    nparam : int
+        2 (Aexp, Aph)
+    Sdg : float
+        Fixed spectral slope = 0.018 nm^-1
+
+    References
+    ----------
+    Werdell, P.J. et al. (2013). "Generalized ocean color inversion model
+    for retrieving marine inherent optical properties," Appl. Opt. 52, 2019-2037.
     """
     name = 'GIOP'
     nparam = 2
@@ -617,7 +935,10 @@ class aNWGIOP(aNWModel):
         # Sdg
         self.Sdg = 0.018
 
-    def set_aph(self, Chla):
+    def set_aph(self, Chla, wave:np.ndarray=None):
+
+        if wave is None:
+            wave = self.wave  # Model values
         # ##################################
         # Bricaud
         b1998 = ph_absorption.load_bricaud1998()
@@ -627,14 +948,16 @@ class aNWGIOP(aNWModel):
         f_b1998_E = interp1d(b1998['lambda'], b1998.Ephi, bounds_error=False, fill_value=0.)
 
         # Apply
-        L23_A = f_b1998_A(self.wave)
-        L23_E = f_b1998_E(self.wave)
+        L23_A = f_b1998_A(wave)
+        L23_E = f_b1998_E(wave)
 
         self.a_ph = L23_A * Chla**L23_E
 
         # Normalize at 440
-        iwave = np.argmin(np.abs(self.wave-440))
-        self.a_ph /= self.a_ph[iwave]
+        L23_A = f_b1998_A(440.)
+        L23_E = f_b1998_E(440.)
+        a_ph_440 = L23_A * Chla**L23_E
+        self.a_ph /= a_ph_440
 
     def init_guess(self, a_nw:np.ndarray):
         """
@@ -729,7 +1052,10 @@ class aNWGSM(aNWModel):
         # Sdg 
         self.Sdg = 0.0206
 
-    def set_aph(self, Chla, version:str='Maritorena2002'):
+    def set_aph(self, Chla, wave:np.ndarray=None, version:str='Maritorena2002'):
+
+        if wave is None:
+            wave = self.wave  # Model values
 
         if version == 'Maritorena2002':
             # ##################################

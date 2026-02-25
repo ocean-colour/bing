@@ -20,18 +20,23 @@ from . import rrs
 from . import raman
 from . import chl_fl
 
-# Re-export commonly used functions at package level
+# Re-export commonly used functions and constants at package level
 from .rrs import (
+    A_Rrs,
+    B_Rrs,
     calc_Rrs,
-    calc_Rrs_with_raman,
+    calc_elastic_Rrs,
     calc_Rrs_fluorescence,
     calc_Rrs_fluorescence_simple,
     calc_Rrs_with_fluorescence,
     calc_fluorescence_spectrum,
     calc_fluorescence_correction_factor,
-    calc_a_ph_bricaud,
-    calc_a_water,
-    calc_bb_water,
+    #calc_a_ph_bricaud,
+    #calc_a_water,
+    #calc_bb_water,
+)
+from .raman import (
+    calc_Rrs_with_raman,  # Now in raman module
 )
 from .chl_fl import (
     calc_R_fluorescence,
@@ -43,9 +48,12 @@ __all__ = [
     'rrs',
     'raman',
     'chl_fl',
-    # Elastic Rrs
+    # Constants
+    'A_Rrs',
+    'B_Rrs',
+    # Rrs
     'calc_Rrs',
-    'calc_Rrs_with_raman',
+    'calc_elastic_Rrs',
     # Fluorescence Rrs
     'calc_Rrs_fluorescence',
     'calc_Rrs_fluorescence_simple',
@@ -53,9 +61,9 @@ __all__ = [
     'calc_fluorescence_spectrum',
     'calc_fluorescence_correction_factor',
     # IOP functions
-    'calc_a_ph_bricaud',
-    'calc_a_water',
-    'calc_bb_water',
+    #'calc_a_ph_bricaud',
+    #'calc_a_water',
+    #'calc_bb_water',
     # Low-level fluorescence
     'calc_R_fluorescence',
     'calc_fluorescence_line_height',
