@@ -4,6 +4,8 @@ import numpy as np
 
 from bing.rt import chl_fl
 
+from IPython import embed
+
 # =============================================================================
 # Tests for emission line shape functions
 # =============================================================================
@@ -925,4 +927,13 @@ def run_all_tests():
 
     return passed, failed
 
+##
 # Fluorescence Tests for Models
+from correct_atmosphere import downwelling
+
+Ed = downwelling.downwelling_irradiance(wave, 0.)
+#Ed = downwelling.downwelling_irradiance(a_model.wave, 0.)
+embed(header='934 of test')
+
+
+# Build a model

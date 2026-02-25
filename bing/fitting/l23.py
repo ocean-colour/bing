@@ -41,6 +41,8 @@ from functools import partial
 from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
 
+import pandas
+
 from ocpy.satellites import modis as sat_modis
 from ocpy.satellites import seawifs as sat_seawifs
 from ocpy.satellites import pace as sat_pace
@@ -48,7 +50,6 @@ from ocpy.hydrolight import loisel23
 
 from bing import rt as bing_rt
 from bing.rt import defs as rt_defs
-from bing.rt import raman
 from bing.models import utils as model_utils
 from bing.models import functions
 from bing.priors import priors as bing_priors

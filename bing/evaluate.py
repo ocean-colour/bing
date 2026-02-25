@@ -89,7 +89,8 @@ def calc_stats(chains, names:list=None,
 
     return stats
 
-def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params, rt_dict:dict):
+def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params, 
+        rt_dict:dict):
     """
     Calculate Rrs from model parameters using Gordon radiative transfer.
 
@@ -248,23 +249,6 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
     #bb_std = np.std(bb, axis=0)
 
     # Calculate the model Rrs
-    '''
-    from importlib import reload
-    from bing.rt import raman
-
-    mu_d = raman.MU_D_DEFAULT
-    mu_u = raman.MU_U_DEFAULT
-    mu_R = raman.MU_R_DEFAULT
-    s_E= 1.
-    R_E = raman.calc_R_elastic(a, bb, s_E, mu_d, mu_u)
-
-    R_raman = raman.calc_R_raman_total(
-        a, bb, a_ex, bb_ex, bb_R, 1.,
-        s_E, mu_d, mu_u, mu_R, True,
-    )
-
-    embed(header='81 of evaluate')
-    '''
     Rrs = bing_rrs.calc_Rrs(a, bb, in_G1=models[0].G1, in_G2=models[0].G2,
             a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
 

@@ -37,6 +37,7 @@ A_Rrs, B_Rrs = 0.52, 1.7
 # Gordon factors
 G1_STANDARD, G2_STANDARD = 0.0949, 0.0794  # Standard Gordon factors
 
+from IPython import embed
 
 
 def wave_dependent_gordon(wave:np.ndarray, bounds_error:bool=True):
@@ -359,7 +360,7 @@ def calc_Rrs_fluorescence(
     aph_ex: np.ndarray,
     wavelength_ex: np.ndarray,
     Ed_ex: np.ndarray,
-    Ed_em: np.ndarray,
+    Ed_em: Union[float, np.ndarray],
     mu_d: Optional[float] = None,
     mu_f: Optional[float] = None,
     phi_C: float = 0.02,
@@ -422,6 +423,9 @@ def calc_Rrs_fluorescence(
     """
     wavelength = np.atleast_1d(wavelength)
 
+    # Allow for chains
+    ndim = len(a_ex.shape)
+
     # Use default mean cosines if not provided
     if mu_d is None:
         mu_d = raman.MU_D_DEFAULT
@@ -436,9 +440,13 @@ def calc_Rrs_fluorescence(
 
     # Upwelling attenuation at emission wavelengths
     kappa_F_em = (a_em + bb_em) / mu_f
+
     # Calculate at peak excitation wavelength
     ipeak = np.argmin(np.abs(wavelength - chl_fl.LAMBDA_FL_PRIMARY))
-    kappa_F_em_peak = kappa_F_em[ipeak]
+    if ndim == 1:
+        kappa_F_em_peak = kappa_F_em[ipeak]
+    else:
+        kappa_F_em_peak = kappa_F_em[..., ipeak]
 
     # Integrate over excitation wavelengths
     K_ex = (a_ex + bb_ex) / mu_d
@@ -447,20 +455,29 @@ def calc_Rrs_fluorescence(
     bb_F = chl_fl.fluorescence_backscattering_coeff(aph_ex, phi_C)
 
     # Wavelength ratio (energy conversion)
-    lambda_ratio = wavelength_ex / wavelength[ipeak]
+    lambda_ratio = wavelength_ex / chl_fl.LAMBDA_FL_PRIMARY #wavelength[ipeak]
 
-    # Contribution (assume flat Ed spectrum, Ed_ratio = 1)
-    integrand = lambda_ratio * (bb_F / mu_d) / (K_ex + kappa_F_em_peak)
+    # Contribution from each excitation wavelength
+    integrand = Ed_ex * lambda_ratio * (bb_F / mu_d) / (K_ex + kappa_F_em_peak)
 
     # Integrate
-    R_F = np.trapezoid(integrand, wavelength_ex)
-
-    # E_d ratio needed here
+    if ndim == 1:
+        R_F = np.trapezoid(integrand, x=wavelength_ex)
+    else:
+        R_F = np.trapezoid(integrand, x=wavelength_ex, axis=1)
+    
+    # Normalize by Ed_em
+    R_F /= Ed_em
 
     # Convert subsurface reflectance to Rrs
     Rrs_fl = h_C * A_Rrs * R_F / (1 - B_Rrs * R_F)
 
-    return np.squeeze(Rrs_fl)
+    if ndim == 2 and a_ex.shape[0] == 1:
+        # Make it 2D with same shape as a_ex
+        Rrs_fl = Rrs_fl.reshape(a_ex.shape[0], -1)
+
+    #return np.squeeze(Rrs_fl)
+    return Rrs_fl
 
 
 def calc_Rrs_fluorescence_simple(
