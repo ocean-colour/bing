@@ -146,6 +146,8 @@ def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
     (Gordon model) with an optional Raman scattering correction based on
     Sathyendranath & Platt (1998).
 
+    Chl fluorescence is not included in this function.
+
     Parameters
     ----------
     a : float or np.ndarray
@@ -364,7 +366,7 @@ def calc_Rrs_fluorescence(
     mu_d: Optional[float] = None,
     mu_f: Optional[float] = None,
     phi_C: float = 0.02,
-    double_gaussian: bool = False
+    double_gaussian: bool = True
 ) -> Union[float, np.ndarray]:
     """
     Calculate Rrs contribution from chlorophyll fluorescence as a function of wavelength.

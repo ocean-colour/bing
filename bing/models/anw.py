@@ -210,11 +210,6 @@ class aNWModel:
     The indices of the excitation wavelengths for chlorophyll fluorescence
     """
 
-    i_Chl_em:np.ndarray = None
-    """
-    The indices of the emission wavelengths for chlorophyll fluorescence
-    """
-
     Ed_ex:np.ndarray = None
     """
     The downwelling irradiance at the excitation wavelengths
@@ -222,7 +217,7 @@ class aNWModel:
 
     Ed_em:float = None
     """
-    The downwelling irradiance at the emission wavelength
+    The downwelling irradiance at the peak emission wavelength
     """
 
     a_w:np.ndarray = None
@@ -419,8 +414,7 @@ class aNWModel:
         self.wave_ex = raman.emission_to_excitation_wavelength(self.wave)
 
     def init_Chl_fluorescence(self, wv_ex_range:tuple=(400, 700),
-        wv_em_range:tuple=(650, 800), Ed:np.ndarray=None,
-        Ed_em:float=None):
+        Ed:np.ndarray=None, Ed_em:float=None):
         """
         Initialize the chlorophyll fluorescence parameters
 
@@ -430,7 +424,7 @@ class aNWModel:
         """
         # Grab the indices
         i_Chl_ex = np.where((self.wave >= wv_ex_range[0]) & (self.wave <= wv_ex_range[1]))[0]
-        i_Chl_em = np.where((self.wave >= wv_em_range[0]) & (self.wave <= wv_em_range[1]))[0]
+        #i_Chl_em = np.where((self.wave >= wv_em_range[0]) & (self.wave <= wv_em_range[1]))[0]
 
         # Multi-spectral checks here (not ready for multi-spectral yet)
         
@@ -443,7 +437,7 @@ class aNWModel:
 
         # Save em
         self.i_Chl_ex = i_Chl_ex
-        self.i_Chl_em = i_Chl_em
+        #self.i_Chl_em = i_Chl_em
 
     def __repr__(self):
         return f"<aNWModel: {self.name}, nparam={self.nparam}>"
