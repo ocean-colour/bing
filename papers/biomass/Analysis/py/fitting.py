@@ -28,6 +28,7 @@ from bing.models import utils as model_utils
 from bing.priors import priors as bing_priors
 from bing.fitting import inference as bing_inf
 from bing.fitting import chisq_fit
+from bing.rt import defs as rt_defs
 
 # Locals
 from grab_pace_granules import closest_Rrs
@@ -73,6 +74,8 @@ def fit_me(items):
         variable_Gordon=True, include_Raman=True, 
         include_Chl_fl=True, phi_C=0.02, double_gaussian=True)
     models = model_utils.init(p.model_names, iwave)
+
+    # RT
     
     # Priors
     bing_priors.set_standard_priors(models, p)
@@ -92,8 +95,10 @@ def fit_me(items):
     p0 = [-1, 0.015, -1, -1, 1.5]
     items = [(ispec, isig**2, p0, 0)]
 
+    rt_dict = rt_defs.rt_dict_from_p(p)
+
     try:
-        ans, cov, idx = chisq_fit.fit(items[0], models, bounds=bounds)
+        ans, cov, idx = chisq_fit.fit(items[0], models, rt_dict, bounds=bounds)
     except RuntimeError:
         print("Fit failed: saving -999")
         return None, None, None, None
@@ -106,7 +111,7 @@ def fit_me(items):
 
     print("----- Fitting with MCMC -----")
     chains, idx = bing_inf.fit_one(
-        items[0], models=models, pdict=pdict, chains_only=True)
+        items[0], models=models, pdict=pdict, chains_only=True, rt_dict=rt_dict)
     stats = evaluate.calc_stats(chains)
 
      # Return
@@ -171,7 +176,7 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
 
     # Load PACE file
     gfile = os.path.join(biomass_io.PACE_L2_AOP_PATH,
-                     imatched.closest_file)
+                            imatched.closest_file)
     print(f"----- Loading {gfile} -----")
     xds, flags = pace_io.load_oci_l2(gfile)
 
@@ -609,7 +614,9 @@ if __name__ == '__main__':
 
     if test:
         # Load the matched file
-        imatched = matched.iloc[30]
+        imatched = matched.iloc[0]
+        imatched.closest_file = 'PACE_OCI.20250601T070425.L2.OC_AOP.V3_1.nc'
+        imatched.closest_id = 'PACE_OCI_L2_AOP_PACE_OCI.20250601T070425.L2.OC_AOP.V3_1.nc_3.1'
 
         # Fit one
         outfile = biomass_io.get_fit_file_path(imatched)

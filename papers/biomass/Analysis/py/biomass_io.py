@@ -95,7 +95,7 @@ def get_fit_file_path(matched_profile, base_dir=None):
     
     fit_file = os.path.join(base_dir, 'Biomass', 'Fits',
                             f'Argo_{matched_profile.cruise}_{matched_profile.profile:03d}_fits.npz')
-    assert os.path.isfile(fit_file), f"Fit file not found: {fit_file}"
+    #assert os.path.isfile(fit_file), f"Fit file not found: {fit_file}"
     
     return fit_file
 
