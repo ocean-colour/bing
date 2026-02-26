@@ -125,6 +125,7 @@ def match_argo_to_pace(out_file:str, dtime:str='1 day'):
 def scan_profiles(surface:float=20., N_surface:int=3, 
                   MLD:float=200., N_MLD:int=5,
                   argo_path:str=None):
+
     """ Search for Argo profiles with sufficient data """
     if argo_path is None:
         argo_path = os.path.join(os.getenv('OS_DATA'), 
