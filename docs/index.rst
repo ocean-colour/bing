@@ -33,6 +33,7 @@ Features
    tutorials/index
    api/index
    models
+   radiative_transfer
    fitting
    parameters
    data_processing

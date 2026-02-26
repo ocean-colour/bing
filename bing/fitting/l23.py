@@ -1,30 +1,68 @@
+"""
+Loisel et al. (2023) Synthetic Dataset Fitting Module
+======================================================
 
+This module provides functions for fitting bio-optical models to the
+Loisel et al. (2023) synthetic dataset, which consists of Hydrolight
+radiative transfer simulations spanning a wide range of water types.
+
+The module supports:
+- Loading and preprocessing individual spectra from the L23 dataset
+- Preparing data for MCMC or least-squares fitting
+- Single-spectrum and batch fitting workflows
+- Post-processing and analysis of fitting results
+
+The synthetic dataset is valuable for algorithm validation because it
+provides true IOPs for comparison with retrieved values.
+
+References
+----------
+- Loisel, H. et al. (2023). "Assessment of Standard Ocean Color
+  Semi-analytical Algorithms," Remote Sens. Environ.
+
+Examples
+--------
+>>> from bing.parameters import standard
+>>> from bing.fitting import l23
+>>>
+>>> # Set up parameters
+>>> p = standard.expb_pow(satellite='PACE', nsteps=40000)
+>>>
+>>> # Fit a single spectrum
+>>> chains, models, prep_dict, idx, extras = l23.fit_one(p, idx=170)
+"""
 from collections import namedtuple
 import os
 
 import numpy as np
-import pandas
+from scipy.interpolate import interp1d
 
 from functools import partial
 from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
+
+import pandas
 
 from ocpy.satellites import modis as sat_modis
 from ocpy.satellites import seawifs as sat_seawifs
 from ocpy.satellites import pace as sat_pace
 from ocpy.hydrolight import loisel23
 
+from correct_atmosphere import downwelling
+
 from bing import rt as bing_rt
+from bing.rt import defs as rt_defs
+from bing.rt import chl_fl
 from bing.models import utils as model_utils
 from bing.models import functions
 from bing.priors import priors as bing_priors
 from bing.fitting import inference as bing_inf
+from bing.fitting import chisq_fit
 
 from bing.preproc import convert_to_satwave
 from bing.noise import scale_noise, add_noise
 
-#import anly_utils_20
-
+from IPython import embed
 
 def load_one_l23(idx:int, step:int=1, 
                   ds=None, 
@@ -119,12 +157,16 @@ def load_one_l23(idx:int, step:int=1,
     ans, _ = functions.fit_Sdg(wave, adg,
                                  wv_min=wv_min)
 
-    # Cut down to 40 bands
+    # Cut down?
     Rrs = Rrs[::step]
     wave = wave[::step]
 
-    # Gordon
-    gordon_Rrs = bing_rt.calc_Rrs(a, bb)
+    # Prep for Raman
+    f_a = interp1d(ds.Lambda.data, ds.a.data[idx])
+    f_bb = interp1d(ds.Lambda.data, ds.bb.data[idx])
+
+    # Standard Gordon
+    gordon_Rrs = bing_rt.calc_elastic_Rrs(a, bb)
 
     # Error
     #varRrs = (scl_noise * Rrs)**2
@@ -138,7 +180,7 @@ def load_one_l23(idx:int, step:int=1,
                  aw=ds.a.data[idx,iwave]-ds.anw.data[idx,iwave],
                  anw=ds.anw.data[idx,iwave],
                  adg=adg, aph=aph, Sdg=float(ans[1]),
-                 ag=ag,
+                 ag=ag, f_a=f_a, f_bb=f_bb,
                  Y=Y, Chl=Chl)
 
     return odict
@@ -146,27 +188,72 @@ def load_one_l23(idx:int, step:int=1,
 def prep_one_l23(p, idx, chk:bool=False):
     """
     Prepare data and models for L23 fitting.
-    This function initializes the necessary data, models, priors, and MCMC 
-    parameters for fitting L23 data. It also handles wavelength conversions, 
-    noise scaling, and initial guesses for the fitting process.
-    Args:
-        p (object): Parameter object containing configuration settings such as 
-            wavelength range (`wv_min`, `wv_max`), satellite type (`satellite`), 
-            model names (`model_names`), number of MCMC steps (`nsteps`), 
-            burn-in steps (`nburn`), and other prior settings.
-        idx (int): Index used to load specific L23 data.
-        chk (bool, optional): If True, checks the initial guess for Rrs and 
-            prints the relative difference. Defaults to False.
-    Returns:
-        dict: A dictionary containing the following keys:
-            - 'odict': Dictionary with loaded L23 data.
-            - 'model_Rrs': Modeled remote sensing reflectance (Rrs).
-            - 'model_varRrs': Variance of the modeled Rrs after scaling noise.
-            - 'p0': Initial guess for model parameters.
-            - 'pdict': Dictionary containing MCMC initialization parameters.
-            - 'models': List of initialized models for fitting.
-    Raises:
-        ValueError: If the satellite type specified in `p.satellite` is unknown.
+
+    This function initializes the necessary data, models, priors, and MCMC
+    parameters for fitting L23 data. It handles wavelength conversions,
+    noise scaling, radiative transfer configuration (including Raman
+    scattering), and initial parameter guesses.
+
+    Parameters
+    ----------
+    p : namedtuple
+        Parameter object containing configuration settings:
+        - wv_min, wv_max : float
+            Wavelength range for fitting
+        - satellite : str
+            Satellite type ('PACE', 'MODIS', 'SeaWiFS', 'SBG', 'L23')
+        - model_names : list of str
+            Names of absorption and backscattering models
+        - nsteps, nburn : int
+            MCMC chain length and burn-in period
+        - scl_noise : float or str
+            Noise scaling factor or satellite identifier
+        - add_noise : bool
+            Whether to add synthetic noise to Rrs
+        - beta : float or None
+            Fixed backscattering slope (if not None, overrides computed Y)
+        - variable_Gordon : bool
+            Use wavelength-dependent Gordon coefficients
+        - include_Raman : bool
+            Include Raman scattering correction
+        - apriors, bpriors : list of dict
+            Prior specifications for model parameters
+        - othera_priors : list of dict or None
+            Additional priors for absorption model
+    idx : int
+        Index of the spectrum in the L23 dataset (0-3319).
+    chk : bool, optional
+        If True, prints diagnostic information comparing the initial guess
+        Rrs to the observed Rrs. Default is False.
+
+    Returns
+    -------
+    dict
+        Dictionary containing prepared fitting inputs:
+        - 'odict' : dict
+            Original L23 data (Rrs, IOPs, chlorophyll, etc.)
+        - 'model_Rrs' : np.ndarray
+            Rrs interpolated to satellite wavelengths
+        - 'model_varRrs' : np.ndarray
+            Rrs variance from noise model
+        - 'p0' : np.ndarray
+            Initial parameter guess (in log10 space for amplitudes)
+        - 'pdict' : dict
+            MCMC configuration (Chl, Y arrays for batch processing)
+        - 'models' : list
+            Initialized [absorption, backscattering] model objects
+        - 'G1', 'G2' : np.ndarray or None
+            Gordon coefficients (if variable_Gordon=True)
+
+    Raises
+    ------
+    ValueError
+        If satellite type is not recognized.
+
+    See Also
+    --------
+    load_one_l23 : Load raw L23 data.
+    fit_one : Use prepared data to run MCMC fitting.
     """
     odict = load_one_l23(idx, wv_min=p.wv_min, wv_max=p.wv_max)
 
@@ -212,15 +299,59 @@ def prep_one_l23(p, idx, chk:bool=False):
     # Initialize the MCMC
     pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
     
-    # Gordon Rrs
-    gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'])
+    # Radiative Transfer
 
+    ## Gordon coefficients
+    if p.variable_Gordon:
+        G1, G2 = bing_rt.rrs.wave_dependent_gordon(model_wave)
+    else: 
+        G1, G2 = None, None
+    models[0].G1 = G1
+    models[0].G2 = G2
+    models[1].G1 = G1
+    models[1].G2 = G2
+
+    ## Raman
+    if p.include_Raman:
+        a_ex = odict['f_a'](models[0].wave_ex)
+        bb_ex = odict['f_bb'](models[1].wave_ex)
+    else:
+        a_ex = None
+        bb_ex = None
+
+    ## Calculate Rrs
+    gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'],
+        in_G1=G1, in_G2=G2, a_ex = a_ex, bb_ex=bb_ex,
+        bb_R=models[1].bb_R)
+    
+    ## Chl fluorescence
+    if p.include_Chl_fl:
+        Ed = downwelling.downwelling_irradiance(models[0].wave, 0.)
+        Ed_em = downwelling.downwelling_irradiance(chl_fl.LAMBDA_FL_PRIMARY, 0.)
+        models[0].init_Chl_fluorescence(Ed=Ed, Ed_em=Ed_em)
+        gordon_Rrs += bing_rt.calc_Rrs_fluorescence(
+            models[0].wave, odict['a'], odict['bb'],
+            odict['a'][models[0].i_Chl_ex],
+            odict['bb'][models[0].i_Chl_ex],
+            odict['aph'][models[0].i_Chl_ex],
+            models[0].wave[models[0].i_Chl_ex],
+            models[0].Ed_ex,
+            models[0].Ed_em,
+            phi_C=p.phi_C, double_gaussian=p.double_gaussian)
+    # Gordon only
+    orig_gordon_Rrs = bing_rt.calc_elastic_Rrs(odict['a'], odict['bb'],
+                                 in_G1=G1, in_G2=G2)
+
+    #embed(header='254 of l23.py')
+
+    # Other bits and pieces
     model_Rrs = convert_to_satwave(l23_wave, gordon_Rrs, model_wave)
     model_anw = convert_to_satwave(l23_wave, odict['anw'], model_wave)
     model_bbnw = convert_to_satwave(l23_wave, odict['bbnw'], model_wave)
     model_varRrs = scale_noise(p.scl_noise, model_Rrs, model_wave)
-
     orig_model_Rrs = model_Rrs.copy()
+
+    # Noise
     if p.add_noise:
         model_Rrs = add_noise(
                 orig_model_Rrs, abs_sig=np.sqrt(model_varRrs))
@@ -259,6 +390,8 @@ def prep_one_l23(p, idx, chk:bool=False):
     ret_dict['p0'] = p0
     ret_dict['pdict'] = pdict
     ret_dict['models'] = models
+    ret_dict['G1'] = G1
+    ret_dict['G2'] = G2
 
     return ret_dict
     
@@ -266,14 +399,64 @@ def prep_one_l23(p, idx, chk:bool=False):
 def fit_one(p:namedtuple, idx:int,
         debug:bool=False, p0:np.ndarray=None):
     """
-    Fits a model to the data for a given index.
+    Fit a bio-optical model to a single L23 spectrum using MCMC.
 
-    Args:
-        model_names (list): List of model names.
-        idx (int): Index of the data.
-    Returns:
-        tuple: Tuple containing the fitted parameters,
-            models, the index, and additional information.
+    This function prepares data from the Loisel et al. (2023) synthetic dataset,
+    initializes the models and priors, and runs MCMC sampling to estimate
+    posterior distributions for the model parameters.
+
+    Parameters
+    ----------
+    p : namedtuple
+        Configuration parameters containing model settings, priors, and MCMC
+        parameters. Created using functions from bing.parameters.standard.
+        Required attributes include:
+        - model_names : list of str
+            Names of absorption and backscattering models (e.g., ['ExpB', 'Pow'])
+        - satellite : str
+            Satellite configuration ('PACE', 'MODIS', 'SeaWiFS', 'SBG', 'L23')
+        - wv_min, wv_max : float
+            Wavelength range limits
+        - nsteps, nburn : int
+            MCMC chain length and burn-in
+        - scl_noise : float or str
+            Noise scaling factor or satellite name
+        - apriors, bpriors : list of dict
+            Prior specifications for absorption and backscattering parameters
+    idx : int
+        Index of the spectrum in the L23 dataset (0-3319).
+    debug : bool, optional
+        If True, enables interactive debugging with embedded IPython.
+        Default is False.
+    p0 : np.ndarray, optional
+        Custom initial parameter guess. If None, uses automatic initialization
+        from the true IOPs.
+
+    Returns
+    -------
+    chains : np.ndarray
+        MCMC chains with shape (nsteps, nwalkers, nparam).
+    models : list
+        List containing [absorption_model, backscattering_model] objects.
+    prep_dict : dict
+        Dictionary containing prepared data and configuration:
+        - 'odict': Original L23 data dictionary
+        - 'model_Rrs': Modeled Rrs at satellite wavelengths
+        - 'model_varRrs': Rrs variance from noise model
+        - 'p0': Initial parameter guess
+        - 'pdict': MCMC configuration dictionary
+        - 'models': Model objects
+        - 'G1', 'G2': Gordon coefficients (if variable)
+    idx : int
+        Input index (echoed for tracking in batch processing).
+    extras : dict
+        Additional metadata including wavelengths, observed Rrs, Chl, and Y.
+
+    See Also
+    --------
+    prep_one_l23 : Prepare data and models for fitting.
+    fit_with_LM : Fit using Levenberg-Marquardt instead of MCMC.
+    batch_fit : Fit multiple spectra in parallel.
     """
     # Prep and unpack
     prep_dict = prep_one_l23(p, idx)
@@ -302,10 +485,13 @@ def fit_one(p:namedtuple, idx:int,
     #p0 -= 1
     items = [(model_Rrs, model_varRrs, p0, idx)]
 
+    # Radiative transfer dict
+    rt_dict = rt_defs.rt_dict_from_p(p)
 
     # Fit
     chains, idx = bing_inf.fit_one(
-            items[0], models=models, pdict=pdict, chains_only=True)
+            items[0], models=models, pdict=pdict, 
+            chains_only=True, rt_dict=rt_dict)
 
     # Show?
     if False:
@@ -364,7 +550,66 @@ def fit_one(p:namedtuple, idx:int,
     # Return
     return chains, models, prep_dict, idx, extras
 
+def fit_with_LM(p:namedtuple, idx:int, p0:np.ndarray=None):
+    """
+    Fit a bio-optical model to a single L23 spectrum using Levenberg-Marquardt.
 
+    This function provides a faster alternative to MCMC fitting using
+    scipy.optimize.curve_fit for least-squares optimization. It returns
+    point estimates and covariance matrix rather than full posterior samples.
+
+    Parameters
+    ----------
+    p : namedtuple
+        Configuration parameters containing model settings and priors.
+        Same structure as required by fit_one().
+    idx : int
+        Index of the spectrum in the L23 dataset (0-3319).
+    p0 : np.ndarray, optional
+        Custom initial parameter guess. If None, uses automatic initialization.
+
+    Returns
+    -------
+    ans : np.ndarray
+        Best-fit parameter values (in log10 space for amplitudes).
+    cov : np.ndarray
+        Covariance matrix of the fitted parameters.
+    models : list
+        List containing [absorption_model, backscattering_model] objects.
+    prep_dict : dict
+        Dictionary containing prepared data and configuration.
+    idx : int
+        Input index (echoed for tracking).
+
+    See Also
+    --------
+    fit_one : Fit using MCMC for full posterior estimation.
+    bing.fitting.chisq_fit.fit : Underlying least-squares fitting function.
+    """
+    prep_dict = prep_one_l23(p, idx)
+    models = prep_dict['models']
+    model_Rrs = prep_dict['model_Rrs']
+    model_varRrs = prep_dict['model_varRrs']
+    if p0 is None:
+        p0 = prep_dict['p0']
+
+    # Bounds
+    low_bounds, high_bounds = [], []
+    low_bounds += [item['pmin'] for item in p.apriors]
+    low_bounds += [item['pmin'] for item in p.bpriors]
+    high_bounds += [item['pmax'] for item in p.apriors]
+    high_bounds += [item['pmax'] for item in p.bpriors]
+    bounds = (np.array(low_bounds), np.array(high_bounds))
+
+    # Radiative transfer dict
+    rt_dict = rt_defs.rt_dict_from_p(p)
+
+    # Do it
+    items = [(model_Rrs, model_varRrs, p0, idx)]
+    ans, cov, idx = chisq_fit.fit(items[0], models, rt_dict,
+                bounds=bounds)
+
+    return ans, cov, models, prep_dict, idx
 
 def batch_fit(p, n_batch:int=5, n_cores:int=15, debug:bool=False,
         seed:bool=None, out_dir:str='../Analysis/Fits/'): 
@@ -390,6 +635,8 @@ def batch_fit(p, n_batch:int=5, n_cores:int=15, debug:bool=False,
         out_dir (str): The directory to save the output files. Default is '../Analysis/Fits/'.
 
     """
+    # RT
+    rt_dict = rt_defs.rt_dict_from_p(p)
     if seed is not None:
         np.random.seed(seed)
 
@@ -453,7 +700,7 @@ def batch_fit(p, n_batch:int=5, n_cores:int=15, debug:bool=False,
 
         # Fit
         all_samples, sub_idx = bing_inf.fit_batch(
-            models, pdict, items, n_cores=n_cores)
+            models, pdict, items, rt_dict, n_cores=n_cores)
 
         # Check
         assert np.all([item[3] for item in items] == sub_idx)
@@ -731,17 +978,37 @@ def chain_filename(p:namedtuple, idx:int=None, path:str='../Analysis/Fits/'):
 
 
 
-def save_chains(all_samples, all_idx, outfile, 
+def save_chains(all_samples, all_idx, outfile,
               extras:dict=None):
     """
-    Save the fitting results to a file.
+    Save MCMC fitting results to an NPZ file.
 
-    Parameters:
-        all_samples (numpy.ndarray): Array of fitting chains.
-        all_idx (numpy.ndarray): Array of indices.
-        Rs (numpy.ndarray): Array of Rs values.
-        use_Rs (numpy.ndarray): Array of observed Rs values.
-        outroot (str): Root name for the output file.
+    Parameters
+    ----------
+    all_samples : np.ndarray
+        MCMC chains with shape (nsteps, nwalkers, nparam).
+    all_idx : int or np.ndarray
+        Index or indices of the fitted spectrum/spectra in the dataset.
+    outfile : str
+        Path to the output NPZ file.
+    extras : dict, optional
+        Additional metadata to save, typically including:
+        - 'wave': Wavelength array
+        - 'obs_Rrs': Observed remote sensing reflectance
+        - 'varRrs': Rrs variance
+        - 'Chl': Chlorophyll concentration used for fitting
+        - 'Y': Backscattering spectral slope
+
+    Notes
+    -----
+    The output NPZ file will contain:
+    - 'chains': The MCMC chains
+    - 'idx': The dataset index
+    - Any additional keys from the extras dictionary
+
+    See Also
+    --------
+    chain_filename : Generate standardized output filenames.
     """  
     # Outdict
     outdict = dict()
