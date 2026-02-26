@@ -863,6 +863,18 @@ def test_raman_fitting_MCMC():
                     spec=prep_dict_R['model_Rrs'], var=prep_dict_R['model_varRrs']),
                 log_abb=True)
 
+def test_Chl_fitting_LM():
+    idx = 170
+
+    # Parameters
+    p_Chl = standard.expb_pow(satellite='PACE', add_noise=False, variable_Gordon=True, 
+        include_Raman=True, nsteps=10000, nburn=1000,
+        include_Chl_fl=True, phi_C=0.02, double_gaussian=True)
+
+    # Fit
+    ans, cov, models_LM, prep_dict_LM, idx = fit_l23.fit_with_LM(p_Chl, idx)
+
+
 def test_Chl_fitting_MCMC():
     idx = 170
 
