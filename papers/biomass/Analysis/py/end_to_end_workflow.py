@@ -65,7 +65,7 @@ def main(flg):
             match_file, granule_file, IOP=False, L1B=False)
 
     # Find closest PACE granules (with good Rrs)
-    if flg == 4:
+    if flg == 5:
         match_file='matched_argo_bgc_profiles_bbp_v2.csv'
         granule_file = 'PACE_50clouds_v31.json'
         grab_pace_granules.find_closest(
