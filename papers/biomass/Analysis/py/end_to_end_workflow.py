@@ -46,16 +46,17 @@ def main(flg):
     if flg == 1:
         slurp_argo()
 
-    # Match Argo to PACE
-    if flg == 2:
-        out_file='matched_argo_bgc_profiles_bbp_v2.csv'
-        argo.match_argo_to_pace(out_file, dtime='1 day')
-    
     # Build the JSON file for PACE granules
-    if flg == 3:
+    if flg == 2:
         granule_file = 'PACE_50clouds_v31.json'
         grab_pace_granules.build_json(outfile=granule_file, 
             cloud_cover=(0,50))
+    
+    # Match Argo to PACE
+    if flg == 3:
+        out_file='matched_argo_bgc_profiles_bbp_v2.csv'
+        granule_file = 'PACE_50clouds_v31.json'
+        argo.match_argo_to_pace(granule_file, out_file, dtime='1 day')
     
     # Grab PACE AOP granules
     if flg == 4:

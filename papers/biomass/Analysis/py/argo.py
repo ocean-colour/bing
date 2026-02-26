@@ -42,11 +42,12 @@ def load_orig_argo(csv_file:str='argo_bgc_profiles_bbp.csv',
     # Return
     return df
 
-def match_argo_to_pace(out_file:str, dtime:str='1 day'):
+def match_argo_to_pace(granule_file:str, out_file:str, dtime:str='1 day'):
     """
     Matches Argo profiles to PACE granules based on spatial and temporal criteria.
 
     Parameters:
+        granule_file (str): The file path to the JSON file containing PACE granule data.
         out_file (str): The file path where the matched Argo profiles will be saved as a CSV.
         dtime (str, optional): The time window for matching Argo profiles to PACE granules. 
                                 Defaults to '1 day'. The format should be compatible with 
@@ -72,7 +73,7 @@ def match_argo_to_pace(out_file:str, dtime:str='1 day'):
     argo_pace = load_orig_argo()
 
     # Load up PACE granules
-    granules, pace = biomass_io.load_granules_from_json('PACE_50clouds.json')
+    granules, pace = biomass_io.load_granules_from_json(granule_file)
 
     # Check if in PACE granule
     all_inside = []
