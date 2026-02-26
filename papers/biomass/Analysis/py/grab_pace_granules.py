@@ -20,8 +20,7 @@ from IPython import embed
 
 # PACE Granule paths
 PACE_L2_AOP_PATH = os.path.join(os.getenv('OS_COLOR'),
-                                 'PACE',
-                                 'L2_AOP')
+                                 'PACE', 'L2_AOP')
 PACE_L2_IOP_PATH = PACE_L2_AOP_PATH.replace('AOP', 'IOP')
 PACE_L1B_PATH = os.path.join(os.getenv('OS_COLOR'),
                               'PACE', 'L1B')
@@ -168,7 +167,7 @@ def download_l1(json_file:str=None,
     os.makedirs(output_path, exist_ok=True)
 
     # Load granules from JSON
-    granules, pace_df = biomass_io.load_from_json(json_file)
+    granules, pace_df = biomass_io.load_granules_from_json(json_file)
 
     # Limit number of granules if specified
     if max_granules is not None:
@@ -201,7 +200,7 @@ def download_l1(json_file:str=None,
     print(f'Downloaded {len(downloaded_files)} {level} granule(s) to {output_path}')
     return downloaded_files
 
-def download_matched(match_file:str, IOP:bool=False, L1B:bool=False):
+def download_matched(match_file:str, granule_file:str, IOP:bool=False, L1B:bool=False):
     """ Downloads PACE granules matched to Argo profiles from a given CSV file.
 
     Args:
@@ -215,7 +214,7 @@ def download_matched(match_file:str, IOP:bool=False, L1B:bool=False):
     matched = pandas.read_csv(match_file)
 
     # Load up PACE granules
-    granules, pace = biomass_io.load_from_json('PACE_50clouds.json')
+    granules, pace = biomass_io.load_granules_from_json(granule_file)
 
     # Loop on Argo profiles
     for irow in range(len(matched)):
@@ -252,7 +251,7 @@ def download_matched(match_file:str, IOP:bool=False, L1B:bool=False):
             subprocess.run(['wget', '-O', outfile, url])
     print(f'Downloaded {len(matched)} Argo profiles to {path}')
 
-def find_closest(match_file:str, iRrs:int=38,
+def find_closest(match_file:str, granule_file:str, iRrs:int=38,
                  debug:bool=False, skip_to:int=None):
     """
     Finds the closest PACE granule for each Argo profile in the given match file.
@@ -263,6 +262,7 @@ def find_closest(match_file:str, iRrs:int=38,
 
     Args:
         match_file (str): Path to the CSV file containing matched Argo profiles and PACE IDs.
+        granule_file (str): Path to the JSON file containing PACE granule data.
         iRrs (int, optional): Index of the Rrs band to use for validation. Defaults to 38.
         debug (bool, optional): If True, processes only the first few rows for debugging. Defaults to False.
         skip_to (int, optional): If provided, skips processing rows until the specified index. Defaults to None.
@@ -283,7 +283,7 @@ def find_closest(match_file:str, iRrs:int=38,
     matched = pandas.read_csv(match_file)
 
     # Load up PACE granules
-    granules, pace = biomass_io.load_from_json('PACE_50clouds.json')
+    granules, pace = biomass_io.load_granules_from_json(granule_file)
 
     # Items to add to the table
     sv_ids = []

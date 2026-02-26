@@ -5,6 +5,8 @@ import argo
 
 import pandas
 
+import grab_pace_granules
+
 from IPython import embed
 
 def slurp_argo():
@@ -49,7 +51,27 @@ def main(flg):
         out_file='matched_argo_bgc_profiles_bbp_v2.csv'
         argo.match_argo_to_pace(out_file, dtime='1 day')
     
-    # Grab PACE IOP granules
+    # Build the JSON file for PACE granules
+    if flg == 3:
+        granule_file = 'PACE_50clouds_v31.json'
+        grab_pace_granules.build_json(outfile=granule_file, 
+            cloud_cover=(0,50))
+    
+    # Grab PACE AOP granules
+    if flg == 4:
+        match_file='matched_argo_bgc_profiles_bbp_v2.csv'
+        granule_file = 'PACE_50clouds_v31.json'
+        grab_pace_granules.download_matched(
+            match_file, granule_file, IOP=False, L1B=False)
+
+    # Find closest PACE granules (with good Rrs)
+    if flg == 4:
+        match_file='matched_argo_bgc_profiles_bbp_v2.csv'
+        granule_file = 'PACE_50clouds_v31.json'
+        grab_pace_granules.find_closest(
+            match_file, granule_file, iRrs=38, debug=False)
+
+    # Fit PACE
 
 # Command line
 if __name__ == '__main__':
