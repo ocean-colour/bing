@@ -303,13 +303,7 @@ def prep_one_l23(p, idx, chk:bool=False):
 
     ## Gordon coefficients
     if p.variable_Gordon:
-        G1, G2 = bing_rt.rrs.wave_dependent_gordon(model_wave)
-    else: 
-        G1, G2 = None, None
-    models[0].G1 = G1
-    models[0].G2 = G2
-    models[1].G1 = G1
-    models[1].G2 = G2
+        models[0].init_var_gordon()
 
     ## Raman
     if p.include_Raman:
@@ -321,7 +315,8 @@ def prep_one_l23(p, idx, chk:bool=False):
 
     ## Calculate Rrs
     gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'],
-        in_G1=G1, in_G2=G2, a_ex = a_ex, bb_ex=bb_ex,
+        in_G1=models[0].G1, in_G2=models[0].G2, 
+        a_ex = a_ex, bb_ex=bb_ex,
         bb_R=models[1].bb_R)
     
     ## Chl fluorescence
@@ -338,10 +333,6 @@ def prep_one_l23(p, idx, chk:bool=False):
             models[0].Ed_ex,
             models[0].Ed_em,
             phi_C=p.phi_C, double_gaussian=p.double_gaussian)
-    # Gordon only
-    orig_gordon_Rrs = bing_rt.calc_elastic_Rrs(odict['a'], odict['bb'],
-                                 in_G1=G1, in_G2=G2)
-
     #embed(header='254 of l23.py')
 
     # Other bits and pieces
@@ -390,8 +381,8 @@ def prep_one_l23(p, idx, chk:bool=False):
     ret_dict['p0'] = p0
     ret_dict['pdict'] = pdict
     ret_dict['models'] = models
-    ret_dict['G1'] = G1
-    ret_dict['G2'] = G2
+    ret_dict['G1'] = models[0].G1
+    ret_dict['G2'] = models[0].G2
 
     return ret_dict
     
