@@ -239,8 +239,12 @@ def download_matched(match_file:str, granule_file:str, IOP:bool=False, L1B:bool=
                 #embed(header='234 1B')
                 url = url.replace('L2.OC_AOP', 'L1B')
                 url = url.replace('V3_0', 'V3')
-            else:
+            else: # AOP
                 path = PACE_L2_AOP_PATH
+            # Generate path if need be
+            if not os.path.exists(path):
+                os.makedirs(path, exist_ok=True)
+            # Outfile
             outfile = os.path.join(path,
                 os.path.basename(url))
             # Check if already downloaded
