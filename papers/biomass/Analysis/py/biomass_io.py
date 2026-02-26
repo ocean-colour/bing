@@ -7,7 +7,7 @@ from ocpy.utils import io as ocpy_io
 
 from remote_sensing.download import earthaccess as rs_ea
 
-def load_from_json(json_file:str):
+def load_granules_from_json(json_file:str):
     """
     Load granule data from a JSON file and build a corresponding data table.
 
@@ -56,7 +56,7 @@ def load_matched_data(match_file='matched_argo_bgc_profiles_bbp.csv',
     matched = pandas.read_csv(match_file)
     
     # Load up PACE granules
-    granules, pace = load_from_json(pace_json)
+    granules, pace = load_granules_from_json(pace_json)
     
     return matched, granules, pace
 

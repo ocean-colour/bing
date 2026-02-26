@@ -2,7 +2,6 @@
 
 import os
 import glob
-import datetime
 
 import numpy as np
 
@@ -14,20 +13,22 @@ import pysolar
 from shapely.vectorized import contains
 
 # Local imports
-import grab_pace_granules
-import gpolygons
+import biomass_io
 
 from IPython import embed
 
 
-
 def load_orig_argo(csv_file:str='argo_bgc_profiles_bbp.csv',
               cut_for_pace:bool=True):
+    """ Load original Argo profiles with good bbp data from a CSV file """
+
+    print(f'Loading original Argo profiles from {csv_file}')
     df = pandas.read_csv(csv_file)
     df['time'] = pandas.to_datetime(df.time.values, utc=True)
 
     # Cut for PACE?
     if cut_for_pace:
+        print(f'Cutting for PACE dates')
         old_enough = df.time > pandas.Timestamp('2024-04-01', tz='UTC')
         df = df[old_enough].copy()
         # Drop index
@@ -71,7 +72,7 @@ def match_argo_to_pace(out_file:str, dtime:str='1 day'):
     argo_pace = load_orig_argo()
 
     # Load up PACE granules
-    granules, pace = grab_pace_granules.load_from_json('PACE_50clouds.json')
+    granules, pace = biomass_io.load_granules_from_json('PACE_50clouds.json')
 
     # Check if in PACE granule
     all_inside = []
@@ -122,11 +123,11 @@ def match_argo_to_pace(out_file:str, dtime:str='1 day'):
     argo_matched.to_csv(out_file, index=False)
     print(f'Wrote {len(argo_matched)} profiles to {out_file}')
 
-def scan_profiles(surface:float=20., N_surface:int=3, 
+def scan_mbari_profiles(surface:float=20., N_surface:int=3, 
                   MLD:float=200., N_MLD:int=5,
-                  argo_path:str=None):
+                  argo_path:str=None, outfile:str=None): 
+    """ Search for Argo profiles from MBARI processing with sufficient data """
 
-    """ Search for Argo profiles with sufficient data """
     if argo_path is None:
         argo_path = os.path.join(os.getenv('OS_DATA'), 
                              'Argo', 
@@ -149,6 +150,7 @@ def scan_profiles(surface:float=20., N_surface:int=3,
     for ifile in all_files:
         base_file = os.path.basename(ifile)
         print(f'Examining {base_file}')
+
         # Load the dataset
         ds = xarray.open_dataset(ifile)
 
@@ -162,7 +164,7 @@ def scan_profiles(surface:float=20., N_surface:int=3,
             prof = ds.sel(N_PROF=iprof)
 
             # QC
-            good = prof.b_bp700_QF.data == b'0'
+            good = prof['b_bp700_QF'].data == b'0'
             if not np.any(good):
                 continue
 
@@ -183,8 +185,8 @@ def scan_profiles(surface:float=20., N_surface:int=3,
             filenames.append(base_file)
             cruises.append(str(prof.Cruise.data.astype(str)).strip())
             profiles.append(int(iprof))
-            lats.append(float(prof.Lat))
-            lons.append(float(prof.Lon))
+            lats.append(float(prof.Lat.data))
+            lons.append(float(prof.Lon.data))
 
             times.append(prof.JULD.values)
             tstamp = pandas.to_datetime(times[-1], utc=True)
@@ -206,10 +208,104 @@ def scan_profiles(surface:float=20., N_surface:int=3,
     })
 
     # Write
-    outfile = 'argo_bgc_profiles_bbp.csv'
-    df.to_csv(outfile, index=False)
-    print(f'Wrote {len(df)} profiles to {outfile}')
+    if outfile is not None:
+        df.to_csv(outfile, index=False)
+        print(f'Wrote {len(df)} profiles to {outfile}')
+    
+    # Return
+    return df
 
+
+
+def scan_ocean_bio_profiles(data_file:str, surface:float=20., N_surface:int=3, 
+                  MLD:float=200., N_MLD:int=5, outfile:str=None): 
+    """ Search for Argo profiles from MBARI processing with sufficient data """
+
+    filenames = []
+    cruises = []
+    profiles = []
+    lats = []
+    lons = []
+    times = []
+    solar_angles = []
+
+    # Loop on em
+    base_file = os.path.basename(data_file)
+    print(f'Examining {base_file}')
+
+    # Load the dataset
+    ds = xarray.open_dataset(data_file)
+    # Check for bbp
+    if 'Particle_backscattering_at_700_nm_adjusted__qc' not in ds.variables:
+        raise ValueError(f'No bbp data in {data_file}')
+
+    # Loop on unique cruise
+    uni_cruises = np.unique(ds.cruise_id.values)
+
+    for cruise in uni_cruises:
+        cruise_idx = np.where(ds.cruise_id.values == cruise)[0]
+
+        # Loop on profiles
+        iprof = 0
+        for idx in cruise_idx:
+            prof = ds.isel(N_STATIONS=idx)
+            # QC
+            good = prof['Particle_backscattering_at_700_nm_adjusted__qc'].data <= 50
+
+            if not np.any(good):
+                continue
+
+            # Depth
+            good_depth = prof['Pressure_adjusted_'].data[good]
+
+            # Examine
+            near_surface = np.sum(good_depth < surface) > N_surface
+            if not near_surface:
+                continue
+
+            # Do 200m too
+            inMLD = np.sum((good_depth > surface) & (good_depth < MLD)) > N_MLD
+            if not inMLD:
+                continue
+
+            # Keep em!
+            filenames.append(base_file)
+            cruises.append(str(prof.cruise_id.data.astype(str)).strip())
+            profiles.append(int(iprof))
+            lats.append(float(prof.latitude.data))
+            lons.append(float(prof.longitude.data))
+
+            times.append(prof.date_time.values)
+            tstamp = pandas.to_datetime(times[-1], utc=True)
+            solar_angles.append(
+                float(pysolar.solar.get_altitude(lats[-1],
+                              lons[-1],
+                              tstamp)))
+            # Increment
+            iprof += 1
+            #embed(header='285 of argo')
+
+    # Generate a DataFrame
+    df = pandas.DataFrame({
+        'cruise': cruises,
+        'filename': filenames,
+        'profile': profiles,
+        'lat': lats,
+        'lon': lons,
+        'time': times,
+        'solar_angle': solar_angles
+    })
+
+    # Write
+    if outfile is not None:
+        df.to_csv(outfile, index=False)
+        print(f'Wrote {len(df)} profiles to {outfile}')
+    
+    # Return
+    return df
+
+'''
+NOW RUN FROM end_to_end_workflow.py
 
 if __name__ == '__main__':
 
@@ -229,3 +325,4 @@ if __name__ == '__main__':
     if match:
         out_file='matched_argo_bgc_profiles_bbp.csv'
         match_argo_to_pace(out_file, dtime='1 day')
+'''
