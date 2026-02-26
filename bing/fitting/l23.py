@@ -48,8 +48,11 @@ from ocpy.satellites import seawifs as sat_seawifs
 from ocpy.satellites import pace as sat_pace
 from ocpy.hydrolight import loisel23
 
+from correct_atmosphere import downwelling
+
 from bing import rt as bing_rt
 from bing.rt import defs as rt_defs
+from bing.rt import chl_fl
 from bing.models import utils as model_utils
 from bing.models import functions
 from bing.priors import priors as bing_priors
@@ -320,7 +323,21 @@ def prep_one_l23(p, idx, chk:bool=False):
     gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'],
         in_G1=G1, in_G2=G2, a_ex = a_ex, bb_ex=bb_ex,
         bb_R=models[1].bb_R)
-
+    
+    ## Chl fluorescence
+    if p.include_Chl_fl:
+        Ed = downwelling.downwelling_irradiance(models[0].wave, 0.)
+        Ed_em = downwelling.downwelling_irradiance(chl_fl.LAMBDA_FL_PRIMARY, 0.)
+        models[0].init_Chl_fluorescence(Ed=Ed, Ed_em=Ed_em)
+        gordon_Rrs += bing_rt.calc_Rrs_fluorescence(
+            models[0].wave, odict['a'], odict['bb'],
+            odict['a'][models[0].i_Chl_ex],
+            odict['bb'][models[0].i_Chl_ex],
+            odict['aph'][models[0].i_Chl_ex],
+            models[0].wave[models[0].i_Chl_ex],
+            models[0].Ed_ex,
+            models[0].Ed_em,
+            phi_C=p.phi_C, double_gaussian=p.double_gaussian)
     # Gordon only
     orig_gordon_Rrs = bing_rt.calc_elastic_Rrs(odict['a'], odict['bb'],
                                  in_G1=G1, in_G2=G2)

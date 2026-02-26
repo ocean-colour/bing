@@ -448,7 +448,7 @@ def calc_Rrs_fluorescence(
     if ndim == 1:
         kappa_F_em_peak = kappa_F_em[ipeak]
     else:
-        kappa_F_em_peak = kappa_F_em[..., ipeak]
+        kappa_F_em_peak = np.outer(kappa_F_em[..., ipeak], np.ones(a_ex.shape[1]))
 
     # Integrate over excitation wavelengths
     K_ex = (a_ex + bb_ex) / mu_d
@@ -460,6 +460,7 @@ def calc_Rrs_fluorescence(
     lambda_ratio = wavelength_ex / chl_fl.LAMBDA_FL_PRIMARY #wavelength[ipeak]
 
     # Contribution from each excitation wavelength
+    #embed(header='463 of rrs.py')
     integrand = Ed_ex * lambda_ratio * (bb_F / mu_d) / (K_ex + kappa_F_em_peak)
 
     # Integrate
@@ -472,13 +473,16 @@ def calc_Rrs_fluorescence(
     R_F /= Ed_em
 
     # Convert subsurface reflectance to Rrs
-    Rrs_fl = h_C * A_Rrs * R_F / (1 - B_Rrs * R_F)
+    if ndim == 1:
+        Rrs_fl = h_C * A_Rrs * R_F / (1 - B_Rrs * R_F)
+    else:
+        Rrs_fl = A_Rrs * R_F / (1 - B_Rrs * R_F)
+        Rrs_fl = np.outer(Rrs_fl, h_C)
 
     if ndim == 2 and a_ex.shape[0] == 1:
         # Make it 2D with same shape as a_ex
         Rrs_fl = Rrs_fl.reshape(a_ex.shape[0], -1)
 
-    #return np.squeeze(Rrs_fl)
     return Rrs_fl
 
 

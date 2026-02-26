@@ -250,6 +250,11 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
     else:
         a_ex, bb_ex, bb_R = None, None, None
 
+    # Make a_ph before deleting chains
+    if rt_dict['include_Chl_fl']:
+        aph = (10**chains[...,models[0].nparam-1:models[0].nparam]) * models[0].a_ph
+        aph_ex = aph[...,models[0].i_Chl_ex]
+
     del chains
 
     # Calculate the mean and standard deviation
@@ -263,6 +268,22 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
     # Calculate the model Rrs
     Rrs = bing_rrs.calc_Rrs(a, bb, in_G1=models[0].G1, in_G2=models[0].G2,
             a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
+
+    if rt_dict['include_Chl_fl']:
+        #embed(header='268 of evaluate.py')
+        # Call me
+        Rrs_fl = bing_rrs.calc_Rrs_fluorescence(
+            models[0].wave, a, bb,
+            a[:,models[0].i_Chl_ex],
+            bb[:,models[0].i_Chl_ex],
+            aph_ex, 
+            np.outer(np.ones(a.shape[0]), models[0].wave[models[0].i_Chl_ex]),
+            np.outer(np.ones(a.shape[0]), models[0].Ed_ex),
+            models[0].Ed_em,
+            phi_C=rt_dict['phi_C'],
+            double_gaussian=rt_dict['double_gaussian'])
+        # Add
+        Rrs += Rrs_fl
 
     # Stats
     sigRs = np.std(Rrs, axis=0)
