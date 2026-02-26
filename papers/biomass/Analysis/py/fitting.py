@@ -36,14 +36,14 @@ import biomass_io
 
 from IPython import embed
 
-def chains_to_param(fit:dict):
-    iwave = fit['wave']
-
-    # Init models
-    p = standard.expb_pow()
-    models = model_utils.init(p.model_names, iwave)
-    bing_priors.set_standard_priors(models, p)
-    pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
+#def chains_to_param(fit:dict):
+#    iwave = fit['wave']
+#
+#    # Init models
+#    p = standard.expb_pow()
+#    models = model_utils.init(p.model_names, iwave)
+#    bing_priors.set_standard_priors(models, p)
+#    pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
 
 
 def fit_me(items):
@@ -76,6 +76,8 @@ def fit_me(items):
     models = model_utils.init(p.model_names, iwave)
 
     # RT
+    if p.variable_Gordon:
+        models[0].init_var_gordon()
     
     # Priors
     bing_priors.set_standard_priors(models, p)
@@ -96,6 +98,7 @@ def fit_me(items):
     items = [(ispec, isig**2, p0, 0)]
 
     rt_dict = rt_defs.rt_dict_from_p(p)
+    embed(header='101 of fitting.py')
 
     try:
         ans, cov, idx = chisq_fit.fit(items[0], models, rt_dict, bounds=bounds)
@@ -207,7 +210,8 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
         items.append((iwave, ispec, isig))
 
     # Fit
-    #models, chains, ans, stats = fit_me([iwave, ispec, isig])
+    if debug:
+        models, chains, ans, stats = fit_me(items[0]) 
 
     with ProcessPoolExecutor(max_workers=n_cores) as executor:
         chunksize = nclosest // n_cores if nclosest // n_cores > 0 else 1
@@ -620,7 +624,7 @@ if __name__ == '__main__':
 
         # Fit one
         outfile = biomass_io.get_fit_file_path(imatched)
-        fit_one(imatched, outfile, nclosest=10)#, debug=True)
+        fit_one(imatched, outfile, nclosest=10, debug=True)
 
     if fit_em:
         clobber = False
