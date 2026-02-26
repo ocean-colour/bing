@@ -19,13 +19,6 @@ import biomass_io
 from IPython import embed
 
 # PACE Granule paths
-#PACE_L2_AOP_PATH = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_AOP')
-PACE_L2_AOP_PATH = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_AOP_V3_1')
-PACE_L2_IOP_PATH = PACE_L2_AOP_PATH.replace('AOP', 'IOP')
-PACE_L1B_PATH = os.path.join(os.getenv('OS_COLOR'),
-                              'PACE', 'L1B')
-PACE_L1C_PATH = os.path.join(os.getenv('OS_COLOR'),
-                              'PACE', 'L1C')
 
 # Short names for earthaccess searches
 PACE_SHORT_NAMES = {
@@ -36,8 +29,8 @@ PACE_SHORT_NAMES = {
 
 # Output paths for each level
 PACE_L1_PATHS = {
-    'L1B': PACE_L1B_PATH,
-    'L1C': PACE_L1C_PATH,
+    'L1B': biomass_io.PACE_L1B_PATH,
+    'L1C': biomass_io.PACE_L1C_PATH,
 }
 
 def build_json(outfile:str='PACE_50clouds.json', dataset:str='AOP',
@@ -231,16 +224,16 @@ def download_matched(match_file:str, granule_file:str, IOP:bool=False, L1B:bool=
 
             url = granule.url
             if IOP: 
-                path = PACE_L2_IOP_PATH
+                path = biomass_io.PACE_L2_IOP_PATH
                 url = url.replace('AOP', 'IOP')
                 url = url.replace('V3_0', 'V3_1')
             elif L1B: 
-                path = PACE_L1B_PATH
+                path = biomass_io.PACE_L1B_PATH
                 #embed(header='234 1B')
                 url = url.replace('L2.OC_AOP', 'L1B')
                 url = url.replace('V3_0', 'V3')
             else: # AOP
-                path = PACE_L2_AOP_PATH
+                path = biomass_io.PACE_L2_AOP_PATH
             # Generate path if need be
             if not os.path.exists(path):
                 os.makedirs(path, exist_ok=True)
@@ -313,7 +306,7 @@ def find_closest(match_file:str, granule_file:str, iRrs:int=38,
             granule = pace.iloc[ss]
             #embed(header=f'Granule for {pace_id}')
 
-            pace_file = os.path.join(PACE_L2_AOP_PATH,
+            pace_file = os.path.join(biomass_io.PACE_L2_AOP_PATH,
                 os.path.basename(granule.url))
 
             # Load up
@@ -354,12 +347,12 @@ def find_closest(match_file:str, granule_file:str, iRrs:int=38,
 
     # Debug?
     if debug:
-        embed(header='152 of grab')
         print(f'Debug mode, only processed {irow+1} of {len(matched)}')
         cut = np.array([False]*len(matched))
         cut[:irow+1] = True
         matched = matched[cut].copy()
         matched.reset_index(drop=True, inplace=True)
+        embed(header='355 of grab')
 
     # Add to table
     #embed(header='160 of grab')
@@ -369,7 +362,8 @@ def find_closest(match_file:str, granule_file:str, iRrs:int=38,
     matched['closest_time'] = sv_time
 
     # Write
-    matched.to_csv(match_file, index=False)
+    if not debug:
+        matched.to_csv(match_file, index=False)
 
 def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38, nclosest:int=1):
     """

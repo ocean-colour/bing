@@ -7,6 +7,14 @@ from ocpy.utils import io as ocpy_io
 
 from remote_sensing.download import earthaccess as rs_ea
 
+#PACE_L2_AOP_PATH = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_AOP')
+PACE_L2_AOP_PATH = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_AOP_V3_1')
+PACE_L2_IOP_PATH = PACE_L2_AOP_PATH.replace('AOP', 'IOP')
+PACE_L1B_PATH = os.path.join(os.getenv('OS_COLOR'),
+                              'PACE', 'L1B')
+PACE_L1C_PATH = os.path.join(os.getenv('OS_COLOR'),
+                              'PACE', 'L1C')
+
 def load_granules_from_json(json_file:str):
     """
     Load granule data from a JSON file and build a corresponding data table.

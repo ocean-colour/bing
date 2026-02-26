@@ -8,7 +8,6 @@ import matplotlib as mpl
 import matplotlib.gridspec as gridspec
 import matplotlib.image as mpimg
 
-from papers.biomass.Analysis.py import biomass_io
 mpl.rcParams['font.family'] = 'stixgeneral'
 
 from functools import partial
@@ -32,6 +31,7 @@ from bing.fitting import chisq_fit
 
 # Locals
 from grab_pace_granules import closest_Rrs
+import biomass_io
 
 from IPython import embed
 
@@ -44,14 +44,40 @@ def chains_to_param(fit:dict):
     bing_priors.set_standard_priors(models, p)
     pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
 
+
 def fit_me(items):
+    """
+    Fit a single spectrum.
+
+    Parameters:
+    -----------
+    items : list
+        A list containing the following items:
+        - iwave : numpy.ndarray
+        - ispec : numpy.ndarray
+        - isig : numpy.ndarray
+
+    Returns:
+    --------
+    tuple: (models, chains, ans, stats)
+        - models : list
+        - chains : numpy.ndarray
+        - ans : numpy.ndarray
+        - stats : dict
+    """
 
     iwave, ispec, isig = items
 
     # Init models
-    p = standard.expb_pow()
+    p = standard.expb_pow(satellite='PACE', add_noise=False, 
+        variable_Gordon=True, include_Raman=True, 
+        include_Chl_fl=True, phi_C=0.02, double_gaussian=True)
     models = model_utils.init(p.model_names, iwave)
+    
+    # Priors
     bing_priors.set_standard_priors(models, p)
+
+    # Initialize the MCMC
     pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
 
     # Fit with LM for first guess
@@ -144,7 +170,7 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
     out_dict = {}
 
     # Load PACE file
-    gfile = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_AOP', 
+    gfile = os.path.join(biomass_io.PACE_L2_AOP_PATH,
                      imatched.closest_file)
     print(f"----- Loading {gfile} -----")
     xds, flags = pace_io.load_oci_l2(gfile)
@@ -570,11 +596,12 @@ def slurp_fits(matched, debug:bool=False):
 # Command line
 if __name__ == '__main__':
 
-    test = False
+    test = True
     fit_em = False
-    slurp_em = True
+    slurp_em = False
 
-    match_file = 'matched_argo_bgc_profiles_bbp.csv'
+    #match_file = 'matched_argo_bgc_profiles_bbp.csv'
+    match_file = 'matched_argo_bgc_profiles_bbp_v2.csv'
     # Load up Argo profiles, already matched to PACE
     matched = pandas.read_csv(match_file)
 
@@ -585,7 +612,7 @@ if __name__ == '__main__':
         imatched = matched.iloc[30]
 
         # Fit one
-        outfile = set_outfile(imatched)
+        outfile = biomass_io.get_fit_file_path(imatched)
         fit_one(imatched, outfile, nclosest=10)#, debug=True)
 
     if fit_em:
