@@ -17,18 +17,23 @@ from tqdm import tqdm
 import corner
 import pandas
 
+
 from ocpy.water import absorption
 from ocpy.water import scattering as w_scattering
 from ocpy.utils import plotting
 from ocpy.pace import io as pace_io
 
+from correct_atmosphere import downwelling
+
 from bing import evaluate
+from bing import plotting as bing_plot
 from bing.parameters import standard
 from bing.models import utils as model_utils
 from bing.priors import priors as bing_priors
 from bing.fitting import inference as bing_inf
 from bing.fitting import chisq_fit
 from bing.rt import defs as rt_defs
+from bing.rt import chl_fl
 
 # Locals
 from grab_pace_granules import closest_Rrs
@@ -46,7 +51,7 @@ from IPython import embed
 #    pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
 
 
-def fit_me(items):
+def fit_me(items, debug:bool=False, in_p=None, return_early:bool=False):
     """
     Fit a single spectrum.
 
@@ -65,19 +70,29 @@ def fit_me(items):
         - chains : numpy.ndarray
         - ans : numpy.ndarray
         - stats : dict
+        - rt_dict : dict
     """
 
     iwave, ispec, isig = items
 
     # Init models
-    p = standard.expb_pow(satellite='PACE', add_noise=False, 
-        variable_Gordon=True, include_Raman=True, 
-        include_Chl_fl=True, phi_C=0.02, double_gaussian=True)
+    if in_p is None:
+        p = standard.expb_pow(satellite='PACE', add_noise=False, 
+            variable_Gordon=True, include_Raman=True, 
+            include_Chl_fl=True, phi_C=0.02, double_gaussian=True)
+    else:
+        p = in_p
+    #p = standard.expb_pow(satellite='PACE', add_noise=False, 
+    #    variable_Gordon=True)
     models = model_utils.init(p.model_names, iwave)
 
     # RT
     if p.variable_Gordon:
         models[0].init_var_gordon()
+    if p.include_Chl_fl:
+        Ed = downwelling.downwelling_irradiance(models[0].wave, 0.)
+        Ed_em = downwelling.downwelling_irradiance(chl_fl.LAMBDA_FL_PRIMARY, 0.)
+        models[0].init_Chl_fluorescence(Ed=Ed, Ed_em=Ed_em)
     
     # Priors
     bing_priors.set_standard_priors(models, p)
@@ -98,13 +113,26 @@ def fit_me(items):
     items = [(ispec, isig**2, p0, 0)]
 
     rt_dict = rt_defs.rt_dict_from_p(p)
-    embed(header='101 of fitting.py')
+    #embed(header='101 of fitting.py')
 
     try:
         ans, cov, idx = chisq_fit.fit(items[0], models, rt_dict, bounds=bounds)
     except RuntimeError:
         print("Fit failed: saving -999")
         return None, None, None, None
+    
+    # Return here?
+    if return_early:
+        return models, ans, rt_dict 
+    
+    # Plot?
+    if debug:
+        embed(header='121 of fitting.py')
+        Chl = 10**ans[2] / 0.05582
+        _ = bing_plot.show_fits(models, ans, rt_dict, Chl, None,
+                figsize=(12,4), fontsize=13., show=True,
+                Rrs_true=dict(wave=models[0].wave, spec=ispec, var=isig**2),
+                log_abb=True )
 
     # Now the MCMC
     p0 = ans.tolist()
@@ -118,7 +146,7 @@ def fit_me(items):
     stats = evaluate.calc_stats(chains)
 
      # Return
-    return models, chains, ans, stats
+    return models, chains, ans, stats, rt_dict
 
 def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
             nclosest:int=1, n_cores:int=10):
@@ -192,8 +220,8 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
         np.savez(outfile, **out_dict)
         return
 
-    if debug:
-        embed(header='44 of fitting.py')
+    #if debug:
+    #    embed(header='196 of fitting.py')
 
     # Parse out the data
     gd_wave = (xds.wavelength.data >= 400.) &  (xds.wavelength.data <= 700.) 
@@ -211,7 +239,7 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
 
     # Fit
     if debug:
-        models, chains, ans, stats = fit_me(items[0]) 
+        models, chains, ans, stats = fit_me(items[0], debug=True) 
 
     with ProcessPoolExecutor(max_workers=n_cores) as executor:
         chunksize = nclosest // n_cores if nclosest // n_cores > 0 else 1
@@ -250,7 +278,7 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
         return
 
     # Grab the closest
-    models, chains, ans, stats = answers[ok_ss[0]]
+    models, chains, ans, stats, rt_dict = answers[ok_ss[0]]
     ispec, isig = all_spec[0][1], all_spec[0][2]
 
     out_dict['chains'] = chains
@@ -277,12 +305,12 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
     f'lon={imatched.lon:.1f}, time={imatched.time[:19]}, {imatched.closest_id[12:-9]}, dist={all_dist[0]:.1f} km'
     Rrs_obs=dict(wave=models[0].wave, spec=ispec, var=isig**2)
     plotfile=outfile.replace('.npz', '.png')
-    plot_fit(models, chains, Rrs_obs, title, show_Rsig=True,
+    plot_fit(models, chains, Rrs_obs, title, rt_dict, show_Rsig=True,
                    outfile=plotfile)
 
     
 
-def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
+def plot_fit(models, chains, Rrs_obs, title:str, rt_dict:dict, stats:dict=None,
              outfile:str=None, 
              ulist:list=None, 
              perc:tuple=(14,86),
@@ -305,7 +333,7 @@ def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
     else:
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
             model_Rrs, sigRs = evaluate.reconstruct_from_chains(
-            models, chains, perc=perc)
+            models, chains, rt_dict, perc=perc)
 
     # Water
     a_w = absorption.a_water(wave, data='IOCCG')
@@ -624,7 +652,8 @@ if __name__ == '__main__':
 
         # Fit one
         outfile = biomass_io.get_fit_file_path(imatched)
-        fit_one(imatched, outfile, nclosest=10, debug=True)
+        #fit_one(imatched, outfile, nclosest=10)
+        fit_one(imatched, outfile, nclosest=2, debug=True)
 
     if fit_em:
         clobber = False

@@ -158,6 +158,11 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
 
     # Fluorescence?
     if rt_dict['include_Chl_fl']:
+        # Error check a bit
+        if a_model.i_Chl_ex is None or a_model.Ed_ex is None or a_model.Ed_em is None:
+            raise ValueError("Need to set i_Chl_ex for fluorescence.\
+                Use a_model.init_Chl_fluorescence() to init.")
+
         # a_ph
         aph = (10**a_params[...,-1:]) * a_model.a_ph
         aph_ex = aph[a_model.i_Chl_ex]
