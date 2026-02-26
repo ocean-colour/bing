@@ -7,6 +7,12 @@
 
 The **Bayesian INferences with Gordon coefficients (BING)** package is a comprehensive Python toolkit for ocean color remote sensing analysis, specializing in bio-optical parameter retrieval through Bayesian inference methods. BING implements Gordon's semi-analytical bio-optical models with advanced statistical fitting techniques, with particular emphasis on NASA's PACE (Plankton, Aerosol, Cloud, ocean Ecosystem) mission data.
 
+## Developers
+
+- J. Xavier Prochaska (UC Santa Cruz)
+- Robert Frouin (SIO)
+- Allie James (UC Santa Cruz)
+
 ## 🌊 Key Features
 
 - **🛰️ Satellite Data Processing**: Native support for PACE OCI, MODIS, SeaWiFS, and future SBG missions
