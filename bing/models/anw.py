@@ -69,7 +69,7 @@ from ocpy.ph import absorption as ph_absorption
 
 from bing.priors import priors as bing_priors
 from bing.models import functions
-from bing.rt import raman
+from bing.rt import raman, rrs
 
 from IPython import embed
 
@@ -392,6 +392,12 @@ class aNWModel:
         Parameters:
             a_nw (np.ndarray): The non-water absorption coefficient
         """
+
+    def init_var_gordon(self):
+        """
+        Initialize the variable Gordon parameters
+        """
+        self.G1, self.G2 = rrs.wave_dependent_gordon(self.wave)
 
     def init_raman(self):
         """
