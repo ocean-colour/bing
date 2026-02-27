@@ -51,7 +51,8 @@ from IPython import embed
 #    pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
 
 
-def fit_me(items, debug:bool=False, in_p=None, return_early:bool=False):
+def fit_me(items, debug:bool=False, in_p=None, return_early:bool=False,
+    guess_vals:np.ndarray=None):
     """
     Fit a single spectrum.
 
@@ -109,7 +110,10 @@ def fit_me(items, debug:bool=False, in_p=None, return_early:bool=False):
     #
     bounds = (np.array(low_bounds), np.array(high_bounds))
 
-    p0 = [-1, 0.015, -1, -1, 1.5]
+    if guess_vals is None:
+        p0 = [-2, 0.015, -2, -2, 1.5]
+    else:
+        p0 = guess_vals
     items = [(ispec, isig**2, p0, 0)]
 
     rt_dict = rt_defs.rt_dict_from_p(p)
