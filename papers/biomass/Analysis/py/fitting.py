@@ -306,7 +306,7 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
     # Plot me
     print("----- Plotting -----")
     title = f'Float={imatched.cruise}-{imatched.profile}, lat={imatched.lat:.1f},'+\
-    f'lon={imatched.lon:.1f}, time={imatched.time[:19]}, {imatched.closest_id[12:-9]}, dist={all_dist[0]:.1f} km'
+    f'lon={imatched.lon:.1f}, time={imatched.time[:19]}, {imatched.closest_id[12:-7]}, dist={all_dist[0]:.1f} km'
     Rrs_obs=dict(wave=models[0].wave, spec=ispec, var=isig**2)
     plotfile=outfile.replace('.npz', '.png')
     plot_fit(models, chains, Rrs_obs, title, rt_dict, show_Rsig=True,
