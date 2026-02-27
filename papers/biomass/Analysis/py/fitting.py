@@ -78,8 +78,8 @@ def fit_me(items, debug:bool=False, in_p=None, return_early:bool=False,
 
     # Init models
     if in_p is None:
-        p = standard.expb_pow(satellite='PACE', add_noise=False, 
-            variable_Gordon=True, include_Raman=True, 
+        p = standard.expb_pow(satellite='PACE', add_noise=False,
+            variable_Gordon=True, include_Raman=True,
             include_Chl_fl=True, phi_C=0.02, double_gaussian=True)
     else:
         p = in_p
@@ -657,7 +657,7 @@ if __name__ == '__main__':
         # Fit one
         outfile = biomass_io.get_fit_file_path(imatched)
         #fit_one(imatched, outfile, nclosest=10)
-        fit_one(imatched, outfile, nclosest=2, debug=True)
+        fit_one(imatched, outfile, nclosest=2)#, debug=True)
 
     if fit_em:
         clobber = False

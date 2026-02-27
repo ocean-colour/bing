@@ -71,7 +71,7 @@ def main(flg):
         granule_file = 'PACE_50clouds_v31.json'
         grab_pace_granules.find_closest(
             match_file, granule_file, iRrs=38, 
-            debug=True)
+            debug=False)
 
     # Fit PACE
 
