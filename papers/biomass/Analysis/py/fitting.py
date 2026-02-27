@@ -629,10 +629,41 @@ def slurp_fits(matched, debug:bool=False):
     matched.to_csv(match_file, index=False)
     print(f'Wrote {len(matched)} profiles to {match_file}')
 
-#def set_outfile(imatched:pandas.Series):
-#    outfile = os.path.join(os.getenv('OS_COLOR'), 'Biomass', 'Fits',
-#            f'Argo_{imatched.cruise}_{imatched.profile:03d}_fits.npz')
-#    return outfile
+
+def fit_em_all(match_file:str, clobber = False, nclosest:int=10, debug:bool=False):
+    """
+    Fit all the matches in the matched file.
+    """
+    matched = pandas.read_csv(match_file)
+
+    for ss in range(len(matched)):
+        #if ss < 798:
+        #    continue
+        imatched = matched.iloc[ss]
+        print("*"*50)
+        print("*"*50)
+        print(f"Fitting {ss+1}/{len(matched)}...")
+        print("*"*50)
+        print("*"*50)
+
+        if debug and ss > 0:
+            break
+
+        if debug:
+            imatched.closest_file = 'PACE_OCI.20250601T070425.L2.OC_AOP.V3_1.nc'
+            imatched.closest_id = 'PACE_OCI_L2_AOP_PACE_OCI.20250601T070425.L2.OC_AOP.V3_1.nc_3.1'
+
+        # Check
+        outfile = biomass_io.get_fit_file_path(imatched)
+        if os.path.exists(outfile) and not clobber:
+            print(f"Already fitted {outfile}, skipping...")
+            continue
+
+        # Fit one
+        print(f"Fitting {imatched.cruise}-{imatched.profile:03d}...")
+        fit_one(imatched, outfile, nclosest=nclosest)#, debug=True)
+
+    print(f"Fitted {len(matched)} profiles")
 
 # Command line
 if __name__ == '__main__':
@@ -660,27 +691,9 @@ if __name__ == '__main__':
         fit_one(imatched, outfile, nclosest=2)#, debug=True)
 
     if fit_em:
-        clobber = False
-        for ss in range(len(matched)):
-            #if ss < 798:
-            #    continue
-            imatched = matched.iloc[ss]
-            print("*"*50)
-            print("*"*50)
-            print(f"Fitting {ss+1}/{len(matched)}...")
-            print("*"*50)
-            print("*"*50)
+        match_file='matched_argo_bgc_profiles_bbp.csv'
+        fitting.fit_em_all(match_file, clobber=False, nclosest=10)
 
-            # Check
-            outfile = biomass_io.get_fit_file_path(imatched)
-            if os.path.exists(outfile) and not clobber:
-                print(f"Already fitted {outfile}, skipping...")
-                continue
-            #
-
-            # Fit one
-            print(f"Fitting {imatched.cruise}-{imatched.profile:03d}...")
-            fit_one(imatched, outfile, nclosest=10)#, debug=True)
 
     if slurp_em:
         slurp_fits(matched)#debug=True)

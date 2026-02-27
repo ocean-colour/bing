@@ -6,6 +6,7 @@ import argo
 import pandas
 
 import grab_pace_granules
+import fitting
 
 from IPython import embed
 
@@ -74,6 +75,10 @@ def main(flg):
             debug=False)#, skip_to=14)
 
     # Fit PACE
+    if flg == 6:
+        match_file='matched_argo_bgc_profiles_bbp_v2.csv'
+        fitting.fit_em_all(match_file, clobber=False, 
+            nclosest=10, debug=False)
 
 # Command line
 if __name__ == '__main__':
