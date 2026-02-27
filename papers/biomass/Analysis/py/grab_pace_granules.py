@@ -319,8 +319,13 @@ def find_closest(match_file:str, granule_file:str, iRrs:int=38,
             # Closest good Rrs
             coords = np.stack((xds.latitude.values.flatten(), 
                    xds.longitude.values.flatten()), axis=1)
-            d = ocpy_coords.distance_from_latlon((
-                row.lat, row.lon), coords)
+            try:
+                d = ocpy_coords.distance_from_latlon((
+                    row.lat, row.lon), coords)
+            except:
+                print(f'Error calculating distance for {pace_file}')
+                embed(header='327 of grab')
+
             dmin = d[Rrs_ok.flatten()].min()
             # 
             if dmin < mind:
