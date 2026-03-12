@@ -313,32 +313,16 @@ def find_closest(match_file:str, granule_file:str, iRrs:int=38,
             xds, flags = pace_io.load_oci_l2(pace_file)
             if debug:
                 embed(header='315 of find_closest')
-            Rrs_ok = (xds.Rrs_unc.values[:,:,iRrs] > 0.) & np.isfinite(xds.Rrs.values[:,:,iRrs])
-            if not np.any(Rrs_ok):
-                print(f'No valid Rrs found in {pace_file}, skipping')
-                continue
-
-            # Closest good Rrs
-            coords = np.stack((xds.latitude.values.flatten(),
-                   xds.longitude.values.flatten()), axis=1)
-            
-            # Deal with NaN in coords
-            good_lat = np.isfinite(coords[:,0])
-            good_lon = np.isfinite(coords[:,1])
-            good_idx = np.where(good_lat & good_lon)[0]
-
-            # Prep
-            d = np.ones(len(coords)) * 1e9
-            # Calculate distances
-            good_d = ocpy_coords.distance_from_latlon((
-                    row.lat, row.lon), coords[good_idx, :])
-            d[good_idx] = good_d
 
             # Find closest
-            dmin = d[Rrs_ok.flatten()].min()
+            d_min, dmin_ij = closest_Rrs(xds, (row.lat, row.lon),
+                                 nclosest=2)
+            if d_min is None:
+                print(f'No valid Rrs found in {pace_file}, skipping')
+                continue
             # 
-            if dmin < mind:
-                mind = dmin
+            if d_min[0] < mind:
+                mind = d_min[0]
                 best_g = granule
 
         # Save best
@@ -394,7 +378,9 @@ def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38, nclosest:int=1):
             - float: The minimum distance(s) to the closest valid Rrs value.
             - tuple: The indices (i, j) of the closest valid Rrs value in the dataset.
     """
-    Rrs_ok = xds.Rrs_unc.values[:,:,iRrs] > 0.
+    # Flags would be better
+    Rrs_ok = (xds.Rrs_unc.values[:,:,iRrs] > 0.) & np.isfinite(xds.Rrs.values[:,:,iRrs])
+    #
     lat_ok = np.isfinite(xds.latitude.values)
     lon_ok = np.isfinite(xds.longitude.values)
     ok_idx = np.where((Rrs_ok & lat_ok & lon_ok).flatten())[0]
