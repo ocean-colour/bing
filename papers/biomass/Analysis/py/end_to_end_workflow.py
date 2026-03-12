@@ -7,6 +7,7 @@ import pandas
 
 import grab_pace_granules
 import fitting
+import biomass_io
 
 from IPython import embed
 
@@ -79,6 +80,19 @@ def main(flg):
         match_file='matched_argo_bgc_profiles_bbp_v2.csv'
         fitting.fit_em_all(match_file, clobber=False,
             nclosest=10, debug=False)
+    
+    # ############################
+    # Debugging
+    if flg == 101:
+        match_file='matched_argo_bgc_profiles_bbp_v2.csv'
+        matched = pandas.read_csv(match_file)
+        ss = 131
+        imatched = matched.iloc[ss]
+        outfile = biomass_io.get_fit_file_path(imatched)
+        # Fit one
+        print(f"Fitting {imatched.cruise}-{imatched.profile:03d}...")
+        fitting.fit_one(imatched, outfile, nclosest=10)#, debug=True)
+
 
 # Command line
 if __name__ == '__main__':
