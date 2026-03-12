@@ -124,6 +124,8 @@ def fit_me(items, debug:bool=False, in_p=None, return_early:bool=False,
     except RuntimeError:
         print("Fit failed: saving -999")
         return None, None, None, None
+    else:
+        embed(header='127 of fitting.py')
     
     # Return here?
     if return_early:
