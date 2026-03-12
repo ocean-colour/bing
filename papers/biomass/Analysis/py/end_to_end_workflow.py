@@ -91,7 +91,7 @@ def main(flg):
         outfile = biomass_io.get_fit_file_path(imatched)
         # Fit one
         print(f"Fitting {imatched.cruise}-{imatched.profile:03d}...")
-        fitting.fit_one(imatched, outfile, nclosest=10)#, debug=True)
+        fitting.fit_one(imatched, outfile, nclosest=10, debug=True)
 
 
 # Command line
