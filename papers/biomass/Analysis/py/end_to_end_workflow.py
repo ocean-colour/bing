@@ -77,8 +77,8 @@ def main(flg):
     # Fit PACE
     if flg == 6:
         match_file='matched_argo_bgc_profiles_bbp_v2.csv'
-        fitting.fit_em_all(match_file, clobber=False, 
-            nclosest=10, debug=False)
+        fitting.fit_em_all(match_file, clobber=False,
+            nclosest=10, debug=True)
 
 # Command line
 if __name__ == '__main__':
