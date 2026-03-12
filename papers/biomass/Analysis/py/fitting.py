@@ -122,10 +122,9 @@ def fit_me(items, debug:bool=False, in_p=None, return_early:bool=False,
     try:
         ans, cov, idx = chisq_fit.fit(items[0], models, rt_dict, bounds=bounds)
     except RuntimeError:
+        embed(header='127 of fitting.py')
         print("Fit failed: saving -999")
         return None, None, None, None
-    else:
-        embed(header='127 of fitting.py')
     
     # Return here?
     if return_early:
