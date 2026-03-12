@@ -311,7 +311,9 @@ def find_closest(match_file:str, granule_file:str, iRrs:int=38,
 
             # Load up
             xds, flags = pace_io.load_oci_l2(pace_file)
-            Rrs_ok = xds.Rrs_unc.values[:,:,iRrs] > 0.
+            if debug:
+                embed(header='315 of find_closest')
+            Rrs_ok = (xds.Rrs_unc.values[:,:,iRrs] > 0.) & np.isfinite(xds.Rrs.values[:,:,iRrs])
             if not np.any(Rrs_ok):
                 print(f'No valid Rrs found in {pace_file}, skipping')
                 continue

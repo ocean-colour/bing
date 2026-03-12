@@ -93,6 +93,13 @@ def main(flg):
         print(f"Fitting {imatched.cruise}-{imatched.profile:03d}...")
         fitting.fit_one(imatched, outfile, nclosest=10, debug=True)
 
+    if flg == 102:
+        match_file='matched_argo_bgc_profiles_bbp_v2.csv'
+        granule_file = 'PACE_50clouds_v31.json'
+        grab_pace_granules.find_closest(
+            match_file, granule_file, iRrs=38,
+            debug=True, skip_to=131)
+
 
 # Command line
 if __name__ == '__main__':
