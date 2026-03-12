@@ -98,7 +98,7 @@ def main(flg):
         granule_file = 'PACE_50clouds_v31.json'
         grab_pace_granules.find_closest(
             match_file, granule_file, iRrs=38,
-            debug=True, skip_to=131)
+            debug=True, skip_to=132)
 
 
 # Command line
