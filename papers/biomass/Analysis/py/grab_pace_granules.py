@@ -316,7 +316,7 @@ def find_closest(match_file:str, granule_file:str, iRrs:int=38,
 
             # Find closest
             d_min, dmin_ij = closest_Rrs(xds, (row.lat, row.lon),
-                                 nclosest=2)
+                                 nclosest=2, iRrs=iRrs)
             if d_min is None:
                 print(f'No valid Rrs found in {pace_file}, skipping')
                 continue
