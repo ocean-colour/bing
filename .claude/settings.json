@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Read(//home/xavier/Oceanography/python/remote_sensing/remote_sensing/download/**)",
+      "Read(//home/xavier/Oceanography/python/remote_sensing/remote_sensing/tests/**)"
+    ]
+  }
+}
