@@ -10,7 +10,7 @@ VAR_WMO     = "Platform_Number"
 DIM_PROFILE = "N_STATIONS"
 
 
-def process_profile(prof, min_surface=3, surface_depth=20, qc_threshold=50):
+def process_profile(prof, min_surface=3, surface_depth=25., qc_threshold=50):
     try:
         good = prof[VAR_BBP_QC].data <= qc_threshold
         if not np.any(good):
@@ -73,11 +73,3 @@ def process_files(nc_files, out_path=None, **kwargs):
 
     print(f"Total rows: {len(df)}")
     return df
-
-# Command line interface
-if __name__ == '__main__':
-    nc_files = [
-        os.path.join(base, "Ocean_Biogeochemistry_BGC-Argo_Global_Profiles_GulfofMexico.nc"),
-        os.path.join(base, "Ocean_Biogeochemistry_BGC-Argo_Global_Profiles_Mediterranean.nc")
-    ]
-

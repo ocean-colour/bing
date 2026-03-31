@@ -7,6 +7,7 @@ import pandas
 
 import grab_pace_granules
 import fitting
+import slurp
 import biomass_io
 
 from IPython import embed
@@ -83,6 +84,12 @@ def main(flg):
         match_file='matched_argo_bgc_profiles_bbp_v3.csv'
         fitting.fit_em_all(match_file, clobber=False,
             nclosest=10, debug=False)
+
+    # Slurp in the fits
+    if flg == 7:
+        match_file='matched_argo_bgc_profiles_bbp_v3.csv'
+        slurp.slurp_fits(match_file, debug=False)
+    
     
     # ############################
     # Debugging

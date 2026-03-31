@@ -181,3 +181,108 @@ if __name__ == '__main__':
     
     # PACE lat, lon of Rrs analysis
     slurp_pace_lat_lon(debug=False)
+
+
+
+def slurp_fits(match_file:str, debug:bool=False):
+    """
+    Processes matched Argo BGC profiles and extracts specific parameters for analysis.
+
+    This function reads a CSV file containing matched Argo BGC profiles, loads corresponding
+    data files for each profile, extracts specific parameters (Bnw, beta, and aph), and appends
+    these parameters to the original dataset. The updated dataset is then saved back to the same
+    CSV file.
+
+    Steps:
+    1. Reads the matched Argo BGC profiles from a CSV file.
+    2. Iterates through each profile, loading associated data files.
+    3. Extracts the median values of Bnw, beta, and aph from the loaded data.
+    4. Appends the extracted values to the dataset.
+    5. Saves the updated dataset back to the CSV file.
+
+
+
+    Args:
+        match_file (str): Path to the matched CSV file.
+        debug (bool, optional): If True, enables debugging mode with an interactive session. 
+                                Default is False.
+
+    Raises:
+        FileNotFoundError: If a required data file does not exist.
+        KeyError: If the expected keys ('med') are not found in the loaded data.
+
+    Notes:
+        - The function assumes the existence of a helper function `get_fit_file_path` to determine
+          the output file path for each profile.
+        - The function uses the `embed` function for debugging when a file is missing.
+
+    Outputs:
+        - Updates the input CSV file with new columns: 'Bnw', 'beta', and 'aph'.
+        - Prints the number of profiles written to the file.
+
+    Dependencies:
+        - Requires the `pandas` and `numpy` libraries.
+        - Assumes the presence of the `get_fit_file_path` and `embed` functions.
+    """
+
+    # Load up Argo profiles, already matched to PACE
+    matched = pandas.read_csv(match_file)
+
+    beta_vals = []
+    Bnw_vals = []
+    Bnw_lsig = []
+    Bnw_hsig = []
+    Bnw_std = []
+    aph_vals = []
+
+    for ss in range(len(matched)):
+        imatched = matched.iloc[ss]
+        outfile = biomass_io.get_fit_file_path(imatched)
+        print(f'Working on {ss+1}/{len(matched)}: {os.path.basename(outfile)}...')
+
+        # Load
+        if not os.path.exists(outfile):
+            embed(header=f"303: Missing {outfile}...; ss={ss}")
+            raise FileNotFoundError(f"Missing {outfile}...")
+        d = np.load(outfile)
+
+        if 'chains' not in d:
+            print(f"Skipping {outfile}...")
+            beta_vals.append(np.nan)
+            Bnw_vals.append(np.nan)
+            aph_vals.append(np.nan)
+            Bnw_std.append(np.nan)
+            Bnw_lsig.append(np.nan)
+            Bnw_hsig.append(np.nan)
+            continue
+
+        #if debug:
+        #    embed(header='305 of fitting.py')
+        #    return
+        # Closest
+        Bnw_vals.append(10**d['med'][0,3])
+        beta_vals.append(d['med'][0,4])
+        aph_vals.append(10**d['med'][0,2])
+        # Std
+        Bnw_std.append(np.std(10**d['med'][:,3]))
+        # Sigma
+        Bnw_lsig.append(10**d['med'][0,3] - 10**d['p14'][0,3])
+        Bnw_hsig.append(10**d['p86'][0,3] - 10**d['med'][0,3])
+        if debug:
+            break
+
+    if debug:
+        embed(header='468 of fitting.py')
+        return
+
+    # Add to matched
+    matched['BING_Bnw'] = np.array(Bnw_vals)
+    matched['BING_Bnw_std'] = np.array(Bnw_std)
+    matched['BING_Bnw_lsig'] = np.array(Bnw_lsig)
+    matched['BING_Bnw_hsig'] = np.array(Bnw_hsig)
+    matched['BING_beta'] = beta_vals
+    matched['BING_aph'] = aph_vals
+
+    # Write
+    matched.to_csv(match_file, index=False)
+    print(f'Wrote {len(matched)} profiles to {match_file}')
