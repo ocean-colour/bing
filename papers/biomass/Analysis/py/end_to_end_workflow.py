@@ -58,7 +58,7 @@ def main(flg):
     
     # Match PACE to Argo
     if flg == 3:
-        out_file='matched_argo_bgc_profiles_bbp_v2.csv'
+        out_file='matched_argo_bgc_profiles_bbp_v3.csv'
         granule_file = 'PACE_50clouds_v31.json'
         argo.match_argo_to_pace(granule_file, out_file, dtime='1 day')
     

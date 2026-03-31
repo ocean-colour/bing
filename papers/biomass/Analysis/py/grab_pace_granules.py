@@ -249,7 +249,7 @@ def download_matched(match_file:str, granule_file:str, IOP:bool=False, L1B:bool=
     print(f'Downloaded {len(matched)} Argo profiles to {path}')
 
 def find_closest(match_file:str, granule_file:str, iRrs:int=38,
-                 debug:bool=False, skip_to:int=None):
+                 debug:bool=False, skip_to:int=None, update_from:str=None):
     """
     Finds the closest PACE granule for each Argo profile in the given match file.
 
@@ -263,6 +263,10 @@ def find_closest(match_file:str, granule_file:str, iRrs:int=38,
         iRrs (int, optional): Index of the Rrs band to use for validation. Defaults to 38.
         debug (bool, optional): If True, processes only the first few rows for debugging. Defaults to False.
         skip_to (int, optional): If provided, skips processing rows until the specified index. Defaults to None.
+        update_from (str, optional): Path to a CSV file with pre-computed closest granules
+            (columns: cruise, profile, closest_id, closest_file, closest_dist_km, closest_time).
+            Profiles matching by (cruise, profile) will use cached values and skip reprocessing.
+            Defaults to None.
 
     Returns:
         None: The function modifies the input CSV file in place by adding columns for the closest granule's
@@ -282,6 +286,21 @@ def find_closest(match_file:str, granule_file:str, iRrs:int=38,
     # Load up PACE granules
     granules, pace = biomass_io.load_granules_from_json(granule_file)
 
+    # Build a lookup from update_from CSV to skip already-processed profiles
+    update_lookup = {}
+    if update_from is not None:
+        update_df = pandas.read_csv(update_from)
+        # Index by (cruise, profile) for fast lookup
+        for _, urow in update_df.iterrows():
+            key = (str(urow['cruise']), int(urow['profile']))
+            update_lookup[key] = {
+                'closest_id': urow['closest_id'],
+                'closest_file': urow['closest_file'],
+                'closest_dist_km': urow['closest_dist_km'],
+                'closest_time': urow['closest_time'],
+            }
+        print(f'Loaded {len(update_lookup)} pre-computed closest granules from {update_from}')
+
     # Items to add to the table
     sv_ids = []
     sv_dist = []
@@ -292,6 +311,18 @@ def find_closest(match_file:str, granule_file:str, iRrs:int=38,
     for irow in range(len(matched)):
         row = matched.iloc[irow]
         if skip_to is not None and irow < (skip_to-1):
+            continue
+
+        # Check if this profile was already processed via update_from
+        profile_key = (str(row['cruise']), int(row['profile']))
+        if profile_key in update_lookup:
+            cached = update_lookup[profile_key]
+            sv_ids.append(cached['closest_id'])
+            sv_file.append(cached['closest_file'])
+            sv_dist.append(cached['closest_dist_km'])
+            sv_time.append(cached['closest_time'])
+            print(f'Using cached closest for {irow+1}/{len(matched)}: '
+                  f'{profile_key[0]} profile {profile_key[1]}')
             continue
 
         # Get the PACE IDs
@@ -320,7 +351,7 @@ def find_closest(match_file:str, granule_file:str, iRrs:int=38,
             if d_min is None:
                 print(f'No valid Rrs found in {pace_file}, skipping')
                 continue
-            # 
+            #
             if d_min[0] < mind:
                 mind = d_min[0]
                 best_g = granule
