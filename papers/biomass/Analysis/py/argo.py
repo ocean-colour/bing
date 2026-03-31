@@ -2,6 +2,7 @@
 
 import os
 import glob
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 
@@ -16,6 +17,22 @@ from shapely.vectorized import contains
 import biomass_io
 
 from IPython import embed
+
+
+def _check_granule(args):
+    """
+    Check spatial and temporal match for a single PACE granule against all Argo profiles.
+
+    Returns:
+        tuple: (granule_index, inside_array, ok_time_array)
+    """
+    ss, polygon, pace_time, argo_lons, argo_lats, argo_times, dtime = args
+    # Spatial containment
+    inside = np.array(contains(polygon, argo_lons, argo_lats))
+    # Temporal match
+    dt = pandas.Timestamp(pace_time) - argo_times
+    ok_time = np.array(np.abs(dt) < pandas.Timedelta(dtime))
+    return ss, inside, ok_time
 
 
 def load_orig_argo(csv_file:str='argo_bgc_profiles_bbp.csv',
@@ -42,16 +59,19 @@ def load_orig_argo(csv_file:str='argo_bgc_profiles_bbp.csv',
     # Return
     return df
 
-def match_argo_to_pace(granule_file:str, out_file:str, dtime:str='1 day'):
+def match_argo_to_pace(granule_file:str, out_file:str, dtime:str='1 day',
+                       n_cores:int=15):
     """
     Matches Argo profiles to PACE granules based on spatial and temporal criteria.
 
     Parameters:
         granule_file (str): The file path to the JSON file containing PACE granule data.
         out_file (str): The file path where the matched Argo profiles will be saved as a CSV.
-        dtime (str, optional): The time window for matching Argo profiles to PACE granules. 
-                                Defaults to '1 day'. The format should be compatible with 
+        dtime (str, optional): The time window for matching Argo profiles to PACE granules.
+                                Defaults to '1 day'. The format should be compatible with
                                 pandas.Timedelta.
+        n_cores (int, optional): Number of CPU cores for parallel granule matching.
+                                  Defaults to 15.
 
     Description:
         - Loads Argo profiles and PACE granules.
@@ -74,20 +94,27 @@ def match_argo_to_pace(granule_file:str, out_file:str, dtime:str='1 day'):
     # Load up PACE granules
     granules, pace = biomass_io.load_granules_from_json(granule_file)
 
-    # Check if in PACE granule
-    all_inside = []
-    for ss in range(len(pace)):
-        inside = contains(pace.polygon.values[ss], argo_pace.lon, argo_pace.lat)
-        all_inside.append(np.array(inside))
-    all_inside = np.array(all_inside)
+    # Build args for parallel spatial+temporal matching over PACE granules
+    argo_lons = argo_pace.lon.values
+    argo_lats = argo_pace.lat.values
+    argo_times = argo_pace.time
+    args_list = [
+        (ss, pace.polygon.values[ss], pace.iloc[ss].time,
+         argo_lons, argo_lats, argo_times, dtime)
+        for ss in range(len(pace))
+    ]
 
-    # Time window
-    ok_times = []
-    for ss in range(len(pace)):
-        dt = pandas.Timestamp(pace.iloc[ss].time) - argo_pace.time
-        good_dt = np.abs(dt) < pandas.Timedelta(dtime)
-        ok_times.append(np.array(good_dt))
-    ok_times = np.array(ok_times)
+    # Parallel check of spatial containment and time window per granule
+    n_granules = len(pace)
+    all_inside = np.empty((n_granules, len(argo_pace)), dtype=bool)
+    ok_times = np.empty((n_granules, len(argo_pace)), dtype=bool)
+
+    with ProcessPoolExecutor(max_workers=n_cores) as executor:
+        futures = {executor.submit(_check_granule, a): a[0] for a in args_list}
+        for future in as_completed(futures):
+            ss, inside, ok_time = future.result()
+            all_inside[ss] = inside
+            ok_times[ss] = ok_time
 
     # Match
     match = all_inside & ok_times
