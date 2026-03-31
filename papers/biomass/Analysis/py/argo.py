@@ -68,7 +68,6 @@ def match_argo_to_pace(granule_file:str, out_file:str, dtime:str='1 day'):
         - The number of unique Argo profiles matched to PACE granules.
         - The number of profiles written to the output file.
     """
-
     # Load up Argo profiles, already cut to PACE dates
     argo_pace = load_orig_argo()
 
@@ -218,9 +217,9 @@ def scan_mbari_profiles(surface:float=20., N_surface:int=3,
 
 
 
-def scan_ocean_bio_profiles(data_file:str, surface:float=20., N_surface:int=3, 
+def scan_ocean_bio_profiles(data_file:str, surface:float=25., N_surface:int=3, 
                   MLD:float=200., N_MLD:int=5, outfile:str=None): 
-    """ Search for Argo profiles from MBARI processing with sufficient data """
+    """ Search for Argo profiles from Ocean Biogeochemistry processing with sufficient data """
 
     filenames = []
     cruises = []
@@ -243,12 +242,19 @@ def scan_ocean_bio_profiles(data_file:str, surface:float=20., N_surface:int=3,
     # Loop on unique cruise
     uni_cruises = np.unique(ds.cruise_id.values)
 
+    print(f'Found {len(uni_cruises)} unique cruises')
+    print(f'Cruises: {uni_cruises}')
+
     for cruise in uni_cruises:
         cruise_idx = np.where(ds.cruise_id.values == cruise)[0]
 
+        # Sort by date
+        ptimes = ds.date_time.data[cruise_idx]
+        srt = np.argsort(ptimes)
+        cruise_idx = cruise_idx[srt]
+
         # Loop on profiles
-        iprof = 0
-        for idx in cruise_idx:
+        for iprof, idx in enumerate(cruise_idx):
             prof = ds.isel(N_STATIONS=idx)
             # QC
             good = prof['Particle_backscattering_at_700_nm_adjusted__qc'].data <= 50
@@ -282,9 +288,6 @@ def scan_ocean_bio_profiles(data_file:str, surface:float=20., N_surface:int=3,
                 float(pysolar.solar.get_altitude(lats[-1],
                               lons[-1],
                               tstamp)))
-            # Increment
-            iprof += 1
-            #embed(header='285 of argo')
 
     # Generate a DataFrame
     df = pandas.DataFrame({
@@ -303,6 +306,7 @@ def scan_ocean_bio_profiles(data_file:str, surface:float=20., N_surface:int=3,
         print(f'Wrote {len(df)} profiles to {outfile}')
     
     # Return
+    #embed(header='310 of argo')
     return df
 
 '''

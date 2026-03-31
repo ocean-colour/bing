@@ -50,6 +50,8 @@ def process_file(path, **kwargs):
     for i in range(n_profiles):
         prof   = ds.isel(**{DIM_PROFILE: i})
         result = process_profile(prof, **kwargs)
+        # Add profile number
+        result["profile"] = i
         if result is not None:
             rows.append(result)
 
@@ -71,3 +73,11 @@ def process_files(nc_files, out_path=None, **kwargs):
 
     print(f"Total rows: {len(df)}")
     return df
+
+# Command line interface
+if __name__ == '__main__':
+    nc_files = [
+        os.path.join(base, "Ocean_Biogeochemistry_BGC-Argo_Global_Profiles_GulfofMexico.nc"),
+        os.path.join(base, "Ocean_Biogeochemistry_BGC-Argo_Global_Profiles_Mediterranean.nc")
+    ]
+
