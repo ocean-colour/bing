@@ -38,8 +38,8 @@ def slurp_argo():
     med = argo.scan_ocean_bio_profiles(argo_file)
 
     # Combine
-    #df = pandas.concat([mbari, med, gulf], ignore_index=True)
-    df = pandas.concat([mbari, gulf], ignore_index=True)
+    df = pandas.concat([mbari, med, gulf], ignore_index=True)
+    #df = pandas.concat([mbari, gulf], ignore_index=True)
     df.to_csv('argo_bgc_profiles_bbp.csv', index=False)
     print(f'Wrote {len(df)} profiles to argo_bgc_profiles_bbp.csv')
 
