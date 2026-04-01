@@ -272,7 +272,7 @@ def slurp_fits(match_file:str, debug:bool=False):
             break
 
     if debug:
-        embed(header='468 of fitting.py')
+        embed(header='275 of slurp.py')
         return
 
     # Add to matched
