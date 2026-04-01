@@ -88,7 +88,7 @@ def main(flg):
     # Slurp in the fits
     if flg == 7:
         match_file='matched_argo_bgc_profiles_bbp_v3.csv'
-        slurp.slurp_fits(match_file, debug=False)
+        slurp.slurp_fits(match_file, debug=True)
     
     
     # ############################
