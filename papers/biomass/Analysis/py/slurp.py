@@ -235,6 +235,8 @@ def slurp_fits(match_file:str, debug:bool=False):
     Bnw_std = []
     aph_vals = []
 
+    nskip = 0
+
     for ss in range(len(matched)):
         imatched = matched.iloc[ss]
         outfile = biomass_io.get_fit_file_path(imatched)
@@ -254,6 +256,7 @@ def slurp_fits(match_file:str, debug:bool=False):
             Bnw_std.append(np.nan)
             Bnw_lsig.append(np.nan)
             Bnw_hsig.append(np.nan)
+            nskip += 1
             continue
 
         #if debug:
@@ -286,3 +289,5 @@ def slurp_fits(match_file:str, debug:bool=False):
     # Write
     matched.to_csv(match_file, index=False)
     print(f'Wrote {len(matched)} profiles to {match_file}')
+
+    print(f"Skipped {nskip} profiles")
