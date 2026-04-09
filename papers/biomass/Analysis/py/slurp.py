@@ -16,6 +16,7 @@ from ocpy.pace import io as pace_io
 import fitting as m_fitting
 import biomass_io
 import ocean_biogeochem2
+import bbp700_mbari
 
 from IPython import embed
 
@@ -174,14 +175,6 @@ def slurp_flh_giop(debug:bool=False):
     matched.to_csv(outfile, index=False)
     print(f'Wrote {len(matched)} profiles to {outfile}')
 
-# Run it
-if __name__ == '__main__':
-    
-    # PACE FLH and GIOP
-    #slurp_flh_giop(debug=False)
-    
-    # PACE lat, lon of Rrs analysis
-    slurp_pace_lat_lon(debug=False)
 
 
 
@@ -294,41 +287,50 @@ def slurp_bing_fits(match_file:str, debug:bool=False):
     print(f"Skipped {nskip} profiles")
 
 
-def add_argo_biogeochem(match_file:str, debug:bool=False):
+def add_argo_bbp(match_file:str, argo_dfs:list[pandas.pandas.DataFrame],
+            debug:bool=False):
 
     argo_key = 'argo_bbp700'
-
-    # Argo analysis
-    nc_path = os.path.join(os.getenv('OS_DATA'), 'Argo', 'Med_Mexico')
-    NC_FILES = [
-        os.path.join(nc_path, "Ocean_Biogeochemistry_BGC-Argo_Global_Profiles_GulfofMexico.nc"),
-        os.path.join(nc_path, "Ocean_Biogeochemistry_BGC-Argo_Global_Profiles_Mediterranean.nc"),
-    ]
-
-    argo_df = ocean_biogeochem2.run(nc_files=NC_FILES, csv_path=match_file)
+    argo_calc_key = 'bbp700_top25m_median'
 
     # Load up Argo profiles, already matched to PACE
     matched = pandas.read_csv(match_file)
 
-    # Merge
+    # Init
     if argo_key not in matched.columns:
         argo_bbp = np.ones(len(matched)) * np.nan
     else:
         argo_bbp = matched[argo_key].values
 
     ## Loop on argo_df
-    for ss in range(len(argo_df)):
-        imatched = argo_df.iloc[ss]
-        idx = np.where((matched.cruise == imatched.cruise) & (
-            matched.profile_id == imatched.profile_id))[0]
-        if len(idx) == 0:
-            raise ValueError(f"{imatched} not found")
-        # Save
-        argo_bbp[idx] = imatched.bbp700_top25m_median
+    for argo_df in argo_dfs:
+        for ss in range(len(argo_df)):
+            iargo = argo_df.iloc[ss]
+            idx = np.where((matched.cruise.values == iargo.cruise) & (
+                matched.profile.values == iargo.profile))[0]
+            if len(idx) != 1:
+                raise ValueError(f"{iargo} not found")
+            # Save
+            argo_bbp[idx] = iargo[argo_calc_key]
     
     # Update
+    assert np.sum(np.isnan(argo_bbp)) == 0
+    print("All bbp values have been filled")
     matched[argo_key] = argo_bbp
 
+    # Write
     if not debug:
         matched.to_csv(match_file, index=False)
-    embed(header='313 of slurp.py')
+        print(f'Wrote: {match_file}')
+    #else:
+    #    embed(header='336 of slurp.py')
+
+
+# Run it
+if __name__ == '__main__':
+    
+    # PACE FLH and GIOP
+    #slurp_flh_giop(debug=False)
+    
+    # PACE lat, lon of Rrs analysis
+    slurp_pace_lat_lon(debug=False)

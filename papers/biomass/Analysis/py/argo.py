@@ -2,6 +2,7 @@
 
 import os
 import glob
+import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
@@ -278,6 +279,7 @@ def scan_ocean_bio_profiles(data_file:str, surface:float=25., N_surface:int=3,
         # Sort by date
         ptimes = ds.date_time.data[cruise_idx]
         srt = np.argsort(ptimes)
+        # Indices of this cruise, sorted by time
         cruise_idx = cruise_idx[srt]
 
         # Loop on profiles
@@ -305,7 +307,9 @@ def scan_ocean_bio_profiles(data_file:str, surface:float=25., N_surface:int=3,
             # Keep em!
             filenames.append(base_file)
             cruises.append(str(prof.cruise_id.data.astype(str)).strip())
+            # Index from the time sorted set
             profiles.append(int(iprof))
+            # Lat, lon
             lats.append(float(prof.latitude.data))
             lons.append(float(prof.longitude.data))
 
@@ -336,25 +340,383 @@ def scan_ocean_bio_profiles(data_file:str, surface:float=25., N_surface:int=3,
     #embed(header='310 of argo')
     return df
 
-'''
-NOW RUN FROM end_to_end_workflow.py
 
-if __name__ == '__main__':
+def calc_bbp700_mbari(csv_path:str, argo_dir:str=None, 
+    out_path:str=None, surface_depth: float = 25.0) -> pandas.DataFrame:
 
-    scan = False
-    match = True
+    print("="*80)
+    print("Calculating bbp in the Argo MBARI data")
+    if argo_dir is None:
+        argo_dir = os.path.join(os.getenv('OS_DATA'), 'Argo',
+            'SOCCOM_GO-BGC_LoResQC_LIAR_26Jun2025_netcdf')
 
-    # Scan Argo profiles
-    #https://library.ucsd.edu/dc/object/bb1310816p
-    if scan:
-        argo_path = os.path.join(os.getenv('OS_DATA'), 
-                             'Argo', 
-                             'SOCCOM_GO-BGC_LoResQC_LIAR_26Jun2025_netcdf')
-        scan_profiles(argo_path=argo_path)
-            
+    # -------------------------
+    # load matchup CSV
+    # -------------------------
+    match = pandas.read_csv(csv_path)
 
-    # Match
-    if match:
-        out_file='matched_argo_bgc_profiles_bbp.csv'
-        match_argo_to_pace(out_file, dtime='1 day')
-'''
+    # -------------------------
+    # find MBARI Argo files
+    # -------------------------
+    files = sorted(set(glob.glob(os.path.join(argo_dir, "*QC.nc")) + 
+        glob.glob(os.path.join(argo_dir, "*HRQC.nc"))))
+    base_files = [os.path.basename(file) for file in files]
+
+    rows = []
+
+    #def get_wmo(fname):
+    #    m = re.match(r"(\d+)", fname)
+    #    return m.group(1) if m else None
+
+    # -------------------------
+    # process floats
+    # -------------------------
+
+    for ss,f in enumerate(files):
+
+        # Match
+        in_match = match.filename == os.path.basename(f)
+        if np.sum(in_match) == 0:
+            continue
+
+        # Open
+        ds = xarray.open_dataset(f)
+        bbp = ds["b_bp700"]
+        bbp_qc = ds["b_bp700_QF"]
+        depth = ds["Depth"]
+
+        # Loop on profiles
+        cruise_id = match[in_match].iloc[0].cruise
+        profiles = match.profile.values[in_match]
+
+
+        for pp, profile in enumerate(profiles):
+
+            # Parse
+            bbp_prof = bbp.sel(N_PROF=profile).values
+            qc_prof = bbp_qc.sel(N_PROF=profile).values
+            depth_prof = depth.sel(N_PROF=profile).values
+
+            # QC
+            good = qc_prof == b'0'
+            if not np.any(good):
+                raise ValueError(f"No good values for profile {p}")
+
+            # Depth
+            mask = depth_prof <= surface_depth
+
+            mask = mask & good
+            if np.sum(mask) < 4:
+                raise ValueError(f"Not enough good values for profile {p}")
+
+            # Calculate
+            vals = bbp_prof[mask]
+            vals = vals[np.isfinite(vals)]
+
+            if len(vals) > 0:
+                med = float(np.median(vals))
+                n_used = len(vals)
+            else:
+                med = np.nan
+                n_used = 0
+
+            rows.append([cruise_id, profile, f, med, n_used])
+
+        ds.close()
+
+    # -------------------------
+    # save output
+    # -------------------------
+    df = pandas.DataFrame(
+        rows,
+        columns=[
+            "cruise",
+            "profile",
+            "file",
+            "bbp700_top25m_median",
+            "n_values_used"
+        ]
+    )
+
+    if out_path is not None:
+        df.to_csv(out_path, index=False)
+        print("Saved to:", out_path)
+
+    #embed(header='463 of argo')
+    # Return
+    print(f"Processed {len(df)} profiles")
+    print("="*80)
+    return df
+
+
+# ================================
+# CONSTANTS
+# ================================
+VAR_BBP    = "Particle_backscattering_at_700_nm_adjusted_"
+VAR_BBP_QC = "Particle_backscattering_at_700_nm_adjusted__qc"
+VAR_DEPTH  = "Pressure_adjusted_"
+
+CRUISE_OPTIONS  = ["Platform_Number", "cruise_id"]
+TIME_OPTIONS    = ["JULD", "date_time"]
+LAT_OPTIONS     = ["latitude", "LATITUDE"]
+LON_OPTIONS     = ["longitude", "LONGITUDE"]
+PROFILE_DIM_OPTIONS = ["N_STATIONS", "station"]
+
+
+# ================================
+# HELPERS
+# ================================
+def get_var(ds: xarray.Dataset, options: list[str]) -> str:
+    """Return the first variable name from *options* that exists in *ds*."""
+    for v in options:
+        if v in ds:
+            return v
+    raise KeyError(f"None of {options} found in dataset variables")
+
+
+def get_dim(ds: xarray.Dataset, options: list[str]) -> str:
+    """Return the first dimension name from *options* that exists in *ds*."""
+    for d in options:
+        if d in ds.dims:
+            return d
+    raise KeyError(f"None of {options} found in dataset dimensions")
+
+
+# ================================
+# PROFILE PROCESSING
+# ================================
+def process_profile(
+    prof: xarray.Dataset,
+    surface_depth: float = 25.0,
+    qc_threshold: int = 50,
+    min_surface: int = 3,
+) -> dict | None:
+    """
+    Extract the median bbp700 for the surface layer of a single profile.
+
+    Parameters
+    ----------
+    prof : xr.Dataset
+        A single profile (already sliced from the full dataset).
+    surface_depth : float
+        Maximum pressure (dbar) considered as the surface layer.
+    qc_threshold : int
+        Keep only values whose QC flag is <= this value.
+    min_surface : int
+        Minimum number of valid surface values required; returns None otherwise.
+
+    Returns
+    -------
+    dict with keys ``bbp700_top25m_median`` and ``n_values_used``, or None.
+    """
+    good = prof[VAR_BBP_QC].data <= qc_threshold
+    if not np.any(good):
+        return None
+
+    depth = prof[VAR_DEPTH].data[good]
+    bbp   = prof[VAR_BBP].data[good]
+
+    surface_mask = depth <= surface_depth
+    vals = bbp[surface_mask]
+
+    if len(vals) < min_surface:
+        raise ValueError(f"Not enough surface values: {len(vals)} < {min_surface}")
+
+    return {
+        "bbp700_top25m_median": float(np.median(vals)),
+        "n_values_used": int(len(vals)),
+    }
+
+# ================================
+# FILE PROCESSING
+# ================================
+def process_file(
+    path: str,
+    csv_df: pandas.DataFrame,
+    surface_depth: float = 25.0,
+    qc_threshold: int = 50,
+    min_surface: int = 3,
+    coord_tol: float = 1e-3,
+) -> list[dict]:
+    """
+    Match profiles in a NetCDF file against rows in *csv_df* and extract
+    surface bbp700 statistics.
+
+    Parameters
+    ----------
+    path : str
+        Path to the BGC-Argo NetCDF file.
+    csv_df : pd.DataFrame
+        Reference table with columns: filename, cruise, lat/latitude, lon/longitude.
+    surface_depth : float
+        Passed through to :func:`process_profile`.
+    qc_threshold : int
+        Passed through to :func:`process_profile`.
+    min_surface : int
+        Passed through to :func:`process_profile`.
+    coord_tol : float
+        Absolute tolerance (degrees) for latitude/longitude matching.
+
+    Returns
+    -------
+    List of row dicts ready to be converted to a DataFrame.
+    """
+    rows = []
+    fname = os.path.basename(path)
+    print(f"\nProcessing: {fname}")
+
+    ds = xarray.open_dataset(path)
+
+    var_cruise  = get_var(ds, CRUISE_OPTIONS)
+    var_time    = get_var(ds, TIME_OPTIONS)
+    var_lat     = get_var(ds, LAT_OPTIONS)
+    var_lon     = get_var(ds, LON_OPTIONS)
+    dim_profile = get_dim(ds, PROFILE_DIM_OPTIONS)
+
+    n_profiles = ds.sizes[dim_profile]
+
+    meta = pandas.DataFrame({
+        "idx":    np.arange(n_profiles),  # Time sorted indices
+        "cruise": ds[var_cruise].data.astype(str),
+        "time":   ds[var_time].data,
+        "lat":    ds[var_lat].data,
+        "lon":    ds[var_lon].data,
+    })
+
+    # Filter the CSV to rows that belong to this file
+    base_name = fname.split(".")[0]
+    csv_sub = csv_df[csv_df["filename"].str.contains(base_name, na=False)]
+    print(f"  -> {len(csv_sub)} relevant CSV rows")
+
+    # Loop on the matched
+    for _, csv_row in csv_sub.iterrows():
+        cruise_target = csv_row["cruise"]
+        prof_id = int(csv_row["profile"])
+        lat_target    = csv_row.get("lat", csv_row.get("latitude"))
+        lon_target    = csv_row.get("lon", csv_row.get("longitude"))
+
+        group = (
+            meta[meta["cruise"] == str(cruise_target)]
+            .sort_values("time")
+            .reset_index(drop=True)
+        )
+        if group.empty:
+            continue
+
+
+        # Grab group + profile
+        igroup = group.iloc[prof_id]
+        ds_idx = igroup['idx']
+        prof   = ds.isel(**{dim_profile: int(ds_idx)}) #meta_row["idx"])})
+
+        # Check lat, lon
+        #embed(header='185 of ocean_biogeochem2.py')
+        lat_match = float(prof.latitude)
+        lon_match = float(prof.longitude)
+
+        assert np.abs(lat_match - lat_target) < coord_tol
+        assert np.abs(lon_match - lon_target) < coord_tol
+
+        result = process_profile(
+            prof,
+            surface_depth=surface_depth,
+            qc_threshold=qc_threshold,
+            min_surface=min_surface,
+        )
+        if result is not None:
+            rows.append({
+                "cruise":               cruise_target,
+                "profile":              prof_id,
+                "time":                 igroup["time"],
+                "latitude":             igroup["lat"],
+                "longitude":            igroup["lon"],
+                "bbp700_top25m_median": result["bbp700_top25m_median"],
+                "n_values_used":        result["n_values_used"],
+            })
+        else:
+            raise ValueError("Bad result")
+
+    ds.close()
+    print(f"  -> {len(rows)} matched profiles so far")
+    return rows
+
+
+# ================================
+# PUBLIC ENTRY POINT
+# ================================
+def calc_obgc_bbp(
+    csv_path: str,
+    nc_files: list[str] = None,
+    out_path: str = None,
+    surface_depth: float = 25.0,
+    qc_threshold: int = 50,
+    min_surface: int = 3,
+    coord_tol: float = 1e-3,
+) -> pandas.DataFrame:
+    """
+    Process a list of BGC-Argo NetCDF files and write matched surface bbp700
+    statistics to a CSV.
+
+    Parameters
+    ----------
+    csv_path : str
+        Path to the reference CSV (matched_argo_bgc_profiles_bbp_v3.csv).
+    nc_files : list[str]
+        Paths to the NetCDF files to process.
+    out_path : str, optional
+        Destination path for the output CSV.
+    surface_depth, qc_threshold, min_surface, coord_tol
+        Forwarded to :func:`process_file` / :func:`process_profile`.
+
+    Returns
+    -------
+    pandas.DataFrame with all matched results (also saved to *out_path*).
+        Columns:
+        - cruise
+        - profile_id
+        - time
+        - latitude
+        - longitude
+        - bbp700_top25m_median
+        - n_values_used
+    """
+    print("="*80)
+    print("Calculating bbp in the Argo OBGC data")
+
+    csv_df   = pandas.read_csv(csv_path)
+    all_rows = []
+
+    # OBGC files
+    nc_path = os.path.join(os.getenv('OS_DATA'), 'Argo', 'Med_Mexico')
+    if nc_files is None:
+        nc_files = [
+            os.path.join(nc_path, "Ocean_Biogeochemistry_BGC-Argo_Global_Profiles_GulfofMexico.nc"),
+            os.path.join(nc_path, "Ocean_Biogeochemistry_BGC-Argo_Global_Profiles_Mediterranean.nc"),
+        ]
+    
+    print(f"Working on files: {nc_files}")
+
+    # Process them
+    for path in nc_files:
+        all_rows.extend(
+            process_file(
+                path,
+                csv_df,
+                surface_depth=surface_depth,
+                qc_threshold=qc_threshold,
+                min_surface=min_surface,
+                coord_tol=coord_tol,
+            )
+        )
+
+    # Table
+    df = pandas.DataFrame(all_rows)
+
+    # Write to disk?
+    if out_path is not None:
+        df.to_csv(out_path, index=False)
+        print(f"\nSaved {len(df)} rows to: {out_path}")
+
+    print("="*80)
+
+    return df

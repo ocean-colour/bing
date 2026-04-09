@@ -152,7 +152,7 @@ def process_file(
     n_profiles = ds.sizes[dim_profile]
 
     meta = pd.DataFrame({
-        "idx":    np.arange(n_profiles),
+        "idx":    np.arange(n_profiles),  # Time sorted indices
         "cruise": ds[var_cruise].data.astype(str),
         "time":   ds[var_time].data,
         "lat":    ds[var_lat].data,
@@ -166,43 +166,51 @@ def process_file(
 
     # Loop on the matched
     for _, csv_row in csv_sub.iterrows():
-        cruise_target = str(csv_row["cruise"])
+        cruise_target = csv_row["cruise"]
+        prof_id = int(csv_row["profile"])
         lat_target    = csv_row.get("lat", csv_row.get("latitude"))
         lon_target    = csv_row.get("lon", csv_row.get("longitude"))
 
         group = (
-            meta[meta["cruise"] == cruise_target]
+            meta[meta["cruise"] == str(cruise_target)]
             .sort_values("time")
             .reset_index(drop=True)
         )
         if group.empty:
             continue
 
-        embed(header='185 of ocean_biogeochem2.py')
 
-        for prof_id, meta_row in group.iterrows():
-            lat_match = abs(meta_row["lat"] - lat_target) < coord_tol
-            lon_match = abs(meta_row["lon"] - lon_target) < coord_tol
+        # Grab group + profile
+        igroup = group.iloc[prof_id]
+        ds_idx = igroup['idx']
+        prof   = ds.isel(**{dim_profile: int(ds_idx)}) #meta_row["idx"])})
 
-            if lat_match and lon_match:
-                prof   = ds.isel(**{dim_profile: int(meta_row["idx"])})
-                result = process_profile(
-                    prof,
-                    surface_depth=surface_depth,
-                    qc_threshold=qc_threshold,
-                    min_surface=min_surface,
-                )
-                if result is not None:
-                    rows.append({
-                        "cruise":               cruise_target,
-                        "profile_id":           prof_id,
-                        "time":                 meta_row["time"],
-                        "latitude":             meta_row["lat"],
-                        "longitude":            meta_row["lon"],
-                        "bbp700_top25m_median": result["bbp700_top25m_median"],
-                        "n_values_used":        result["n_values_used"],
-                    })
-                break  # stop once the matching profile is found
+        # Check lat, lon
+        #embed(header='185 of ocean_biogeochem2.py')
+        lat_match = float(prof.latitude)
+        lon_match = float(prof.longitude)
+
+        assert np.abs(lat_match - lat_target) < coord_tol
+        assert np.abs(lon_match - lon_target) < coord_tol
+
+        result = process_profile(
+            prof,
+            surface_depth=surface_depth,
+            qc_threshold=qc_threshold,
+            min_surface=min_surface,
+        )
+        if result is not None:
+            rows.append({
+                "cruise":               cruise_target,
+                "profile_id":           prof_id,
+                "time":                 igroup["time"],
+                "latitude":             igroup["lat"],
+                "longitude":            igroup["lon"],
+                "bbp700_top25m_median": result["bbp700_top25m_median"],
+                "n_values_used":        result["n_values_used"],
+            })
+        else:
+            raise ValueError("Bad result")
 
     ds.close()
     print(f"  -> {len(rows)} matched profiles so far")

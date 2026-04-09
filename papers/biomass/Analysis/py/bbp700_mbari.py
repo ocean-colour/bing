@@ -7,8 +7,7 @@ import xarray as xr
 
 
 def calc_bbp700_mbari(argo_dir:str=None, csv_path:str=None,
-    out_path:str=None,
-    surface_depth: float = 25.0) -> pd.DataFrame:
+    out_path:str=None, surface_depth: float = 25.0) -> pd.DataFrame:
 
     if argo_dir is None:
         argo_dir = os.path.join(os.getenv('OS_DATA'), 'Argo',

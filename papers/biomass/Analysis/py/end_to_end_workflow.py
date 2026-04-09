@@ -90,10 +90,20 @@ def main(flg):
         match_file='matched_argo_bgc_profiles_bbp_v3.csv'
         slurp.slurp_bing_fits(match_file, debug=False)
     
-    # Slurp in the Argo biogeochemistry top 25m bbp
+    # Calculate + slurp in the Argo biogeochemistry top 25m bbp
     if flg == 8:
         match_file='matched_argo_bgc_profiles_bbp_v3.csv'
-        slurp.add_argo_biogeochem(match_file, debug=True)
+
+        ## Calculate
+        # MBARI
+        bbp_mbari = argo.calc_bbp700_mbari(match_file)
+        # Ocean BGC
+        bbp_obgc = argo.calc_obgc_bbp(match_file)#, debug=True)
+
+        # Slurp
+        slurp.add_argo_bbp(match_file, [bbp_mbari, bbp_obgc],
+            debug=True)
+
     
     # ############################
     # Debugging
