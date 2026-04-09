@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from IPython import embed
 
 # ================================
 # CONSTANTS
@@ -84,28 +85,23 @@ def process_profile(
     -------
     dict with keys ``bbp700_top25m_median`` and ``n_values_used``, or None.
     """
-    try:
-        good = prof[VAR_BBP_QC].data <= qc_threshold
-        if not np.any(good):
-            return None
-
-        depth = prof[VAR_DEPTH].data[good]
-        bbp   = prof[VAR_BBP].data[good]
-
-        surface_mask = depth <= surface_depth
-        vals = bbp[surface_mask]
-
-        if len(vals) < min_surface:
-            return None
-
-        return {
-            "bbp700_top25m_median": float(np.median(vals)),
-            "n_values_used": int(len(vals)),
-        }
-
-    except Exception:
+    good = prof[VAR_BBP_QC].data <= qc_threshold
+    if not np.any(good):
         return None
 
+    depth = prof[VAR_DEPTH].data[good]
+    bbp   = prof[VAR_BBP].data[good]
+
+    surface_mask = depth <= surface_depth
+    vals = bbp[surface_mask]
+
+    if len(vals) < min_surface:
+        raise ValueError(f"Not enough surface values: {len(vals)} < {min_surface}")
+
+    return {
+        "bbp700_top25m_median": float(np.median(vals)),
+        "n_values_used": int(len(vals)),
+    }
 
 # ================================
 # FILE PROCESSING
@@ -168,6 +164,7 @@ def process_file(
     csv_sub = csv_df[csv_df["filename"].str.contains(base_name, na=False)]
     print(f"  -> {len(csv_sub)} relevant CSV rows")
 
+    # Loop on the matched
     for _, csv_row in csv_sub.iterrows():
         cruise_target = str(csv_row["cruise"])
         lat_target    = csv_row.get("lat", csv_row.get("latitude"))
@@ -180,6 +177,8 @@ def process_file(
         )
         if group.empty:
             continue
+
+        embed(header='185 of ocean_biogeochem2.py')
 
         for prof_id, meta_row in group.iterrows():
             lat_match = abs(meta_row["lat"] - lat_target) < coord_tol
@@ -216,7 +215,7 @@ def process_file(
 def run(
     nc_files: list[str],
     csv_path: str,
-    out_path: str,
+    out_path: str = None,
     surface_depth: float = 25.0,
     qc_threshold: int = 50,
     min_surface: int = 3,
@@ -232,7 +231,7 @@ def run(
         Paths to the NetCDF files to process.
     csv_path : str
         Path to the reference CSV (matched_argo_bgc_profiles_bbp_v3.csv).
-    out_path : str
+    out_path : str, optional
         Destination path for the output CSV.
     surface_depth, qc_threshold, min_surface, coord_tol
         Forwarded to :func:`process_file` / :func:`process_profile`.
@@ -240,6 +239,14 @@ def run(
     Returns
     -------
     pd.DataFrame with all matched results (also saved to *out_path*).
+        Columns:
+        - cruise
+        - profile_id
+        - time
+        - latitude
+        - longitude
+        - bbp700_top25m_median
+        - n_values_used
     """
     csv_df   = pd.read_csv(csv_path)
     all_rows = []
@@ -256,9 +263,13 @@ def run(
             )
         )
 
+    # Table
     df = pd.DataFrame(all_rows)
-    df.to_csv(out_path, index=False)
-    print(f"\nSaved {len(df)} rows to: {out_path}")
+
+    # Write to disk?
+    if out_path is not None:
+        df.to_csv(out_path, index=False)
+        print(f"\nSaved {len(df)} rows to: {out_path}")
     return df
 
 
@@ -266,11 +277,12 @@ def run(
 # SCRIPT ENTRY POINT
 # ================================
 if __name__ == "__main__":
+    nc_path = os.path.join(os.getenv('OS_DATA'), 'Argo', 'Med_Mexico')
     NC_FILES = [
-        "/Users/allie/Documents/summer 2025/python/bing/papers/biomass/Analysis/Ocean_Biogeochemistry_BGC-Argo_Global_Profiles_GulfofMexico.nc",
-        "/Users/allie/Documents/summer 2025/python/bing/papers/biomass/Analysis/Ocean_Biogeochemistry_BGC-Argo_Global_Profiles_Mediterranean.nc",
+        os.path.join(nc_path, "Ocean_Biogeochemistry_BGC-Argo_Global_Profiles_GulfofMexico.nc"),
+        os.path.join(nc_path, "Ocean_Biogeochemistry_BGC-Argo_Global_Profiles_Mediterranean.nc"),
     ]
-    CSV_PATH = "/Users/allie/Documents/summer 2025/python/bing/papers/biomass/Analysis/matched_argo_bgc_profiles_bbp_v3.csv"
-    OUT_PATH = "/Users/allie/Documents/summer 2025/python/bing/papers/biomass/Analysis/ocean_biogeochem_top25m_bbp.csv"
+    CSV_PATH = "matched_argo_bgc_profiles_bbp_v3.csv"
+    OUT_PATH = "ocean_biogeochem_top25m_bbp.csv"
 
     run(nc_files=NC_FILES, csv_path=CSV_PATH, out_path=OUT_PATH)

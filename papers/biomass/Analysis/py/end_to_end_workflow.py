@@ -85,11 +85,15 @@ def main(flg):
         fitting.fit_em_all(match_file, clobber=False,
             nclosest=10, debug=False)
 
-    # Slurp in the fits
+    # Slurp in the PACE fits
     if flg == 7:
         match_file='matched_argo_bgc_profiles_bbp_v3.csv'
-        slurp.slurp_fits(match_file, debug=False)
+        slurp.slurp_bing_fits(match_file, debug=False)
     
+    # Slurp in the Argo biogeochemistry top 25m bbp
+    if flg == 8:
+        match_file='matched_argo_bgc_profiles_bbp_v3.csv'
+        slurp.add_argo_biogeochem(match_file, debug=True)
     
     # ############################
     # Debugging

@@ -1,5 +1,5 @@
 """
-PACE slurping
+Slurping functions for the biomass paper
 
 """
 
@@ -15,6 +15,7 @@ from ocpy.pace import io as pace_io
 # Local imports
 import fitting as m_fitting
 import biomass_io
+import ocean_biogeochem2
 
 from IPython import embed
 
@@ -184,7 +185,7 @@ if __name__ == '__main__':
 
 
 
-def slurp_fits(match_file:str, debug:bool=False):
+def slurp_bing_fits(match_file:str, debug:bool=False):
     """
     Processes matched Argo BGC profiles and extracts specific parameters for analysis.
 
@@ -291,3 +292,43 @@ def slurp_fits(match_file:str, debug:bool=False):
     print(f'Wrote {len(matched)} profiles to {match_file}')
 
     print(f"Skipped {nskip} profiles")
+
+
+def add_argo_biogeochem(match_file:str, debug:bool=False):
+
+    argo_key = 'argo_bbp700'
+
+    # Argo analysis
+    nc_path = os.path.join(os.getenv('OS_DATA'), 'Argo', 'Med_Mexico')
+    NC_FILES = [
+        os.path.join(nc_path, "Ocean_Biogeochemistry_BGC-Argo_Global_Profiles_GulfofMexico.nc"),
+        os.path.join(nc_path, "Ocean_Biogeochemistry_BGC-Argo_Global_Profiles_Mediterranean.nc"),
+    ]
+
+    argo_df = ocean_biogeochem2.run(nc_files=NC_FILES, csv_path=match_file)
+
+    # Load up Argo profiles, already matched to PACE
+    matched = pandas.read_csv(match_file)
+
+    # Merge
+    if argo_key not in matched.columns:
+        argo_bbp = np.ones(len(matched)) * np.nan
+    else:
+        argo_bbp = matched[argo_key].values
+
+    ## Loop on argo_df
+    for ss in range(len(argo_df)):
+        imatched = argo_df.iloc[ss]
+        idx = np.where((matched.cruise == imatched.cruise) & (
+            matched.profile_id == imatched.profile_id))[0]
+        if len(idx) == 0:
+            raise ValueError(f"{imatched} not found")
+        # Save
+        argo_bbp[idx] = imatched.bbp700_top25m_median
+    
+    # Update
+    matched[argo_key] = argo_bbp
+
+    if not debug:
+        matched.to_csv(match_file, index=False)
+    embed(header='313 of slurp.py')
