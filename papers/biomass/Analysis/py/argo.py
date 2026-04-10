@@ -348,7 +348,8 @@ def calc_bbp700_mbari(csv_path:str, argo_dir:str=None,
     print("Calculating bbp in the Argo MBARI data")
     if argo_dir is None:
         argo_dir = os.path.join(os.getenv('OS_DATA'), 'Argo',
-            'SOCCOM_GO-BGC_LoResQC_LIAR_26Jun2025_netcdf')
+            'SOCCOM_GO-BGC_HiResQC_LIAR_26Jun2025_netcdf')
+            #'SOCCOM_GO-BGC_LoResQC_LIAR_26Jun2025_netcdf')
 
     # -------------------------
     # load matchup CSV
