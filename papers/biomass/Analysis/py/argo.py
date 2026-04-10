@@ -363,6 +363,9 @@ def calc_bbp700_mbari(csv_path:str, argo_dir:str=None,
         glob.glob(os.path.join(argo_dir, "*HRQC.nc"))))
     base_files = [os.path.basename(file) for file in files]
 
+    if len(files) == 0:
+        raise ValueError(f"No files found in {argo_dir}")
+
     rows = []
 
     #def get_wmo(fname):

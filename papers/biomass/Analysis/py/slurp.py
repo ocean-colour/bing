@@ -314,7 +314,9 @@ def add_argo_bbp(match_file:str, argo_dfs:list[pandas.pandas.DataFrame],
             argo_bbp[idx] = iargo[argo_calc_key]
     
     # Update
-    assert np.sum(np.isnan(argo_bbp)) == 0
+    if np.sum(np.isnan(argo_bbp)) != 0:
+        embed(header='318 of slurp.py')
+        raise ValueError("Not all bbp values have been filled")
     print("All bbp values have been filled")
     matched[argo_key] = argo_bbp
 
