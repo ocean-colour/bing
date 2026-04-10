@@ -102,7 +102,7 @@ def main(flg):
 
         # Slurp
         slurp.add_argo_bbp(match_file, [bbp_mbari, bbp_obgc],
-            debug=True)
+            debug=False)
 
     
     # ############################
