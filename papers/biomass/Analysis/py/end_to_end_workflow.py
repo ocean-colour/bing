@@ -27,8 +27,10 @@ def slurp_argo():
     # MBARI
     argo_path = os.path.join(os.getenv('OS_DATA'), 
                              'Argo', 
-                             'SOCCOM_GO-BGC_LoResQC_LIAR_26Jun2025_netcdf')
+                             'SOCCOM_GO-BGC_HiResQC_LIAR_26Jun2025_netcdf')
     mbari = argo.scan_mbari_profiles(argo_path=argo_path)
+    if len(mbari) == 0:
+        raise ValueError("No MBARI profiles found")
 
     # Mediterranean
     argo_file = os.path.join(os.getenv('OS_DATA'), 
