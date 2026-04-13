@@ -39,7 +39,7 @@ def load_granules_from_json(json_file:str):
     return granules, df
         
 
-def load_matched_data(match_file='matched_argo_bgc_profiles_bbp.csv', 
+def load_matched_data(match_file='matched_argo_bgc_profiles_bbp_v3.csv', 
                       pace_json='PACE_50clouds.json'):
     """
     Load matched Argo BGC profiles and PACE granules.
@@ -68,6 +68,28 @@ def load_matched_data(match_file='matched_argo_bgc_profiles_bbp.csv',
     
     return matched, granules, pace
 
+def get_matched_profile(matched, cruise, profile):
+    """
+    Get a matched profile from the matched DataFrame.
+    
+    Parameters
+    ----------
+    matched : pandas.DataFrame
+        The matched DataFrame
+    cruise : int
+        The cruise number
+    profile : int
+        The profile number
+
+    Returns
+    -------
+    pandas.Series
+        A row from the matched profiles DataFrame containing 'cruise' and 'profile' fields
+    """
+    mask = (matched['cruise'] == cruise) & (matched['profile'] == profile)
+    if mask.sum() == 0:
+        raise ValueError(f"No matched profile found for cruise={cruise}, profile={profile}")
+    return matched[mask].iloc[0]
 
 def get_fit_file_path(matched_profile, base_dir=None):
     """
