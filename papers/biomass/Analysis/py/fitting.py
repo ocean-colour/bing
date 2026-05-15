@@ -51,18 +51,24 @@ from IPython import embed
 #    pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
 
 
-def fit_me(items, debug:bool=False, in_p=None, return_early:bool=False,
+def fit_me(items:list[tuple], debug:bool=False, in_p=None, return_early:bool=False,
     guess_vals:np.ndarray=None):
     """
     Fit a single spectrum.
 
     Parameters:
     -----------
-    items : list
+    items : list[tuple]
         A list containing the following items:
         - iwave : numpy.ndarray
         - ispec : numpy.ndarray
         - isig : numpy.ndarray
+    in_p : dict, optional
+        A dictionary containing the parameters for the model.
+    return_early : bool, optional
+        If True, return the models, ans, and rt_dict.
+    guess_vals : np.ndarray, optional
+        An array containing the initial guess values for the parameters.
 
     Returns:
     --------
