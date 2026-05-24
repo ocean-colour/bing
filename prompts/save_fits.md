@@ -205,7 +205,7 @@ Make these modifications to the plan:
 - You can reconstruct rt_dict from the parameters in the parameter tuple using the rt_dict_from_p() function, so it does not need to be input or saved
 - Call the new docs file docs/save_load.rst instead of docs/data_processing.rst
 
-## Code modificattions
+## Code modifications
 
 ### First batch
 
@@ -213,6 +213,7 @@ Make the following modifications to the code:
 
 - Move the _params_to_dict() function to the bing/parameters/p_ntuple.py module
 - Move the _priors_from_models() and _split_priors() functions to the bing/priors/priors.py module
+- Have an option in the main() method of the test_io.py script to save the files to a non-temporary directory named tmp/ in the tests/ folder.
 
 ## Prompts
 
@@ -221,3 +222,5 @@ Make the following modifications to the code:
 2. Read this doc.  Modify the plan to include the Modifications section above and my answers to the Clarifications section above.
 
 3.  Read this doc.  Proceed with the development of the code as described in the Planning section above.
+
+4. Read this doc.  Execute the first batch of modifications to the code under Code modifications > First batch.

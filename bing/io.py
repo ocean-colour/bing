@@ -32,14 +32,16 @@ from bing.rt import defs as rt_defs
 
 
 # ---------------------------------------------------------------------------
-# JSON-serialisation helpers (private)
+# Public API
 # ---------------------------------------------------------------------------
 
-
-def _to_jsonable(value):
+def to_jsonable(value):
     """Recursively convert numpy / tuple / namedtuple values to JSON-safe ones.
 
     Plain Python scalars, strings and ``None`` are returned unchanged.
+    This is a generic helper kept here because it is primarily used to
+    serialise the parameter named-tuple, but it is safe to use on any
+    nested structure (e.g. the output of ``bing.evaluate.calc_stats``).
     """
     # numpy scalar → Python scalar
     if isinstance(value, np.generic):
@@ -49,76 +51,25 @@ def _to_jsonable(value):
         return value.tolist()
     # namedtuple → dict via _asdict
     if hasattr(value, "_asdict") and isinstance(value, tuple):
-        return {k: _to_jsonable(v) for k, v in value._asdict().items()}
+        return {k: to_jsonable(v) for k, v in value._asdict().items()}
     # tuple / list → list (recurse)
     if isinstance(value, (list, tuple)):
-        return [_to_jsonable(v) for v in value]
+        return [to_jsonable(v) for v in value]
     # dict → dict (recurse)
     if isinstance(value, dict):
-        return {k: _to_jsonable(v) for k, v in value.items()}
+        return {k: to_jsonable(v) for k, v in value.items()}
     return value
 
 
-def _params_to_dict(p):
+def params_to_dict(p):
     """Convert a BING parameter named-tuple into a JSON-safe dictionary.
 
-    The parameter named-tuple is produced by
-    :func:`bing.parameters.p_ntuple.gen` and contains a mix of strings,
-    floats, booleans, ``None`` and lists of dicts (priors).  All numpy
-    objects and nested tuples are converted so :func:`json.dump` can
-    handle the result.
+    The parameter named-tuple is produced by :func:`gen` and contains a
+    mix of strings, floats, booleans, ``None`` and lists of dicts
+    (priors).  All numpy objects and nested tuples are converted so
+    :func:`json.dump` can handle the result.
     """
-    return _to_jsonable(p)
-
-
-def _priors_from_models(models):
-    """Return the prior dictionaries for absorption then backscattering.
-
-    The order matches ``models[0].pnames + models[1].pnames`` so the
-    saved list can be split back later by counting parameters per model.
-
-    Each prior dict captures the fields needed to rebuild that prior via
-    :class:`bing.priors.priors.Priors`.
-    """
-    pdicts = []
-    for model in models:
-        if model.priors is None:
-            # Fall back to BING's default prior so the saved fit can be
-            # reloaded even if the caller never set priors.
-            pdicts.extend([dict(bing_priors.default)] * model.nparam)
-            continue
-        for prior in model.priors.priors:
-            pdict = {"flavor": prior.flavor}
-            # Range bounds are present on all uniform / log-uniform priors
-            # and optionally on Gaussian priors.
-            if getattr(prior, "pmin", None) is not None:
-                pdict["pmin"] = float(prior.pmin)
-            if getattr(prior, "pmax", None) is not None:
-                pdict["pmax"] = float(prior.pmax)
-            # Gaussian-specific fields
-            if getattr(prior, "mean", None) is not None:
-                pdict["mean"] = float(prior.mean)
-            if getattr(prior, "sigma", None) is not None:
-                pdict["sigma"] = float(prior.sigma)
-            # Ratio-specific fields
-            if getattr(prior, "ratio", None) is not None:
-                pdict["ratio"] = float(prior.ratio)
-                pdict["i0"] = int(prior.i0)
-                pdict["i1"] = int(prior.i1)
-            pdicts.append(pdict)
-    return pdicts
-
-
-def _split_priors(prior_dicts, models):
-    """Split a flat prior list back into [a_priors, b_priors] using nparam."""
-    n_a = models[0].nparam
-    return prior_dicts[:n_a], prior_dicts[n_a:]
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
+    return to_jsonable(p)
 
 def save_fit(outroot, p, models, chains, p0, Rrs, varRrs,
              p0_init=None, stats_perc=(14, 86), recon_perc=(5, 95)):
@@ -199,9 +150,9 @@ def save_fit(outroot, p, models, chains, p0, Rrs, varRrs,
         bing_version=bing_version,
         model_names=list(p.model_names),
         pnames=pnames,
-        params=_params_to_dict(p),
-        priors=_priors_from_models(models),
-        stats=_to_jsonable(stats),
+        params=params_to_dict(p),
+        #priors=bing_priors.priors_from_models(models),
+        stats=to_jsonable(stats),
         stats_perc=list(stats_perc),
         recon_perc=list(recon_perc),
     )
@@ -250,7 +201,9 @@ def load_fit(outroot):
     # Build a bare model pair to learn nparam for each, then rebuild with
     # the saved priors split into ``apriors`` / ``bpriors``.
     bare_models = model_utils.init(meta["model_names"], wave_arr)
-    a_pdicts, b_pdicts = _split_priors(meta["priors"], bare_models)
+    #a_pdicts, b_pdicts = bing_priors.split_priors(meta["priors"], bare_models)
+    a_pdicts = p.apriors
+    b_pdicts = p.bpriors
     models = model_utils.init(meta["model_names"], wave_arr,
                               prior_dicts=(a_pdicts, b_pdicts))
 
