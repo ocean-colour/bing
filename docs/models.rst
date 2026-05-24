@@ -21,6 +21,15 @@ where:
 - :math:`b_b(\lambda)` is the total backscattering coefficient
 - :math:`f` is a factor depending on the solar zenith angle and viewing geometry
 
+In addition to this elastic forward model, BING optionally adds two inelastic
+contributions to Rrs: Raman scattering by water molecules and chlorophyll
+fluorescence emission near 685 nm. These are enabled through the
+``include_Raman`` and ``include_Chl_fl`` flags on the parameter named-tuple
+(see :ref:`parameters`) and are computed by :mod:`bing.rt`. The chlorophyll
+fluorescence path depends on the ``correct_atmosphere`` package for the
+downwelling irradiance spectrum -- see :doc:`chlorophyll_fluorescence` and
+:doc:`radiative_transfer`.
+
 Model Components
 ----------------
 
