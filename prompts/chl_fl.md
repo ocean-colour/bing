@@ -1,8 +1,8 @@
- # Saving results from BING fits to files
+ # Chl-a Fluorescence 
 
 ## Goals
 
-Capture all of the main outputs of a BING fit and the inputs required to reproduce the fit.
+Adds Chl Fl to the bing.rt module.
 
 ## Code
 
@@ -13,8 +13,6 @@ Here are guidelines for the code:
 - Add inline comments to explain the effort
 - Use methods, not classes
 - Place import statements at the top of the file.
-- Use numpy.savez() to save arrays 
-- Use JSON files for inputs and simple stats
 
 ## Testing
 
@@ -23,6 +21,15 @@ If you need to run python, use the "ocean14" environment in conda.
 ## Docs
 
 Examine the files in the docs/ directory and update the docs to reflect the new changes.  In particular:
+
+- Make sure the docs/chlorophyll_fluorescence.rst file is up to date.
+- Add a new section to the docs/index.rst file to include that file
+- Update the docs/radiative_transfer.rst file, as needed
+- Note the new dependency on the correct_atmosphere repository, which is located at https://github.com/ocean-colour/correct-atmosphere
+- Update the docs/models.rst file, as needed
+- Update the docs/parameters.rst file, as needed
+- Add docs on how to instantiate and use the rt_dict_from_p() function
+
 
 ## Tests
 
