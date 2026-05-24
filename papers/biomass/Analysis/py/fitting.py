@@ -89,8 +89,6 @@ def fit_me(items:list[tuple], debug:bool=False, in_p=None, return_early:bool=Fal
             include_Chl_fl=True, phi_C=0.02, double_gaussian=True)
     else:
         p = in_p
-    #p = standard.expb_pow(satellite='PACE', add_noise=False, 
-    #    variable_Gordon=True)
     models = model_utils.init(p.model_names, iwave)
 
     # RT
@@ -125,6 +123,7 @@ def fit_me(items:list[tuple], debug:bool=False, in_p=None, return_early:bool=Fal
     rt_dict = rt_defs.rt_dict_from_p(p)
     #embed(header='101 of fitting.py')
 
+    # LM
     try:
         ans, cov, idx = chisq_fit.fit(items[0], models, rt_dict, bounds=bounds)
     #except RuntimeError:
@@ -158,7 +157,7 @@ def fit_me(items:list[tuple], debug:bool=False, in_p=None, return_early:bool=Fal
     stats = evaluate.calc_stats(chains)
 
      # Return
-    return models, chains, ans, stats, rt_dict
+    return models, chains, ans, stats, rt_dict, pdict
 
 def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
             nclosest:int=1, n_cores:int=10):
@@ -290,7 +289,7 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
         return
 
     # Grab the closest
-    models, chains, ans, stats, rt_dict = answers[ok_ss[0]]
+    models, chains, ans, stats, rt_dict, pdict = answers[ok_ss[0]]
     ispec, isig = all_spec[0][1], all_spec[0][2]
 
     out_dict['chains'] = chains
