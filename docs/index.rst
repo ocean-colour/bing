@@ -23,6 +23,8 @@ Features
 * **Model Fitting**: Bayesian and least-squares fitting of bio-optical models
 * **PACE Integration**: Native support for PACE OCI data processing
 * **Uncertainty Quantification**: Comprehensive error propagation and uncertainty analysis
+* **Inelastic Processes**: Support for both Raman scattering and chlorophyll fluorescence
+  contributions to the forward radiative transfer model
 
 .. toctree::
    :maxdepth: 2
@@ -33,16 +35,22 @@ Features
    tutorials/index
    api/index
    models
-   radiative_transfer
-   fitting
    parameters
+   fitting
    data_processing
+   save_load
    examples
    contributing
    changelog
+   references
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Radiative Transfer:
+
+   radiative_transfer
    raman
    chlorophyll_fluorescence
-   references
 
 Quick Start
 -----------

@@ -308,6 +308,108 @@ The fitting module automatically:
    For detailed Raman scattering physics and additional functions, see
    :ref:`raman`.
 
+Chlorophyll Fluorescence
+------------------------
+
+BING also supports a chlorophyll fluorescence inelastic-emission contribution
+to Rrs. The top-level method :func:`bing.rt.calc_Rrs_fluorescence` integrates
+the fluorescence reflectance from a band of excitation wavelengths (370-690
+nm) to emission wavelengths near the 685 nm primary peak (and optionally the
+730 nm secondary peak), following Gordon (1979) and Sathyendranath & Platt
+(1998).
+
+The fluorescence calculation depends on a downwelling irradiance spectrum at
+the excitation wavelengths. This is provided by the companion package
+``correct_atmosphere``:
+
+* Repository: https://github.com/ocean-colour/correct-atmosphere
+* Install: ``pip install git+https://github.com/ocean-colour/correct-atmosphere.git``
+* Import: ``from correct_atmosphere import downwelling``
+
+.. code-block:: python
+
+    import numpy as np
+    from bing.rt import calc_Rrs_fluorescence
+    from correct_atmosphere import downwelling
+
+    wave    = np.linspace(650, 750, 101)        # Emission wavelengths
+    wave_ex = np.arange(400.0, 681.0, 1.0)      # Excitation wavelengths
+
+    Ed_ex = downwelling.solar_irradiance(wave_ex)
+    Ed_em = downwelling.solar_irradiance(685.)
+
+    Rrs_fl = calc_Rrs_fluorescence(
+        wave, a_em, bb_em,
+        a_ex, bb_ex, aph_ex,
+        wave_ex, Ed_ex, Ed_em,
+        phi_C=0.02,
+        double_gaussian=True,
+    )
+
+For the full set of low-level fluorescence routines (emission line shapes,
+quantum yields, FLH, ...) see :doc:`chlorophyll_fluorescence`.
+
+.. _rt-dict-from-p:
+
+The Radiative-Transfer Dictionary (``rt_dict_from_p``)
+------------------------------------------------------
+
+The fitting routines (:mod:`bing.fitting.chisq_fit`,
+:mod:`bing.fitting.inference`, :mod:`bing.fitting.l23`) receive their
+radiative-transfer options through a small dictionary, the **rt dict**.
+The convenience method :func:`bing.rt.defs.rt_dict_from_p` builds this
+dictionary from a parameter named-tuple (see :ref:`parameters`):
+
+.. code-block:: python
+
+    from bing.parameters import standard
+    from bing.rt import defs as rt_defs
+
+    # Build a parameter named-tuple (e.g. via standard.expb_pow(...))
+    p = standard.expb_pow(satellite='PACE')
+
+    # Or generate one explicitly with the RT options of interest
+    from bing.parameters import p_ntuple
+    p = p_ntuple.gen(
+        model_names=['ExpBricaud', 'Pow'],
+        variable_Gordon=True,
+        include_Raman=True,
+        include_Chl_fl=True,
+        phi_C=0.02,
+        double_gaussian=True,
+    )
+
+    # Convert to the radiative-transfer dictionary
+    rt_dict = rt_defs.rt_dict_from_p(p)
+    # rt_dict == {
+    #     'variable_Gordon':  True,
+    #     'include_Raman':    True,
+    #     'include_Chl_fl':   True,
+    #     'phi_C':            0.02,
+    #     'double_gaussian':  True,
+    # }
+
+    # Pass through to a fit
+    from bing.fitting import chisq_fit
+    ans, cov, idx = chisq_fit.fit(items[0], models, rt_dict, ...)
+
+.. py:function:: bing.rt.defs.rt_dict_from_p(p)
+
+   Build a radiative-transfer options dictionary from a BING parameter
+   named-tuple.
+
+   :param p: Parameter named-tuple (typically produced by
+       :func:`bing.parameters.p_ntuple.gen` or one of the ``standard.*``
+       helpers).
+   :returns: ``dict`` with keys ``variable_Gordon``, ``include_Raman``,
+       ``include_Chl_fl``, ``phi_C``, ``double_gaussian``. Any attribute
+       that is missing on ``p`` is set to ``None``.
+   :rtype: dict
+
+   The returned dictionary is the canonical way to pass radiative-transfer
+   options into the forward model and the fitting routines.
+
+
 API Reference
 -------------
 
@@ -355,6 +457,40 @@ Core Functions
        bb_R = raman.raman_backscattering_coeff(wave_ex)
        Rrs = calc_Rrs(a, bb, in_G1=G1, in_G2=G2,
                       a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
+
+.. py:function:: calc_Rrs_fluorescence(wavelength, a_em, bb_em, a_ex, bb_ex, aph_ex, wavelength_ex, Ed_ex, Ed_em, mu_d=None, mu_f=None, phi_C=0.02, double_gaussian=True)
+
+   Calculate the Rrs contribution from chlorophyll fluorescence, integrating
+   over excitation wavelengths.
+
+   :param wavelength: Emission wavelength(s) [nm]. Typically 650-750 nm.
+   :type wavelength: float or ndarray
+   :param a_em: Total absorption at emission wavelength(s) [m^-1]
+   :type a_em: float or ndarray
+   :param bb_em: Total backscattering at emission wavelength(s) [m^-1]
+   :type bb_em: float or ndarray
+   :param a_ex: Total absorption at excitation wavelengths [m^-1]
+   :type a_ex: ndarray
+   :param bb_ex: Total backscattering at excitation wavelengths [m^-1]
+   :type bb_ex: ndarray
+   :param aph_ex: Phytoplankton absorption at excitation wavelengths [m^-1]
+   :type aph_ex: ndarray
+   :param wavelength_ex: Excitation wavelengths [nm]
+   :type wavelength_ex: ndarray
+   :param Ed_ex: Downwelling irradiance at excitation wavelengths
+       (from ``correct_atmosphere.downwelling``)
+   :type Ed_ex: ndarray
+   :param Ed_em: Downwelling irradiance at the (peak) emission wavelength
+   :type Ed_em: float or ndarray
+   :param phi_C: Quantum yield (default 0.02)
+   :type phi_C: float, optional
+   :param double_gaussian: Use double-Gaussian emission line (default True)
+   :type double_gaussian: bool, optional
+   :return: Fluorescence contribution to Rrs [sr^-1]
+   :rtype: ndarray
+
+   See :doc:`chlorophyll_fluorescence` for full physics, low-level methods,
+   and FLH calculations.
 
 .. py:function:: calc_raman_correction_factor(a_em, bb_em, a_ex, bb_ex, bb_R, Ed_ratio=1.0, include_second_order=True)
 

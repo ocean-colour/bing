@@ -388,3 +388,53 @@ def set_standard_priors(models, p):
                                 mean=p.Sdg, sigma=p.sSdg)
         # Finish
         models[jj].priors = Priors(prior_dicts)
+
+
+def priors_from_models(models):
+    """Extract prior dicts from a pair of models for serialisation.
+
+    Walks ``models[i].priors.priors`` and returns a flat list of plain
+    dicts (absorption first, then backscattering).  The order matches
+    ``models[0].pnames + models[1].pnames`` so the saved list can be
+    split back later with :func:`split_priors`.
+
+    If a model has no priors attached, the BING default prior is used as
+    a fallback so the saved fit can still be reloaded.
+    """
+    pdicts = []
+    for model in models:
+        if model.priors is None:
+            # Fall back to BING's default prior so the saved fit can be
+            # reloaded even if the caller never set priors.
+            pdicts.extend([dict(default)] * model.nparam)
+            continue
+        for prior in model.priors.priors:
+            pdict = {"flavor": prior.flavor}
+            # Range bounds are present on all uniform / log-uniform
+            # priors and optionally on Gaussian priors.
+            if getattr(prior, "pmin", None) is not None:
+                pdict["pmin"] = float(prior.pmin)
+            if getattr(prior, "pmax", None) is not None:
+                pdict["pmax"] = float(prior.pmax)
+            # Gaussian-specific fields
+            if getattr(prior, "mean", None) is not None:
+                pdict["mean"] = float(prior.mean)
+            if getattr(prior, "sigma", None) is not None:
+                pdict["sigma"] = float(prior.sigma)
+            # Ratio-specific fields
+            if getattr(prior, "ratio", None) is not None:
+                pdict["ratio"] = float(prior.ratio)
+                pdict["i0"] = int(prior.i0)
+                pdict["i1"] = int(prior.i1)
+            pdicts.append(pdict)
+    return pdicts
+
+
+def split_priors(prior_dicts, models):
+    """Split a flat prior list back into ``[a_priors, b_priors]``.
+
+    Uses ``models[0].nparam`` to know where the absorption priors end.
+    Inverse of :func:`priors_from_models`.
+    """
+    n_a = models[0].nparam
+    return prior_dicts[:n_a], prior_dicts[n_a:]
