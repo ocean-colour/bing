@@ -200,7 +200,7 @@ def load_fit(outroot):
 
     # Build a bare model pair to learn nparam for each, then rebuild with
     # the saved priors split into ``apriors`` / ``bpriors``.
-    bare_models = model_utils.init(meta["model_names"], wave_arr)
+    #bare_models = model_utils.init(meta["model_names"], wave_arr)
     #a_pdicts, b_pdicts = bing_priors.split_priors(meta["priors"], bare_models)
     a_pdicts = p.apriors
     b_pdicts = p.bpriors
