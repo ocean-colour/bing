@@ -24,7 +24,7 @@ Here are guidelines for writing code:
 - Reuse existing code when possible
 - Use methods, not classes
 - Place any new code in the existing Analysis/py directory
-
+https://www.spiedigitallibrary.org/journals/journal-of-applied-remote-sensing/volume-19/issue-3/038506/One-shot-gas-detection-with-transformer-paired-neural-networks-in/10.1117/1.JRS.19.038506.short
 ## Development
 
 1. Generate a module named jr_utils.py in Analysis/py with a method to extract Rrs spectra from the CSV file.  It should:

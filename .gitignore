@@ -12,6 +12,7 @@ __pycache__/
 # Data
 *.npz
 *.npy
+*.json
 
 # Distribution / packaging
 .Python

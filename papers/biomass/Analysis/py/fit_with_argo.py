@@ -1,28 +1,20 @@
 # Fit a PACE spectrum constraining the backscattering to Argo data
 
 import os, sys
+import glob
 import numpy as np
 
 from matplotlib import pyplot as plt
 
-import xarray
 import pandas
 
-from ocpy.pace import io as pace_io
 from ocpy.utils import plotting
 
 from bing.parameters import standard
-from bing.models import utils as model_utils
-from bing.priors import priors as bing_priors
-from bing.fitting import inference as bing_inf
-from bing import evaluate
-from bing.fitting import chisq_fit
-from bing import plotting as bing_plotting
-from bing import evaluate
+from bing import io as bing_io
 
 #
 # Locals
-from grab_pace_granules import closest_Rrs
 import biomass_io
 import fitting
 
@@ -57,7 +49,9 @@ def fit_with_and_without_argo(cruise_profile, outdir='Argo_Constrained',
 
     # Prep
     fit_file = biomass_io.get_fit_file_path(imatched)
-    outfile = os.path.join(outdir, os.path.basename(fit_file).replace('Argo_', 'Argo_Constrained_'))
+    base, _ = os.path.splitext(os.path.basename(fit_file))
+    outroot_S = os.path.join(outdir, base)
+    outroot_C = os.path.join(outdir, base.replace('Argo_', 'Argo_Constrained_'))
     print(f"Working on {imatched.cruise}-{imatched.profile:03d}...")
 
     # Load
@@ -69,14 +63,18 @@ def fit_with_and_without_argo(cruise_profile, outdir='Argo_Constrained',
         print("="*80)
         print("Fitting unconstrained...")
         print("="*80)
-        models_S, chains_S, ans_S, stats_S, rt_dict_S, pdict_S = fitting.fit_me(items)
-        embed(header='73 of fit_with_argo.py')
-        a_mean_S, bb_mean_S, a_5_S, a_95_S, bb_5_S, bb_95_S,\
-            model_Rrs_S, sigRs_S = evaluate.reconstruct_from_chains(
-            models_S, chains_S, rt_dict_S)#, perc=perc)
-    else:
-        embed(header='77 of fit_with_argo.py')
-        raise NotImplementedError("Not implemented yet")
+        # Fit
+        models_S, chains_S, ans_S, stats_S, rt_dict_S, pdict_S, p_S = fitting.fit_me(items)
+        # Reconstruct
+        #a_mean_S, bb_mean_S, a_5_S, a_95_S, bb_5_S, bb_95_S,\
+        #    model_Rrs_S, sigRs_S = evaluate.reconstruct_from_chains(
+        #    models_S, chains_S, rt_dict_S)#, perc=perc)
+        # Save
+        bing_io.save_fit(outroot_S, p_S, models_S, chains_S, ans_S, items[1], items[2]**2)
+
+    # Load for Rrs
+    fits_S = bing_io.load_fit(outroot_S)
+    model_Rrs_S = fits_S['Rrs_recon']
 
     # With Argo
     bpriors=[dict(flavor='log_uniform', pmin=-6, pmax=5)]*2
@@ -87,16 +85,17 @@ def fit_with_and_without_argo(cruise_profile, outdir='Argo_Constrained',
     # Uniform for beta from 0. - 2. (positive here means negative slope)
     bpriors[1]=dict(flavor='uniform', pmin=0., pmax=2.)
 
-    p = standard.expb_pow(satellite='PACE', add_noise=False,
+    p_C = standard.expb_pow(satellite='PACE', add_noise=False,
                 variable_Gordon=True, include_Raman=True, bpriors=bpriors,
                 include_Chl_fl=True, phi_C=0.02, double_gaussian=True)
     print("="*80)
     print("Fitting constrained...")
     print("="*80)
-    models_C, chains_C, ans_C, stats_C, rt_dict_C, pdict_C = fitting.fit_me(items, in_p=p)
-    a_mean_C, bb_mean_C, a_5_C, a_95_C, bb_5_C, bb_95_C,\
-            model_Rrs_C, sigRs_C = evaluate.reconstruct_from_chains(
-            models_C, chains_C, rt_dict_C)#, perc=perc)
+    models_C, chains_C, ans_C, stats_C, rt_dict_C, pdict_C, p_C = fitting.fit_me(items, in_p=p_C)
+    bing_io.save_fit(outroot_C, p_C, models_C, chains_C, ans_C, items[1], items[2]**2)
+    # Load for Rrs
+    fits_C = bing_io.load_fit(outroot_C)
+    model_Rrs_C = fits_C['Rrs_recon']
 
     # Plot
 
@@ -116,12 +115,91 @@ def fit_with_and_without_argo(cruise_profile, outdir='Argo_Constrained',
     ax.legend()
     plotting.set_fontsize(ax, 15.)
     #
-    outfig = outfile.replace('npz', 'png')
+    outfig = outroot_C + '.png'
     plt.savefig(outfig, dpi=300)
     print(f"Saved: {outfig}")
     plt.show()
     plt.close()
 
+
+
+def examine_parameter_changes(indir:str='Argo_Constrained', verbose:bool=True):
+    """Build a DataFrame comparing free vs. Argo-constrained fit parameters.
+
+    Loads every matched pair of Argo_<cruise>_<profile>_fits and
+    Argo_Constrained_<cruise>_<profile>_fits in ``indir`` via
+    :func:`bing.io.load_fit`, pulls the median parameter values from each fit's
+    ``stats`` block, and returns one row per (cruise, profile) with both sets
+    of parameters plus their differences.
+
+    Parameters
+    ----------
+    indir : str
+        Folder containing the saved fit files.
+    verbose : bool
+        Print a short summary of the parameter changes.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per cruise/profile pair with columns:
+        ``cruise``, ``profile``, ``<pname>_free``, ``<pname>_cons``,
+        ``<pname>_diff`` (constrained - free, in log10 space for amplitudes).
+    """
+    # Find every constrained fit and pair it to its free counterpart.
+    cons_files = sorted(glob.glob(os.path.join(
+        indir, 'Argo_Constrained_*_fits.npz')))
+
+    rows = []
+    for cons_path in cons_files:
+        # Strip extension and derive the matching free-fit root.
+        cons_root = os.path.splitext(cons_path)[0]
+        free_root = cons_root.replace('Argo_Constrained_', 'Argo_')
+
+        # Skip if the free counterpart is missing on disk.
+        if not os.path.exists(free_root + '.npz'):
+            if verbose:
+                print(f"Skipping {cons_root}: no free counterpart")
+            continue
+
+        # Parse cruise/profile from the filename stem
+        # (format: Argo_Constrained_<cruise>_<profile>_fits)
+        stem = os.path.basename(cons_root)
+        parts = stem.split('_')
+        cruise = int(parts[2])
+        profile = int(parts[3])
+
+        # Load both fits
+        free = bing_io.load_fit(free_root)
+        cons = bing_io.load_fit(cons_root)
+
+        # Pull median parameter values (in the model's native log10/linear mix)
+        pnames = list(free['pnames'])
+        med_free = np.asarray(free['stats']['med'])
+        med_cons = np.asarray(cons['stats']['med'])
+
+        row = {'cruise': cruise, 'profile': profile}
+        for jj, pname in enumerate(pnames):
+            row[f'{pname}_free'] = med_free[jj]
+            row[f'{pname}_cons'] = med_cons[jj]
+            row[f'{pname}_diff'] = med_cons[jj] - med_free[jj]
+        rows.append(row)
+
+    df = pandas.DataFrame(rows)
+
+    if verbose and len(df) > 0:
+        # Print the diff columns so the caller sees the parameter shifts.
+        diff_cols = [c for c in df.columns if c.endswith('_diff')]
+        # Add Bnw too
+        diff_cols.append('Bnw_free')
+        diff_cols.append('Bnw_cons')
+        diff_cols.append('beta_free')
+        diff_cols.append('beta_cons')
+
+        print("Parameter changes (constrained - free):")
+        print(df[['cruise', 'profile'] + diff_cols].to_string(index=False))
+
+    return df
 
 
 def main(flg):
@@ -134,7 +212,7 @@ def main(flg):
         idx = -45  # Same as above
         idx = -55  # Not quite as extreme
         idx = -100  # Less extreme, but similar
-        idx = -130  # 
+        idx = -130  #
         find_an_example(idx)
 
     # Fit
@@ -142,8 +220,13 @@ def main(flg):
         cruise_profile_n25 = (5906537,85) # idx = -25
         cruise_profile_n55 = (6903823,387) # idx = -55
         cruise_profile_n130 = (6903823,427) # idx = -130
-        
-        fit_with_and_without_argo(cruise_profile_n25, load_fits=False)
+
+        for cruise_profile in [cruise_profile_n25, cruise_profile_n55, cruise_profile_n130]:
+            fit_with_and_without_argo(cruise_profile, load_fits=False)
+
+    # Compare parameters between free and constrained fits
+    if flg == 3:
+        examine_parameter_changes()
 
 # Command line
 if __name__ == '__main__':

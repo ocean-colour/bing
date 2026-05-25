@@ -157,7 +157,7 @@ def fit_me(items:list[tuple], debug:bool=False, in_p=None, return_early:bool=Fal
     stats = evaluate.calc_stats(chains)
 
      # Return
-    return models, chains, ans, stats, rt_dict, pdict
+    return models, chains, ans, stats, rt_dict, pdict, p
 
 def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
             nclosest:int=1, n_cores:int=10):
@@ -250,7 +250,7 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
 
     # Fit
     if debug:
-        models, chains, ans, stats = fit_me(items[0], debug=True) 
+        models, chains, ans, stats, rt_dict, pdict, p = fit_me(items[0], debug=True) 
 
     with ProcessPoolExecutor(max_workers=n_cores) as executor:
         chunksize = nclosest // n_cores if nclosest // n_cores > 0 else 1
