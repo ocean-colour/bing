@@ -220,9 +220,12 @@ def main(flg):
         cruise_profile_n25 = (5906537,85) # idx = -25
         cruise_profile_n55 = (6903823,387) # idx = -55
         cruise_profile_n130 = (6903823,427) # idx = -130
+        # JR
+        cruise_profile_jr6 = (7902226,4) # Clearest sky
+        fit_with_and_without_argo(cruise_profile_jr6, load_fits=False)
 
-        for cruise_profile in [cruise_profile_n25, cruise_profile_n55, cruise_profile_n130]:
-            fit_with_and_without_argo(cruise_profile, load_fits=False)
+        #for cruise_profile in [cruise_profile_n25, cruise_profile_n55, cruise_profile_n130]:
+        #    fit_with_and_without_argo(cruise_profile, load_fits=False)
 
     # Compare parameters between free and constrained fits
     if flg == 3:
