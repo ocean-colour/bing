@@ -23,6 +23,7 @@ Here are guidelines for writing code:
 - Reuse existing code when possible
 - Use methods, not classes
 - Place any new code in the existing Analysis/py directory
+- Place outputs in the Low_bbp/ folder
 
 ## Development
 
@@ -36,6 +37,16 @@ Here are guidelines for writing code:
 - Generate a new module named lowest_bbp.py in Analysis/py with a method to generate the synthetic spectrum. 
 - Model that module after the fit_with_argo.py module.
 
+2. Fit the spectrum with BING.  Do the following:
+
+- Use the methods in py/fitting.py
+- Model after the fitting methods in py/fit_with_argo.py
+- Save the fitting output to the Low_bbp/ folder
+- Generate a figure of the fit similar to that in py/jr_analysis.py
+
+If you identify ways to refactor these modules to minimize replicated code, please do so.
+
 ## Code
 
 1. Read this doc.  Proceed with the first item under Development
+2. Read this doc.  Proceed with the 2nd item under Development
