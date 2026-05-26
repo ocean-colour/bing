@@ -170,8 +170,11 @@ def fit_jr_rrs(cruise_profile, outdir: str = None,
     # Load the JR Rrs spectrum for this matchup via jr_utils
     mdict = jr_utils.match_argo_to_jr(cruise_profile[0], cruise_profile[1])
     jr = jr_utils.extract_rrs(mdict['jr_idx'])
+    dt = (pandas.Timestamp(mdict['argo_row']['closest_time']) - mdict['argo_row']['time'])
+    dt_hours = dt.seconds / 3600.0
     #print(f"  JR match: dist={jr['match_dist_km']:.2f} km, "
     #      f"dt={jr['match_dt_hours']:.2f} h")
+    #embed(header='175 of jr_analysis.py')
 
     # Subset to the BING fitting window (PACE-like, 400-700 nm)
     wave_all = jr['wavelengths']
@@ -203,8 +206,8 @@ def fit_jr_rrs(cruise_profile, outdir: str = None,
 
     # Plot via fitting.plot_fit, write figure into the Frouin/ folder
     title = (f'JR Argo {cruise_profile[0]}-{cruise_profile[1]:03d} '
-             f"(match dist={jr['match_dist_km']:.1f} km, "
-             f"dt={jr['match_dt_hours']:.1f} h)")
+             f"(match dist={mdict['argo_row']['closest_dist_km']:.1f} km, "
+             f"dt={dt_hours:.1f} h)")
     Rrs_obs = dict(wave=iwave, spec=ispec, var=isig**2)
     plot_file = outroot + '.png'
     fitting.plot_fit(models, chains, Rrs_obs, title, rt_dict,
@@ -320,7 +323,9 @@ def main(flg):
 
     # Fit the same trio of test cases
     if flg == 4:
-        for cp in [(5906537, 85), (6903823, 387), (6903823, 427)]:
+        jr_df = list_jr_matchups()
+        for ii, row in jr_df.iterrows():
+            cp = (row['cruise'], row['profile'])
             try:
                 fit_jr_rrs(cp)
             except Exception as e:
