@@ -207,7 +207,7 @@ def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
     # Raman?
     if a_ex is not None:
         if bb_ex is None or bb_R is None:
-            raise IOError("bb_ex/bb_R must be set if a_ex is provided")
+            raise IOError("bb_ex,bb_R must be set if a_ex is provided")
         corr = calc_raman_correction_factor(a, bb, a_ex, bb_ex, bb_R)
         # Apply
         Rrs *= corr

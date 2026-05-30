@@ -11,12 +11,15 @@ from ocpy.utils import plotting
 from ocpy.hydrolight import loisel23
 from ocpy.satellites import pace as sat_pace
 
+from correct_atmosphere import downwelling
+
 from bing.fitting import l23 as bing_l23
 from bing.preproc import convert_to_satwave
 from bing.noise import scale_noise, add_noise
 from bing import io as bing_io
 from bing.models import utils as model_utils
 from bing import rt as bing_rt
+from bing.rt import chl_fl
 
 # Locals
 import fitting
@@ -212,7 +215,8 @@ def plot_spectrum(spec:dict, outfile:str='Low_bbp/lowest_bbp_spectrum.png',
 
 
 def compare_Rrs(rank:int=1, outroot:str='Low_bbp/compare_Rrs',
-                  wv_min=400, show:bool=True, log10:bool=True):
+                  wv_min=400, show:bool=True, log10:bool=False,
+                  use_var:bool=False):
     """Compare various Rrs spectra for a given, low bbp example.
 
     Parameters
@@ -237,19 +241,54 @@ def compare_Rrs(rank:int=1, outroot:str='Low_bbp/compare_Rrs',
     models = model_utils.init(['ExpBricaud', 'Pow'], 
                                 odict_elastic['true_wave'])
     models[0].init_var_gordon()
+
     a_ex = odict_elastic['f_a'](models[0].wave_ex)
     bb_ex = odict_elastic['f_bb'](models[1].wave_ex)
-    Rrs_Gordon = bing_rt.calc_Rrs(odict_elastic['a'], odict_elastic['bb'],
-        in_G1=models[0].G1, in_G2=models[0].G2, 
+
+    # Gordon models
+    Rrs_GordonE = bing_rt.calc_Rrs(odict_elastic['a'], odict_elastic['bb'])
+    Rrs_GordonV = bing_rt.calc_Rrs(odict_elastic['a'], odict_elastic['bb'],
+        in_G1=models[0].G1, in_G2=models[0].G2) 
+    Rrs_GordonR = bing_rt.calc_Rrs(odict_elastic['a'], odict_elastic['bb'],
         a_ex = a_ex, bb_ex=bb_ex,
         bb_R=models[1].bb_R)
+    Rrs_GordonRV = bing_rt.calc_Rrs(odict_elastic['a'], odict_elastic['bb'],
+        in_G1=models[0].G1, in_G2=models[0].G2,
+        a_ex = a_ex, bb_ex=bb_ex,
+        bb_R=models[1].bb_R)
+
+    # Add Chl fluorescence
+    Ed = downwelling.downwelling_irradiance(models[0].wave, 0.)
+    Ed_em = downwelling.downwelling_irradiance(chl_fl.LAMBDA_FL_PRIMARY, 0.)
+    models[0].init_Chl_fluorescence(Ed=Ed, Ed_em=Ed_em)
+    Rrs_fl = bing_rt.rrs.calc_Rrs_fluorescence(
+        odict_elastic['true_wave'], odict_elastic['a'], odict_elastic['bb'],
+        odict_elastic['a'][models[0].i_Chl_ex],
+        odict_elastic['bb'][models[0].i_Chl_ex],
+        odict_elastic['aph'][models[0].i_Chl_ex],
+        models[0].wave[models[0].i_Chl_ex],
+        models[0].Ed_ex,
+        models[0].Ed_em,
+        phi_C=0.02,
+        double_gaussian=False)
+    Rrs_GordonRVCF = Rrs_GordonRV + Rrs_fl
+
+    # Correct L23 elastic Rrs to account for Raman scattering
+    corr = bing_rt.rrs.calc_raman_correction_factor(
+        odict_elastic['a'], odict_elastic['bb'], a_ex, bb_ex, models[1].bb_R)
+    Rrs_L23R = odict_elastic['true_Rrs'] * corr
+    Rrs_L23RCF = Rrs_L23R + Rrs_fl
+
 
     fig = plt.figure(figsize=(10, 6))
     ax = plt.gca()
 
-    for lbl, spec in zip(['Inelastic', 'Elastic', 'Gordon'], 
-                         [odict_inelastic['true_Rrs'], 
-                          odict_elastic['true_Rrs'], Rrs_Gordon]):
+    for lbl, spec in zip(
+        ['Inelastic', 'GordonE', 'GordonV', 
+         'GordonR', 'GordonRV', 'GordonRVCF', 
+         'L23R', 'L23RCF'], 
+        [odict_inelastic['true_Rrs'], Rrs_GordonE, Rrs_GordonV, 
+         Rrs_GordonR, Rrs_GordonRV, Rrs_GordonRVCF, Rrs_L23R, Rrs_L23RCF]):
 
         # If log10, suppress negative values
         #if log10:
@@ -258,25 +297,31 @@ def compare_Rrs(rank:int=1, outroot:str='Low_bbp/compare_Rrs',
         #    good = np.ones(len(spec['Rrs']), dtype=bool)
 
         # Reference noise-free curve for context
-        ax.plot(odict_elastic['true_wave'], spec, #color='steelblue',
+        ax.plot(odict_elastic['true_wave'], spec/odict_elastic['true_Rrs'],
                 ls='-', lw=1.5, label=lbl)
 
     ax.set_xlabel('Wavelength (nm)')
-    ax.set_ylabel(r'$R_{rs}$ (sr$^{-1}$)')
+    ax.set_ylabel(r'$R_{rs}$ relative to Inelastic')
 
     # Annotate bbp value and L23 index
     txt = (f"L23 idx = {idx}\n"
            r"$b_{bp}(" + f"{WV_REF:.0f}" + r")$ = "
            f"{bbp_value:.3e} m$^{{-1}}$")
-    ax.text(0.97, 0.95, txt, transform=ax.transAxes, fontsize=13,
+    ax.text(0.97, 0.15, txt, transform=ax.transAxes, fontsize=13,
             ha='right', va='top',
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7))
 
-    ax.legend(loc='lower left', fontsize=12)
+    ax.legend(fontsize=12)
     plotting.set_fontsize(ax, 14)
 
     # Zero line
-    ax.axhline(0., color='g', ls='--', lw=1.)
+    ax.axhline(1., color='k', ls='--', lw=1.)
+    ax.set_ylim(0.0, None)
+
+    # Minor tick marks
+    ax.minorticks_on()
+    ax.grid(True, which='major', alpha=0.5)
+    ax.grid(True, which='minor', alpha=0.2)
 
     # Log scale y-axis
     if log10:

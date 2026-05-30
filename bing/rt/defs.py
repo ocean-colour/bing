@@ -15,11 +15,12 @@ def rt_dict_from_p(p):
     """
 
     rt_dict = {}
-    for key in ['variable_Gordon',
-                'include_Raman',
-                'include_Chl_fl',
-                'phi_C',
-                'double_gaussian']:
+    for key in ['variable_Gordon', # Enable wavelength-dependent Gordon coefficients
+                'include_Raman', # Enable Raman scattering correction
+                'include_Chl_fl', # Enable chlorophyll fluorescence
+                'phi_C', # Fluorescence quantum yield
+                'double_gaussian', # Enable double-Gaussian emission model
+            ]:
         if hasattr(p,key):
             rt_dict[key] = getattr(p, key)
         else: 
