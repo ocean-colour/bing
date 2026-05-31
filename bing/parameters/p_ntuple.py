@@ -11,6 +11,7 @@ def_dict = dict(model_names=[], # Name of models for a and bb, list
                 add_noise=False,    # Add noise flag, bool
                 # Radiative Transfer
                 variable_Gordon=True, # Wavelength dependent Gordon coefficients?
+                variable_Gordon_G0=False, # Also load/apply the constant offset G0(λ)?
                 include_Raman=False, # Include Raman corrections
                 include_Chl_fl=False, # Include chlorophyll fluorescence corrections
                 phi_C=0.02,           # Fluorescence quantum yield

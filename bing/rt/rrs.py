@@ -40,53 +40,62 @@ G1_STANDARD, G2_STANDARD = 0.0949, 0.0794  # Standard Gordon factors
 from IPython import embed
 
 
-def wave_dependent_gordon(wave:np.ndarray, bounds_error:bool=True):
+def wave_dependent_gordon(wave:np.ndarray, bounds_error:bool=True,
+                          include_G0:bool=False):
     """
-    Load and interpolate wavelength-dependent Gordon coefficients G1 and G2.
+    Load and interpolate wavelength-dependent Gordon coefficients.
 
-    The Gordon coefficients parameterize the relationship between inherent
-    optical properties (IOPs) and remote sensing reflectance. Wavelength-dependent
-    coefficients provide improved accuracy over constant values, especially in
-    the UV and red wavelength ranges.
+    Two CSVs are supported under ``bing/data/RT/``:
+
+    - ``gordon_coefficients.csv`` (2-parameter): columns G1, G2.
+      ``rrs(λ) = G1(λ)·u + G2(λ)·u²``.
+    - ``gordon_coefficients_with_G0.csv`` (3-parameter): columns G0, G1, G2.
+      ``rrs(λ) = G0(λ) + G1(λ)·u + G2(λ)·u²``.
 
     Parameters
     ----------
     wave : np.ndarray
-        Wavelengths in nanometers at which to interpolate the Gordon coefficients.
+        Wavelengths in nanometers at which to interpolate.
     bounds_error : bool, optional
         If True (default), raises an error if wavelengths are outside the
         tabulated range. If False, extrapolates using cubic spline.
+    include_G0 : bool, optional
+        If True, also load and return the constant-offset coefficient G0(λ)
+        from the 3-parameter CSV. Default False (returns only G1, G2 from
+        the 2-parameter CSV — preserves all legacy call sites).
 
     Returns
     -------
-    G1 : np.ndarray
-        First-order Gordon coefficient G₀ at each wavelength.
-    G2 : np.ndarray
-        Second-order Gordon coefficient G₁ at each wavelength.
-
-    Notes
-    -----
-    The coefficients are loaded from 'bing/data/RT/gordon_coefficients.csv'
-    and interpolated using cubic splines.
+    If include_G0 is False:
+        G1, G2 : np.ndarray
+    If include_G0 is True:
+        G1, G2, G0 : np.ndarray
+            (Order chosen so existing two-return callers can ignore the third.)
 
     See Also
     --------
     calc_elastic_Rrs : Uses these coefficients to compute Rrs from IOPs.
     """
-    # Load
+    fname = 'gordon_coefficients_with_G0.csv' if include_G0 else 'gordon_coefficients.csv'
     gordon_file = os.path.join(
-            resources.files('bing'), 
-            'data', 'RT', 'gordon_coefficients.csv')
+            resources.files('bing'),
+            'data', 'RT', fname)
     result = pandas.read_csv(gordon_file, comment='#')
 
-    # Interpolate
     f_G1 = interpolate.interp1d(result['wavelength'], result['G1'], kind=3,
-                        bounds_error=bounds_error)#, fill_value='extrapolate')
+                                bounds_error=bounds_error)
     f_G2 = interpolate.interp1d(result['wavelength'], result['G2'], kind=3,
-                        bounds_error=bounds_error)#, fill_value='extrapolate')
+                                bounds_error=bounds_error)
+    G1 = f_G1(wave)
+    G2 = f_G2(wave)
 
-    # Apply                    
-    return f_G1(wave), f_G2(wave)
+    if include_G0:
+        if 'G0' not in result.columns:
+            raise IOError(f"G0 column missing from {gordon_file}")
+        f_G0 = interpolate.interp1d(result['wavelength'], result['G0'], kind=3,
+                                    bounds_error=bounds_error)
+        return G1, G2, f_G0(wave)
+    return G1, G2
 
 
 def Rrs_to_rrs(Rrs: np.ndarray, A: float = A_Rrs, B: float = B_Rrs) -> np.ndarray:
@@ -138,6 +147,7 @@ def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
     a_ex: Union[float, np.ndarray]=None,
     bb_ex: Union[float, np.ndarray]=None,
     bb_R: Union[float, np.ndarray]=None,
+    in_G0: Union[float, np.ndarray, None]=None,
     ):
     """
     Calculate remote sensing reflectance (Rrs) including optional Raman correction.
@@ -202,7 +212,7 @@ def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
     calc_raman_correction_factor : Compute the Raman correction factor.
     """
     # Elastic
-    Rrs = calc_elastic_Rrs(a, bb, in_G1=in_G1, in_G2=in_G2)
+    Rrs = calc_elastic_Rrs(a, bb, in_G1=in_G1, in_G2=in_G2, in_G0=in_G0)
 
     # Raman?
     if a_ex is not None:
@@ -217,34 +227,32 @@ def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
 
 
 
-def calc_elastic_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None):
+def calc_elastic_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
+                     in_G0:Union[float, np.ndarray, None]=None):
     """
-    Calculates the remote sensing reflectance (Rrs) using 
+    Calculates the remote sensing reflectance (Rrs) using
     the given absorption (a) and backscattering (bb) coefficients.
+
+    Evaluates ``rrs = G0 + G1·u + G2·u²`` where u = bb/(a+bb), then
+    converts to above-surface Rrs.
 
     Parameters:
         a (float or array-like): Absorption coefficient.
         bb (float or array-like): Backscattering coefficient.
-        in_G1 (float or array-like, optional): G1 value. Default is None.
-        in_G2 (float or array-like, optional): G2 value. Default is None.
+        in_G1 (float or array-like, optional): G1 value. Default uses G1_STANDARD.
+        in_G2 (float or array-like, optional): G2 value. Default uses G2_STANDARD.
+        in_G0 (float or array-like, optional): Constant offset G0. Default None
+            (== 0, i.e. classic 2-parameter Gordon).
 
     Returns:
         float or array-like: Remote Sensing Reflectance (Rrs) value.
     """
-    # u
     u = bb / (a+bb)
-    # rrs
-    if in_G1 is not None:
-        t1 = in_G1 * u
-    else: 
-        t1 = G1_STANDARD * u
-    if in_G2 is not None:
-        t2 = in_G2 * u*u
-    else:
-        t2 = G2_STANDARD * u*u
+    t1 = in_G1 * u   if in_G1 is not None else G1_STANDARD * u
+    t2 = in_G2 * u*u if in_G2 is not None else G2_STANDARD * u*u
     rrs = t1 + t2
-    
-    # Return Rrs
+    if in_G0 is not None:
+        rrs = rrs + in_G0
     return rrs_to_Rrs(rrs)
 
 
