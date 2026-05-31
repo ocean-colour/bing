@@ -150,6 +150,11 @@ class aNWModel:
         If uses_Chl, whether chlorophyll is fixed or fitted
     G1, G2 : float or np.ndarray or None
         Gordon coefficients for radiative transfer (can be wavelength-dependent)
+    G0 : float or np.ndarray or None
+        Gordon G0 coefficients for radiative transfer (can be wavelength-dependent)
+        If None, the default will be used (if the Gordon approx is done)
+        If variable_Gordon_G0 is True, then G0 will be fitted.
+        If variable_Gordon_G0 is False, then G0 will be fixed to the default.
     pivot : float
         Reference wavelength for spectral parameterizations [nm]
     internals : dict
@@ -166,6 +171,12 @@ class aNWModel:
     name:str = None
     """
     The name of the model
+    """
+
+    G0:float | np.ndarray = None
+    """
+    Gordon G1 coefficients
+        If None, the default will be used (if the Gordon approx is done)
     """
 
     G1:float | np.ndarray = None
@@ -393,11 +404,11 @@ class aNWModel:
             a_nw (np.ndarray): The non-water absorption coefficient
         """
 
-    def init_var_gordon(self):
+    def init_var_gordon(self, include_G0:bool=False):
         """
         Initialize the variable Gordon parameters
         """
-        self.G1, self.G2 = rrs.wave_dependent_gordon(self.wave)
+        self.G1, self.G2, self.G0 = rrs.wave_dependent_gordon(self.wave, include_G0=include_G0)
 
     def init_raman(self):
         """

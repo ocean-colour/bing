@@ -66,11 +66,9 @@ def wave_dependent_gordon(wave:np.ndarray, bounds_error:bool=True,
 
     Returns
     -------
-    If include_G0 is False:
-        G1, G2 : np.ndarray
-    If include_G0 is True:
-        G1, G2, G0 : np.ndarray
-            (Order chosen so existing two-return callers can ignore the third.)
+    G1, G2, G0 : np.ndarray
+        (Order chosen so existing two-return callers can ignore the third.)
+        G0 is None if include_G0 is False.
 
     See Also
     --------
@@ -95,7 +93,7 @@ def wave_dependent_gordon(wave:np.ndarray, bounds_error:bool=True,
         f_G0 = interpolate.interp1d(result['wavelength'], result['G0'], kind=3,
                                     bounds_error=bounds_error)
         return G1, G2, f_G0(wave)
-    return G1, G2
+    return G1, G2, None
 
 
 def Rrs_to_rrs(Rrs: np.ndarray, A: float = A_Rrs, B: float = B_Rrs) -> np.ndarray:
