@@ -60,15 +60,17 @@ def wave_dependent_gordon(wave:np.ndarray, bounds_error:bool=True,
         If True (default), raises an error if wavelengths are outside the
         tabulated range. If False, extrapolates using cubic spline.
     include_G0 : bool, optional
-        If True, also load and return the constant-offset coefficient G0(λ)
-        from the 3-parameter CSV. Default False (returns only G1, G2 from
-        the 2-parameter CSV — preserves all legacy call sites).
+        If True, also load the constant-offset coefficient G0(λ) from the
+        3-parameter CSV. Default False (reads the 2-parameter CSV and returns
+        ``G0 = None``).
 
     Returns
     -------
     G1, G2, G0 : np.ndarray
-        (Order chosen so existing two-return callers can ignore the third.)
-        G0 is None if include_G0 is False.
+        Always returns a 3-tuple. ``G0`` is ``None`` when ``include_G0`` is
+        False and an array of the same shape as ``G1`` otherwise. (This
+        signature is post-merge; callers that previously did
+        ``G1, G2 = wave_dependent_gordon(wave)`` must unpack three values.)
 
     See Also
     --------

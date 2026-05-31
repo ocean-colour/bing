@@ -158,8 +158,9 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
                             in_G0=getattr(a_model, 'G0', None),
                             a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
 
-    # Fluorescence?
-    if rt_dict['include_Chl_fl']:
+    # Fluorescence? Accept rt_dicts that don't specify the key (ad-hoc dicts
+    # built by tests / notebooks pre-date the include_Chl_fl field).
+    if rt_dict.get('include_Chl_fl', False):
         # a_ph
         aph = (10**a_params[...,-1:]) * a_model.a_ph
         aph_ex = aph[a_model.i_Chl_ex]
@@ -169,7 +170,7 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
             a_model.wave, a, bb,
             a[:,a_model.i_Chl_ex],
             bb[:,a_model.i_Chl_ex],
-            aph_ex, 
+            aph_ex,
             a_model.wave[a_model.i_Chl_ex],
             a_model.Ed_ex,
             a_model.Ed_em,
@@ -253,7 +254,7 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
         a_ex, bb_ex, bb_R = None, None, None
 
     # Make a_ph before deleting chains
-    if rt_dict['include_Chl_fl']:
+    if rt_dict.get('include_Chl_fl', False):
         aph = (10**chains[...,models[0].nparam-1:models[0].nparam]) * models[0].a_ph
         aph_ex = aph[...,models[0].i_Chl_ex]
 
@@ -273,7 +274,7 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
             in_G0=getattr(models[0], 'G0', None),
             a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
 
-    if rt_dict['include_Chl_fl']:
+    if rt_dict.get('include_Chl_fl', False):
         #embed(header='268 of evaluate.py')
         # Call me
         Rrs_fl = bing_rrs.calc_Rrs_fluorescence(
