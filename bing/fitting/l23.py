@@ -298,14 +298,21 @@ def prep_one_l23(p, idx, chk:bool=False):
     # Radiative Transfer
 
     ## Gordon coefficients
+    use_G0 = getattr(p, 'variable_Gordon_G0', False)
     if p.variable_Gordon:
-        G1, G2 = bing_rt.rrs.wave_dependent_gordon(model_wave)
-    else: 
-        G1, G2 = None, None
+        if use_G0:
+            G1, G2, G0 = bing_rt.rrs.wave_dependent_gordon(model_wave, include_G0=True)
+        else:
+            G1, G2 = bing_rt.rrs.wave_dependent_gordon(model_wave)
+            G0 = None
+    else:
+        G1, G2, G0 = None, None, None
     models[0].G1 = G1
     models[0].G2 = G2
+    models[0].G0 = G0
     models[1].G1 = G1
     models[1].G2 = G2
+    models[1].G0 = G0
 
     ## Raman
     if p.include_Raman:
@@ -317,12 +324,12 @@ def prep_one_l23(p, idx, chk:bool=False):
 
     ## Calculate Rrs
     gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'],
-        in_G1=G1, in_G2=G2, a_ex = a_ex, bb_ex=bb_ex,
+        in_G1=G1, in_G2=G2, in_G0=G0, a_ex = a_ex, bb_ex=bb_ex,
         bb_R=models[1].bb_R)
 
     # Gordon only
     orig_gordon_Rrs = bing_rt.calc_elastic_Rrs(odict['a'], odict['bb'],
-                                 in_G1=G1, in_G2=G2)
+                                 in_G1=G1, in_G2=G2, in_G0=G0)
 
     #embed(header='254 of l23.py')
 
@@ -374,6 +381,7 @@ def prep_one_l23(p, idx, chk:bool=False):
     ret_dict['models'] = models
     ret_dict['G1'] = G1
     ret_dict['G2'] = G2
+    ret_dict['G0'] = G0
 
     return ret_dict
     

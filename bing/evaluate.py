@@ -152,7 +152,9 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params, rt_dict:dict):
         a_ex, bb_ex, bb_R = None, None, None
 
     # Call me
-    Rrs = bing_rrs.calc_Rrs(a, bb, in_G1=a_model.G1, in_G2=a_model.G2,
+    Rrs = bing_rrs.calc_Rrs(a, bb,
+                            in_G1=a_model.G1, in_G2=a_model.G2,
+                            in_G0=getattr(a_model, 'G0', None),
                             a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
     # Return
     return Rrs
@@ -256,7 +258,9 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
 
     embed(header='81 of evaluate')
     '''
-    Rrs = bing_rrs.calc_Rrs(a, bb, in_G1=models[0].G1, in_G2=models[0].G2,
+    Rrs = bing_rrs.calc_Rrs(a, bb,
+            in_G1=models[0].G1, in_G2=models[0].G2,
+            in_G0=getattr(models[0], 'G0', None),
             a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
 
     # Stats

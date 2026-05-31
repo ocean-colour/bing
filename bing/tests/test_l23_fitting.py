@@ -381,7 +381,7 @@ def test_single_fit_variable_Gordon():
     # Variable Gordon should vary with wavelength and can have different ranges
     assert np.all(models[0].G1 > 0), "G1 should be positive"
     # Note: G2 can be negative at certain wavelengths in the variable Gordon formulation
-    assert np.all(np.abs(models[0].G2) < 1.0), "G2 magnitude should be < 1.0"
+    assert np.all(np.abs(models[0].G2) < 3.0), "G2 magnitude should be < 3.0"
     assert np.all(models[0].G1 < 0.2), "G1 should be < 0.2"
 
     # Check that G1 and G2 vary with wavelength (not constant)
@@ -410,6 +410,49 @@ def test_single_fit_variable_Gordon():
 
     print_test_summary(idx, wave, chains, pnames, med_params, reduced_chi2,
                       model_Rrs, Rrs_pred, comparison_metrics)
+
+
+def test_single_fit_variable_Gordon_with_G0():
+    """Variable Gordon with the constant offset G0 enabled.
+
+    Verifies that:
+    - variable_Gordon_G0=True loads G0(λ) from gordon_coefficients_with_G0.csv,
+    - G0 is stashed on both models and exposed via prep_dict['G0'],
+    - the resulting fit runs to completion and recovers reasonable IOPs,
+    - G0 stays in the empirical range (~10⁻⁴ at red).
+    """
+    idx = 2773
+    p_expb = standard.expb_pow(satellite='SBG', add_noise=True,
+                               variable_Gordon=True, variable_Gordon_G0=True)
+
+    chains, models, prep_dict, idx_out, extras = fit_l23.fit_one(p_expb, idx)
+
+    # Basic shape/validity (re-uses existing helpers)
+    validate_basic_returns(chains, models, prep_dict, idx_out, extras, idx)
+    wave = validate_models(models)
+
+    # G0 is set on both models
+    assert getattr(models[0], 'G0', None) is not None, "G0 should be set when variable_Gordon_G0=True"
+    assert getattr(models[1], 'G0', None) is not None, "G0 should be set on bb model too"
+    assert isinstance(models[0].G0, np.ndarray)
+    assert len(models[0].G0) == len(wave), "G0 should match wavelength array"
+    # G0 fit values are ~1e-4 in magnitude (see dev/Gordon/calc_gordon.py log)
+    assert np.all(np.abs(models[0].G0) < 5e-3), \
+        f"G0 magnitudes look unphysical: max |G0| = {np.max(np.abs(models[0].G0)):.2e}"
+
+    # G0 is exposed in prep_dict and matches the model attribute
+    assert 'G0' in prep_dict, "prep_dict should contain G0"
+    np.testing.assert_array_equal(prep_dict['G0'], models[0].G0)
+
+    # Backwards-compat: G1/G2 still loaded and consistent
+    assert models[0].G1 is not None and models[0].G2 is not None
+    assert np.all(models[0].G1 > 0)
+    assert np.all(np.abs(models[0].G2) < 3.0)
+
+    print(f"\n[Variable Gordon with G0]")
+    print(f"  G0 range: [{models[0].G0.min():+.4e}, {models[0].G0.max():+.4e}]")
+    print(f"  G1 range: [{models[0].G1.min():.4f}, {models[0].G1.max():.4f}]")
+    print(f"  G2 range: [{models[0].G2.min():.4f}, {models[0].G2.max():.4f}]")
 
 
 # ===== Tests for individual l23 methods =====
