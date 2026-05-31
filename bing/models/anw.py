@@ -69,7 +69,7 @@ from ocpy.ph import absorption as ph_absorption
 
 from bing.priors import priors as bing_priors
 from bing.models import functions
-from bing.rt import raman
+from bing.rt import raman, rrs
 
 from IPython import embed
 
@@ -197,7 +197,7 @@ class aNWModel:
 
     uses_Chl:bool = False
     """
-    Does the model use chlorophyll?
+    Does the model use chlorophyll (for absorption)?
     """
 
     fix_Chl:bool = None
@@ -205,10 +205,26 @@ class aNWModel:
     If Chl, is it fixed?
     """
 
+    i_Chl_ex:np.ndarray = None
+    """
+    The indices of the excitation wavelengths for chlorophyll fluorescence
+    """
+
+    Ed_ex:np.ndarray = None
+    """
+    The downwelling irradiance at the excitation wavelengths
+    """
+
+    Ed_em:float = None
+    """
+    The downwelling irradiance at the peak emission wavelength
+    """
+
     a_w:np.ndarray = None
     """
     The absorption coefficient of water
     """
+
     a_ph:np.ndarray = None
     """
     The absorption coefficient for phytoplankton
@@ -377,6 +393,12 @@ class aNWModel:
             a_nw (np.ndarray): The non-water absorption coefficient
         """
 
+    def init_var_gordon(self):
+        """
+        Initialize the variable Gordon parameters
+        """
+        self.G1, self.G2 = rrs.wave_dependent_gordon(self.wave)
+
     def init_raman(self):
         """
         Initialize wavelengths for Raman scattering calculations.
@@ -396,6 +418,32 @@ class aNWModel:
         bing.rt.raman.emission_to_excitation_wavelength : Wavelength conversion function
         """
         self.wave_ex = raman.emission_to_excitation_wavelength(self.wave)
+
+    def init_Chl_fluorescence(self, wv_ex_range:tuple=(400, 700),
+        Ed:np.ndarray=None, Ed_em:float=None):
+        """
+        Initialize the chlorophyll fluorescence parameters
+
+        Parameters:
+            wv_ex_range (tuple, optional): The range of excitation wavelengths. Defaults to (400, 700).
+            wv_em_range (tuple, optional): The range of emission wavelengths. Defaults to (650, 800).
+        """
+        # Grab the indices
+        i_Chl_ex = np.where((self.wave >= wv_ex_range[0]) & (self.wave <= wv_ex_range[1]))[0]
+        #i_Chl_em = np.where((self.wave >= wv_em_range[0]) & (self.wave <= wv_em_range[1]))[0]
+
+        # Multi-spectral checks here (not ready for multi-spectral yet)
+        
+        # Downwelling
+        if Ed is None or Ed_em is None:
+            raise IOError("Need to calculate here")
+        else:
+            self.Ed_ex = Ed[i_Chl_ex]
+            self.Ed_em = Ed_em
+
+        # Save em
+        self.i_Chl_ex = i_Chl_ex
+        #self.i_Chl_em = i_Chl_em
 
     def __repr__(self):
         return f"<aNWModel: {self.name}, nparam={self.nparam}>"

@@ -119,6 +119,55 @@ Parameter tuples contain:
     params.set_Sdg        # CDOM slope flag
     params.sSdg           # CDOM slope value
     params.beta           # Backscattering constraint
+    # Radiative-transfer options
+    params.variable_Gordon # Wavelength-dependent Gordon coefficients
+    params.include_Raman   # Include Raman scattering correction
+    params.include_Chl_fl  # Include chlorophyll fluorescence emission
+    params.phi_C           # Fluorescence quantum yield (default 0.02)
+    params.double_gaussian # Double-Gaussian (685+730 nm) emission line
+
+Radiative-Transfer Options
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The parameter tuple carries the radiative-transfer flags consumed by the
+forward model and the fitting routines. These are extracted into a small
+"rt dict" by :func:`bing.rt.defs.rt_dict_from_p`:
+
+.. code-block:: python
+
+    from bing.parameters import p_ntuple
+    from bing.rt import defs as rt_defs
+
+    p = p_ntuple.gen(
+        model_names=['ExpBricaud', 'Pow'],
+        variable_Gordon=True,
+        include_Raman=False,
+        include_Chl_fl=True,    # Enable chlorophyll fluorescence
+        phi_C=0.02,             # Quantum yield
+        double_gaussian=True,   # Use 685 + 730 nm emission peaks
+    )
+
+    rt_dict = rt_defs.rt_dict_from_p(p)
+    # {'variable_Gordon': True, 'include_Raman': False,
+    #  'include_Chl_fl': True,  'phi_C': 0.02,
+    #  'double_gaussian': True}
+
+The fields are:
+
+- ``variable_Gordon`` (bool, default ``True``) -- use wavelength-dependent
+  :math:`G_1(\lambda), G_2(\lambda)`. See :ref:`radiative_transfer`.
+- ``include_Raman`` (bool, default ``False``) -- add the Sathyendranath &
+  Platt (1998) Raman scattering correction. See :ref:`raman`.
+- ``include_Chl_fl`` (bool, default ``False``) -- add chlorophyll
+  fluorescence emission to the forward Rrs. Depends on the
+  `correct_atmosphere <https://github.com/ocean-colour/correct-atmosphere>`_
+  package. See :doc:`chlorophyll_fluorescence`.
+- ``phi_C`` (float, default ``0.02``) -- fluorescence quantum yield.
+- ``double_gaussian`` (bool, default ``True``) -- if ``True``, use the
+  double-Gaussian emission line (PS II at 685 nm and PS I at 730 nm).
+
+See :ref:`rt-dict-from-p` for the full description of ``rt_dict_from_p``
+and how the dictionary is consumed by the fitting routines.
 
 Satellite-Specific Settings
 ---------------------------

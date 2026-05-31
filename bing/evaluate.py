@@ -89,7 +89,8 @@ def calc_stats(chains, names:list=None,
 
     return stats
 
-def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params, rt_dict:dict):
+def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params, 
+        rt_dict:dict):
     """
     Calculate Rrs from model parameters using Gordon radiative transfer.
 
@@ -156,6 +157,27 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params, rt_dict:dict):
                             in_G1=a_model.G1, in_G2=a_model.G2,
                             in_G0=getattr(a_model, 'G0', None),
                             a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
+
+    # Fluorescence?
+    if rt_dict['include_Chl_fl']:
+        # a_ph
+        aph = (10**a_params[...,-1:]) * a_model.a_ph
+        aph_ex = aph[a_model.i_Chl_ex]
+
+        # Call me
+        Rrs_fl = bing_rrs.calc_Rrs_fluorescence(
+            a_model.wave, a, bb,
+            a[:,a_model.i_Chl_ex],
+            bb[:,a_model.i_Chl_ex],
+            aph_ex, 
+            a_model.wave[a_model.i_Chl_ex],
+            a_model.Ed_ex,
+            a_model.Ed_em,
+            phi_C=rt_dict['phi_C'],
+            double_gaussian=rt_dict['double_gaussian'])
+        # Add
+        Rrs += Rrs_fl
+
     # Return
     return Rrs
 
@@ -230,6 +252,11 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
     else:
         a_ex, bb_ex, bb_R = None, None, None
 
+    # Make a_ph before deleting chains
+    if rt_dict['include_Chl_fl']:
+        aph = (10**chains[...,models[0].nparam-1:models[0].nparam]) * models[0].a_ph
+        aph_ex = aph[...,models[0].i_Chl_ex]
+
     del chains
 
     # Calculate the mean and standard deviation
@@ -241,27 +268,26 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
     #bb_std = np.std(bb, axis=0)
 
     # Calculate the model Rrs
-    '''
-    from importlib import reload
-    from bing.rt import raman
-
-    mu_d = raman.MU_D_DEFAULT
-    mu_u = raman.MU_U_DEFAULT
-    mu_R = raman.MU_R_DEFAULT
-    s_E= 1.
-    R_E = raman.calc_R_elastic(a, bb, s_E, mu_d, mu_u)
-
-    R_raman = raman.calc_R_raman_total(
-        a, bb, a_ex, bb_ex, bb_R, 1.,
-        s_E, mu_d, mu_u, mu_R, True,
-    )
-
-    embed(header='81 of evaluate')
-    '''
     Rrs = bing_rrs.calc_Rrs(a, bb,
             in_G1=models[0].G1, in_G2=models[0].G2,
             in_G0=getattr(models[0], 'G0', None),
             a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
+
+    if rt_dict['include_Chl_fl']:
+        #embed(header='268 of evaluate.py')
+        # Call me
+        Rrs_fl = bing_rrs.calc_Rrs_fluorescence(
+            models[0].wave, a, bb,
+            a[:,models[0].i_Chl_ex],
+            bb[:,models[0].i_Chl_ex],
+            aph_ex, 
+            np.outer(np.ones(a.shape[0]), models[0].wave[models[0].i_Chl_ex]),
+            np.outer(np.ones(a.shape[0]), models[0].Ed_ex),
+            models[0].Ed_em,
+            phi_C=rt_dict['phi_C'],
+            double_gaussian=rt_dict['double_gaussian'])
+        # Add
+        Rrs += Rrs_fl
 
     # Stats
     sigRs = np.std(Rrs, axis=0)
