@@ -70,6 +70,20 @@ BING depends on the Ocean Color Python (ocpy) library. Install it via:
 
     pip install ocpy
 
+correct_atmosphere Installation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The chlorophyll fluorescence module (:doc:`chlorophyll_fluorescence`)
+requires the ``correct_atmosphere`` package to provide downwelling
+irradiance spectra at the excitation wavelengths.
+
+.. code-block:: bash
+
+    pip install git+https://github.com/ocean-colour/correct-atmosphere.git
+
+It is only needed if you enable ``include_Chl_fl=True`` in your parameter
+configuration; the rest of BING runs without it.
+
 NASA Earthdata Authentication
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
