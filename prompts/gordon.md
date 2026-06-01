@@ -82,6 +82,10 @@ Here are guidelines for coding:
 
 1. Update the docs for the variable Gordon coefficients to include the G0 term.  
 
+## Polishing
+
+1. I have merged in develop and there were conflicts.  I may have poorly merged the l23.py module.  Please review the changes and make any necessary adjustments.  Check all tests and the codes and Notebooks in /dev/Gordon. Log your work and results below in the Logs section.  
+
 ## Prompts
 
 1. Read this doc. Proceed with the 3rd item under Further checks.
@@ -90,6 +94,7 @@ Here are guidelines for coding:
 4. Re-read this doc. Proceed with the 5th item under Development.
 5. Re-read this doc. Proceed with the 6th item under Development.
 6. Re-read this doc. Proceed with the 7th item under Development.
+7. Re-read this doc. Proceed with the 1st item under Polishing
 
 ## Logging
 

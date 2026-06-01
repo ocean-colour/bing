@@ -636,6 +636,7 @@ def test_rt_dict_from_p_defaults():
 
     # Default values defined in bing.parameters.p_ntuple.def_dict
     assert rt_dict['variable_Gordon'] is True
+    assert rt_dict['variable_Gordon_G0'] is False
     assert rt_dict['include_Raman'] is False
     assert rt_dict['include_Chl_fl'] is False
     assert rt_dict['phi_C'] == 0.02
@@ -643,7 +644,8 @@ def test_rt_dict_from_p_defaults():
 
     # No other unexpected keys are added
     assert set(rt_dict.keys()) == {
-        'variable_Gordon', 'include_Raman', 'include_Chl_fl',
+        'variable_Gordon', 'variable_Gordon_G0',
+        'include_Raman', 'include_Chl_fl',
         'phi_C', 'double_gaussian',
     }
 
