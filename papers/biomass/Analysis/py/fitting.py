@@ -93,12 +93,13 @@ def fit_me(items:list[tuple], debug:bool=False, in_p=None, return_early:bool=Fal
 
     # RT
     if p.variable_Gordon:
-        models[0].init_var_gordon()
+        models[0].init_var_gordon(include_G0=p.variable_Gordon_G0)
     if p.include_Chl_fl:
         Ed = downwelling.downwelling_irradiance(models[0].wave, 0.)
         Ed_em = downwelling.downwelling_irradiance(chl_fl.LAMBDA_FL_PRIMARY, 0.)
         models[0].init_Chl_fluorescence(Ed=Ed, Ed_em=Ed_em)
-    
+
+    #embed(header='102 of fitting.py')
     # Priors
     bing_priors.set_standard_priors(models, p)
 

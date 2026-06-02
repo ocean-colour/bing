@@ -20,6 +20,7 @@ from bing import io as bing_io
 from bing.models import utils as model_utils
 from bing import rt as bing_rt
 from bing.rt import chl_fl
+from bing.parameters import standard
 
 # Locals
 import fitting
@@ -256,6 +257,17 @@ def compare_Rrs(rank:int=1, outroot:str='Low_bbp/compare_Rrs',
         in_G1=models[0].G1, in_G2=models[0].G2,
         a_ex = a_ex, bb_ex=bb_ex,
         bb_R=models[1].bb_R)
+    Rrs_GordonRV = bing_rt.calc_Rrs(odict_elastic['a'], odict_elastic['bb'],
+        in_G1=models[0].G1, in_G2=models[0].G2,
+        a_ex = a_ex, bb_ex=bb_ex,
+        bb_R=models[1].bb_R)
+
+    # G0
+    models = model_utils.init(['ExpBricaud', 'Pow'], 
+                                odict_elastic['true_wave'])
+    models[0].init_var_gordon(include_G0=True)
+    Rrs_GordonV0 = bing_rt.calc_Rrs(odict_elastic['a'], odict_elastic['bb'],
+        in_G1=models[0].G1, in_G2=models[0].G2, in_G0=models[0].G0)
 
     # Add Chl fluorescence
     Ed = downwelling.downwelling_irradiance(models[0].wave, 0.)
@@ -284,10 +296,10 @@ def compare_Rrs(rank:int=1, outroot:str='Low_bbp/compare_Rrs',
     ax = plt.gca()
 
     for lbl, spec in zip(
-        ['Inelastic', 'GordonE', 'GordonV', 
+        ['Inelastic', 'GordonE', 'GordonV', 'GordonV0',
          'GordonR', 'GordonRV', 'GordonRVCF', 
          'L23R', 'L23RCF'], 
-        [odict_inelastic['true_Rrs'], Rrs_GordonE, Rrs_GordonV, 
+        [odict_inelastic['true_Rrs'], Rrs_GordonE, Rrs_GordonV, Rrs_GordonV0,
          Rrs_GordonR, Rrs_GordonRV, Rrs_GordonRVCF, Rrs_L23R, Rrs_L23RCF]):
 
         # If log10, suppress negative values
@@ -338,6 +350,7 @@ def compare_Rrs(rank:int=1, outroot:str='Low_bbp/compare_Rrs',
 def fit_lowest_bbp(outdir:str=LOWBBP_DIR, wv_ref:float=WV_REF,
                    wv_min:float=400., wv_max:float=700.,
                    scl_noise:str='PACE', add_satellite_noise:bool=True,
+                   use_Gordon_G0:bool=False,
                    seed:int=1234, use_Gordon:bool=False,
                    show:bool=False, spec:dict=None):
     """Fit the lowest-bbp synthetic PACE spectrum with BING.
@@ -360,6 +373,8 @@ def fit_lowest_bbp(outdir:str=LOWBBP_DIR, wv_ref:float=WV_REF,
     spec : dict, optional
         Pre-built spectrum dict from :func:`generate_pace_spectrum` to
         avoid re-loading the Loisel dataset.
+    use_Gordon_G0 : bool
+        If True, use the Gordon Rrs model with G0.
 
     Returns
     -------
@@ -382,10 +397,18 @@ def fit_lowest_bbp(outdir:str=LOWBBP_DIR, wv_ref:float=WV_REF,
 
     # File naming follows the L23 index for traceability
     base = f"Lowbbp_L23_{spec['idx']:04d}_fits"
+    if use_Gordon_G0:
+        base = base.replace('Lowbbp_', 'Lowbbp_G0_')
     if use_Gordon:
         base = base.replace('L23', 'Gordon')
     outroot = os.path.join(outdir, base)
     fit_file = outroot + '.npz'
+
+    # Parameters
+    p = standard.expb_pow(satellite='PACE', add_noise=False,
+        variable_Gordon=True, include_Raman=True,
+        variable_Gordon_G0=use_Gordon_G0,
+        include_Chl_fl=True, phi_C=0.02, double_gaussian=True)
 
     # LM + MCMC via the standard pipeline used by fit_with_argo / jr_analysis
     print("=" * 80)
@@ -393,7 +416,7 @@ def fit_lowest_bbp(outdir:str=LOWBBP_DIR, wv_ref:float=WV_REF,
           f"(bbp({spec['bbp_wave']:.0f})={spec['bbp_value']:.3e} m^-1)")
     print("=" * 80)
     models, chains, ans, stats, rt_dict, pdict, p = fitting.fit_me(
-        [iwave, ispec, isig])
+        [iwave, ispec, isig], in_p=p)
 
     # Persist the fit (writes .npz + .json)
     bing_io.save_fit(outroot, p, models, chains, ans, ispec, isig**2)
@@ -428,7 +451,8 @@ def main(flg):
     # Fit the lowest-bbp synthetic PACE spectrum with BING
     if flg == 2:
         #fit_lowest_bbp()
-        fit_lowest_bbp(use_Gordon=True)
+        fit_lowest_bbp(use_Gordon_G0=True)
+        #fit_lowest_bbp(use_Gordon=True)
 
     # Plot various Rrs spectra for a given, low bbp example
     if flg == 3:
