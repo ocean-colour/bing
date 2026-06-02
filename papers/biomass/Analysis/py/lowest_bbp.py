@@ -456,7 +456,7 @@ def main(flg):
 
     # Plot various Rrs spectra for a given, low bbp example
     if flg == 3:
-        compare_Rrs()
+        compare_Rrs(rank=20)
 
 
 # Command line
