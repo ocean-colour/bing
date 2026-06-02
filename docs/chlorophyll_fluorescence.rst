@@ -168,6 +168,17 @@ calc_Rrs_fluorescence
    The function supports both single spectra (1D ``a_ex``) and MCMC chains
    (2D ``a_ex`` with shape ``(nsamples, nwave_ex)``).
 
+   .. note::
+
+      The upwelling attenuation :math:`\kappa^F(\lambda)` and the energy
+      conversion factor :math:`\lambda' / \lambda` are evaluated at every
+      emission wavelength :math:`\lambda` in the output grid -- not pinned to
+      the 685 nm primary peak. This matters for the double-Gaussian model:
+      pure-water absorption at 730 nm is roughly 4x larger than at 685 nm,
+      so the secondary peak is suppressed by the stronger upwelling
+      attenuation there. See ``dev/ChlFl/double_gaussian.py`` for the
+      investigation that motivated this choice.
+
 
 Low-level Methods (``bing.rt.chl_fl``)
 ======================================
@@ -445,15 +456,26 @@ Reflectance Formulation
 -----------------------
 
 The fluorescence contribution to subsurface reflectance follows the
-Gordon (1979) / Sathyendranath & Platt (1998) formulation:
+Gordon (1979) / Sathyendranath & Platt (1998) formulation, integrated
+over excitation wavelengths and shaped by the emission line:
 
 .. math::
 
-   R^F(\lambda, 0) = \frac{E_d(\lambda')}{E_d(\lambda)} \cdot
-   \frac{b_{bF}(\lambda')/\mu_d(\lambda')}{K(\lambda') + \kappa^F(\lambda)}
+   R^F(\lambda) = h_C(\lambda) \int
+   \frac{E_d(\lambda')}{E_d(\lambda)}\,
+   \frac{\lambda'}{\lambda}\,
+   \frac{b_{bF}(\lambda')/\mu_d}{K(\lambda') + \kappa^F(\lambda)}\,
+   d\lambda'
 
-with :math:`b_{bF} = 0.5\,\Phi_C\,a_{ph}`,
-:math:`K = (a + b_b)/\mu_d`, and :math:`\kappa^F = (a + b_b)/\mu_f`.
+with :math:`b_{bF}(\lambda') = 0.5\,\Phi_C\,a_{ph}(\lambda')`,
+:math:`K(\lambda') = (a(\lambda') + b_b(\lambda'))/\mu_d`,
+and :math:`\kappa^F(\lambda) = (a(\lambda) + b_b(\lambda))/\mu_f`.
+
+The :math:`\kappa^F(\lambda)` and :math:`\lambda' / \lambda` factors carry
+explicit emission-wavelength dependence, which is important for the
+double-Gaussian model: the 730 nm secondary peak sits in a region of
+much stronger pure-water absorption than the 685 nm primary peak, so it
+must be evaluated with its own :math:`\kappa^F`.
 
 
 Comparison with Raman Scattering

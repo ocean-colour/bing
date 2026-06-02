@@ -433,8 +433,22 @@ def calc_Rrs_fluorescence(
     """
     wavelength = np.atleast_1d(wavelength)
 
-    # Allow for chains
-    ndim = len(a_ex.shape)
+    # wavelength_ex and Ed_ex are scene properties (same across MCMC samples).
+    # reconstruct_from_chains tiles them to 2D via np.outer for legacy reasons;
+    # log_prob passes them as 1D.  Collapse to 1D so the broadcasting below is
+    # uniform regardless of which caller invoked us.
+    wavelength_ex = np.asarray(wavelength_ex)
+    if wavelength_ex.ndim > 1:
+        wavelength_ex = wavelength_ex[0]
+    Ed_ex = np.asarray(Ed_ex)
+    if Ed_ex.ndim > 1:
+        Ed_ex = Ed_ex[0]
+
+    # The caller uses 2D excitation IOPs for chains (and also for a single
+    # MCMC step, where a_ex has shape (1, n_ex) from eval_a).  Some callers
+    # pass aph_ex / a_em / bb_em as 1D in that same path; broadcast them so
+    # all of (a_ex, bb_ex, aph_ex, a_em, bb_em) live at a common rank.
+    ndim = a_ex.ndim
 
     # Use default mean cosines if not provided
     if mu_d is None:
@@ -448,48 +462,58 @@ def calc_Rrs_fluorescence(
     else:
         h_C = chl_fl.emission_line_single_gaussian(wavelength)
 
-    # Upwelling attenuation at emission wavelengths
+    # Upwelling attenuation at each emission wavelength.  The old code froze
+    # this at λ=685 nm, which overestimated the 730 nm secondary peak of the
+    # double-Gaussian model by ~4× because pure-water absorption is ~4×
+    # larger at 730 than at 685.  See dev/ChlFl/double_gaussian.py and the
+    # Logs section of prompts/chl_fl.md for the investigation.
+    a_em = np.asarray(a_em)
+    bb_em = np.asarray(bb_em)
     kappa_F_em = (a_em + bb_em) / mu_f
 
-    # Calculate at peak excitation wavelength
-    ipeak = np.argmin(np.abs(wavelength - chl_fl.LAMBDA_FL_PRIMARY))
-    if ndim == 1:
-        kappa_F_em_peak = kappa_F_em[ipeak]
-    else:
-        kappa_F_em_peak = np.outer(kappa_F_em[..., ipeak], np.ones(a_ex.shape[1]))
-
-    # Integrate over excitation wavelengths
+    # Downwelling attenuation at each excitation wavelength
     K_ex = (a_ex + bb_ex) / mu_d
 
-    # Fluorescence backscattering coefficient at excitation wavelength
+    # Fluorescence backscattering coefficient at each excitation wavelength
     bb_F = chl_fl.fluorescence_backscattering_coeff(aph_ex, phi_C)
 
-    # Wavelength ratio (energy conversion)
-    lambda_ratio = wavelength_ex / chl_fl.LAMBDA_FL_PRIMARY #wavelength[ipeak]
-
-    # Contribution from each excitation wavelength
-    #embed(header='463 of rrs.py')
-    integrand = Ed_ex * lambda_ratio * (bb_F / mu_d) / (K_ex + kappa_F_em_peak)
-
-    # Integrate
+    # Build (n_em, n_ex) — or (n_samples, n_em, n_ex) for chains — denominator
+    # K(λ') + κ_F(λ_em), keeping the proper λ_em dependence of κ_F.
     if ndim == 1:
-        R_F = np.trapezoid(integrand, x=wavelength_ex)
-    else:
+        # K_ex: (n_ex,), kappa_F_em: (n_em,) -> denom: (n_em, n_ex)
+        denom = K_ex[None, :] + kappa_F_em[:, None]
+        # λ' / λ_em, per (em, ex) pair
+        lambda_ratio = wavelength_ex[None, :] / wavelength[:, None]
+        # integrand: (n_em, n_ex); Ed_ex and bb_F broadcast along axis 0
+        integrand = (Ed_ex * lambda_ratio
+                     * (bb_F / mu_d)[None, :] / denom)
         R_F = np.trapezoid(integrand, x=wavelength_ex, axis=1)
-    
-    # Normalize by Ed_em
-    R_F /= Ed_em
-
-    # Convert subsurface reflectance to Rrs
-    if ndim == 1:
-        Rrs_fl = h_C * A_Rrs * R_F / (1 - B_Rrs * R_F)
     else:
-        Rrs_fl = A_Rrs * R_F / (1 - B_Rrs * R_F)
-        Rrs_fl = np.outer(Rrs_fl, h_C)
+        # Normalize all batched arrays to (n_samples, *) so the 3-D broadcast
+        # below works regardless of whether the caller passed 1-D em IOPs or
+        # 1-D aph_ex (the production log_prob path does).
+        n_samples = a_ex.shape[0]
+        if kappa_F_em.ndim == 1:
+            kappa_F_em = np.broadcast_to(kappa_F_em, (n_samples,) + kappa_F_em.shape)
+        if bb_F.ndim == 1:
+            bb_F = np.broadcast_to(bb_F, (n_samples,) + bb_F.shape)
 
-    if ndim == 2 and a_ex.shape[0] == 1:
-        # Make it 2D with same shape as a_ex
-        Rrs_fl = Rrs_fl.reshape(a_ex.shape[0], -1)
+        # K_ex: (n_samples, n_ex), kappa_F_em: (n_samples, n_em)
+        # -> denom: (n_samples, n_em, n_ex)
+        denom = K_ex[:, None, :] + kappa_F_em[:, :, None]
+        # λ' / λ_em broadcasts the same way for every sample
+        lambda_ratio = wavelength_ex[None, None, :] / wavelength[None, :, None]
+        integrand = (Ed_ex[None, None, :] * lambda_ratio
+                     * (bb_F[:, None, :] / mu_d) / denom)
+        R_F = np.trapezoid(integrand, x=wavelength_ex, axis=2)
+
+    # Normalize by emission-wavelength irradiance
+    R_F = R_F / Ed_em
+
+    # Convert subsurface reflectance to Rrs and apply the emission line shape.
+    # R_F now has shape (n_em,) or (n_samples, n_em); h_C broadcasts along the
+    # n_em axis in both cases.
+    Rrs_fl = h_C * A_Rrs * R_F / (1 - B_Rrs * R_F)
 
     return Rrs_fl
 
