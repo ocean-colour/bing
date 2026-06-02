@@ -1062,7 +1062,8 @@ def plot_residual_vs_bbp_3case(
     Rrs_var_withG0: np.ndarray,
     Rrs_std: np.ndarray,
     bbp: np.ndarray,
-    plot_waves: Sequence[float] = (400., 500., 550., 600., 650., 700.),
+    plot_waves: Sequence[float] = (400., 450., 500., 520.,
+                                   550., 600., 650., 700.),
     mask: Optional[np.ndarray] = None,
     outfile: Optional[str] = None,
 ):
@@ -1070,7 +1071,7 @@ def plot_residual_vs_bbp_3case(
     Three-case residual-vs-bbp panels (standard / variable noG0 / variable withG0).
     """
     sel = np.ones(Rrs_truth.shape[0], dtype=bool) if mask is None else mask
-    n = len(plot_waves); ncol = 3; nrow = int(np.ceil(n / ncol))
+    n = len(plot_waves); ncol = 4; nrow = int(np.ceil(n / ncol))
     fig, axes = plt.subplots(nrow, ncol, figsize=(5 * ncol, 3.4 * nrow), squeeze=False)
     axes = axes.ravel()
 
