@@ -492,6 +492,15 @@ Core Functions
    See :doc:`chlorophyll_fluorescence` for full physics, low-level methods,
    and FLH calculations.
 
+   .. note::
+
+      The upwelling attenuation :math:`\kappa^F(\lambda) =
+      (a(\lambda) + b_b(\lambda))/\mu_f` is evaluated at every emission
+      wavelength, not pinned to the 685 nm peak. This is what allows the
+      double-Gaussian model to reproduce the correct (suppressed) 730 nm
+      secondary shoulder, where pure-water absorption is ~4x larger than
+      at 685 nm.
+
 .. py:function:: calc_raman_correction_factor(a_em, bb_em, a_ex, bb_ex, bb_R, Ed_ratio=1.0, include_second_order=True)
 
    Calculate the multiplicative correction factor for Raman scattering.

@@ -302,21 +302,8 @@ def prep_one_l23(p, idx, chk:bool=False):
     # Radiative Transfer
 
     ## Gordon coefficients
-    use_G0 = getattr(p, 'variable_Gordon_G0', False)
     if p.variable_Gordon:
-        if use_G0:
-            G1, G2, G0 = bing_rt.rrs.wave_dependent_gordon(model_wave, include_G0=True)
-        else:
-            G1, G2 = bing_rt.rrs.wave_dependent_gordon(model_wave)
-            G0 = None
-    else:
-        G1, G2, G0 = None, None, None
-    models[0].G1 = G1
-    models[0].G2 = G2
-    models[0].G0 = G0
-    models[1].G1 = G1
-    models[1].G2 = G2
-    models[1].G0 = G0
+        models[0].init_var_gordon(include_G0=getattr(p, 'variable_Gordon_G0', False))
 
     ## Raman
     if p.include_Raman:
@@ -327,14 +314,29 @@ def prep_one_l23(p, idx, chk:bool=False):
         bb_ex = None
 
     ## Calculate Rrs
+    # NOTE: in_G0 must be passed here too so the synthetic observation Rrs
+    # is generated with the same forward model the MCMC reconstructs against.
+    # If variable_Gordon_G0=False, models[0].G0 is None and this is a no-op.
     gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'],
-        in_G1=G1, in_G2=G2, in_G0=G0, a_ex = a_ex, bb_ex=bb_ex,
+        in_G1=models[0].G1, in_G2=models[0].G2,
+        in_G0=getattr(models[0], 'G0', None),
+        a_ex = a_ex, bb_ex=bb_ex,
         bb_R=models[1].bb_R)
-
-    # Gordon only
-    orig_gordon_Rrs = bing_rt.calc_elastic_Rrs(odict['a'], odict['bb'],
-                                 in_G1=G1, in_G2=G2, in_G0=G0)
-
+    
+    ## Chl fluorescence
+    if p.include_Chl_fl:
+        Ed = downwelling.downwelling_irradiance(models[0].wave, 0.)
+        Ed_em = downwelling.downwelling_irradiance(chl_fl.LAMBDA_FL_PRIMARY, 0.)
+        models[0].init_Chl_fluorescence(Ed=Ed, Ed_em=Ed_em)
+        gordon_Rrs += bing_rt.calc_Rrs_fluorescence(
+            models[0].wave, odict['a'], odict['bb'],
+            odict['a'][models[0].i_Chl_ex],
+            odict['bb'][models[0].i_Chl_ex],
+            odict['aph'][models[0].i_Chl_ex],
+            models[0].wave[models[0].i_Chl_ex],
+            models[0].Ed_ex,
+            models[0].Ed_em,
+            phi_C=p.phi_C, double_gaussian=p.double_gaussian)
     #embed(header='254 of l23.py')
 
     # Other bits and pieces
@@ -383,9 +385,9 @@ def prep_one_l23(p, idx, chk:bool=False):
     ret_dict['p0'] = p0
     ret_dict['pdict'] = pdict
     ret_dict['models'] = models
-    ret_dict['G1'] = G1
-    ret_dict['G2'] = G2
-    ret_dict['G0'] = G0
+    ret_dict['G0'] = models[0].G0
+    ret_dict['G1'] = models[0].G1
+    ret_dict['G2'] = models[0].G2
 
     return ret_dict
     

@@ -431,9 +431,9 @@ def test_single_fit_variable_Gordon_with_G0():
     validate_basic_returns(chains, models, prep_dict, idx_out, extras, idx)
     wave = validate_models(models)
 
-    # G0 is set on both models
+    # G0 is set on the absorption model (post-merge design: only models[0]
+    # carries the Gordon coefficients; bb model reads them indirectly).
     assert getattr(models[0], 'G0', None) is not None, "G0 should be set when variable_Gordon_G0=True"
-    assert getattr(models[1], 'G0', None) is not None, "G0 should be set on bb model too"
     assert isinstance(models[0].G0, np.ndarray)
     assert len(models[0].G0) == len(wave), "G0 should match wavelength array"
     # G0 fit values are ~1e-4 in magnitude (see dev/Gordon/calc_gordon.py log)

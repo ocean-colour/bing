@@ -477,7 +477,7 @@ def test_raman_in_models():
     # Generate Rrs
     rt_dict = {}
     rt_dict['variable_Gordon'] = True 
-    G1, G2 = rrs.wave_dependent_gordon(a_model.wave)
+    G1, G2, _ = rrs.wave_dependent_gordon(a_model.wave)
     a_model.G1 = G1
     a_model.G2 = G2
     rt_dict['include_Raman'] = True 

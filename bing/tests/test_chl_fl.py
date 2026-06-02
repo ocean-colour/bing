@@ -576,7 +576,12 @@ def test_calc_Rrs_fluorescence_phi_scaling():
 
 
 def test_calc_Rrs_fluorescence_double_vs_single_gaussian():
-    """Double Gaussian shifts some signal into the ~730 nm secondary peak."""
+    """Double Gaussian shifts some signal into the ~730 nm secondary peak.
+
+    With κ_F evaluated per emission wavelength (flat a_em here so κ_F is the
+    same at 685 and 730), the primary peak shrinks to ~0.75× the single-
+    Gaussian peak because that's the area weight in the double-Gaussian shape.
+    """
     wave, a_em, bb_em, a_ex, bb_ex, aph_ex, wave_ex, Ed_ex, Ed_em = _flat_inputs()
 
     Rrs_single = rrs.calc_Rrs_fluorescence(
@@ -587,8 +592,89 @@ def test_calc_Rrs_fluorescence_double_vs_single_gaussian():
         wave_ex, Ed_ex, Ed_em, phi_C=0.02, double_gaussian=True)
 
     # Around 730 nm, the double-Gaussian model has the secondary peak
+    idx_685 = np.argmin(np.abs(wave - 685.0))
     idx_730 = np.argmin(np.abs(wave - 730.0))
     assert Rrs_double[idx_730] > Rrs_single[idx_730]
+
+    # At the primary peak the ratio is set purely by the emission-shape weight
+    # (κ_F is identical across λ_em with flat a_em).  Allow some slack because
+    # the peak bin may not land exactly on 685 nm.
+    primary_ratio = Rrs_double[idx_685] / Rrs_single[idx_685]
+    assert 0.70 < primary_ratio < 0.80
+
+
+def _stepped_em_inputs(n_em=21, n_ex=29):
+    """Same as ``_flat_inputs`` but with a step in ``a_em``: low near 685 nm,
+    high near 730 nm.  Mimics the steep rise of pure-water absorption between
+    those two wavelengths (a_w(685)≈0.49, a_w(730)≈1.96 m^-1) and is what
+    exposes the κ_F(λ_em) dependence in calc_Rrs_fluorescence.
+    """
+    wave = np.linspace(650.0, 750.0, n_em)
+    wave_ex = np.linspace(400.0, 680.0, n_ex)
+    # a_em: ~0.5 at 685, ramping linearly to ~2.0 at 730 and beyond.
+    a_em = 0.5 + 1.5 * np.clip((wave - 685.0) / (730.0 - 685.0), 0.0, 1.0)
+    bb_em = 0.002 * np.ones(n_em)
+    a_ex = 0.1 * np.ones(n_ex)
+    bb_ex = 0.003 * np.ones(n_ex)
+    aph_ex = 0.03 * np.ones(n_ex)
+    Ed_ex = np.ones(n_ex)
+    Ed_em = 1.0
+    return wave, a_em, bb_em, a_ex, bb_ex, aph_ex, wave_ex, Ed_ex, Ed_em
+
+
+def test_calc_Rrs_fluorescence_per_lambda_kappa_F():
+    """Regression test for the per-λ κ_F fix.
+
+    With ``a_em(730) ≈ 4 × a_em(685)``, the upwelling attenuation at 730 nm
+    is ~4× stronger than at 685 nm, so the 730-nm fluorescence shoulder
+    must be much smaller than the emission-shape weight alone would predict.
+
+    Pre-fix (κ_F frozen at 685): Rrs[730]/Rrs[685] ≈ 0.16.
+    Post-fix: Rrs[730]/Rrs[685] should drop well below 0.10.
+    """
+    args = _stepped_em_inputs()
+    wave = args[0]
+
+    Rrs_double = rrs.calc_Rrs_fluorescence(
+        *args, phi_C=0.02, double_gaussian=True)
+
+    i685 = int(np.argmin(np.abs(wave - 685.0)))
+    i730 = int(np.argmin(np.abs(wave - 730.0)))
+    ratio = Rrs_double[i730] / Rrs_double[i685]
+
+    assert 0.02 < ratio < 0.10, f'unexpected 730/685 ratio: {ratio:.3f}'
+
+
+def test_calc_Rrs_fluorescence_matches_reference():
+    """calc_Rrs_fluorescence must agree with an explicit per-λ_em integration.
+
+    This pins the implementation: any future refactor that re-introduces the
+    "freeze κ_F at 685 nm" shortcut will fail here.
+    """
+    args = _stepped_em_inputs()
+    (wave, a_em, bb_em, a_ex, bb_ex, aph_ex,
+     wave_ex, Ed_ex, Ed_em) = args
+
+    # Reference: explicit loop over λ_em with κ_F(λ_em) and λ'/λ_em
+    mu_d, mu_f = 0.9, 0.5
+    phi_C = 0.02
+    h_C = chl_fl.emission_line_double_gaussian(wave)
+    kappa_F_em = (a_em + bb_em) / mu_f
+    K_ex = (a_ex + bb_ex) / mu_d
+    bb_F = chl_fl.fluorescence_backscattering_coeff(aph_ex, phi_C)
+    R_F_ref = np.zeros_like(wave, dtype=float)
+    for i, lam_em in enumerate(wave):
+        lam_ratio = wave_ex / lam_em
+        integrand = Ed_ex * lam_ratio * (bb_F / mu_d) / (K_ex + kappa_F_em[i])
+        R_F_ref[i] = np.trapezoid(integrand, x=wave_ex)
+    R_F_ref /= Ed_em
+    A_Rrs, B_Rrs = 0.52, 1.7
+    Rrs_ref = h_C * A_Rrs * R_F_ref / (1 - B_Rrs * R_F_ref)
+
+    Rrs_got = rrs.calc_Rrs_fluorescence(
+        *args, phi_C=phi_C, double_gaussian=True)
+
+    np.testing.assert_allclose(Rrs_got, Rrs_ref, rtol=1e-12, atol=0.0)
 
 
 def test_calc_Rrs_fluorescence_chains():
@@ -636,6 +722,7 @@ def test_rt_dict_from_p_defaults():
 
     # Default values defined in bing.parameters.p_ntuple.def_dict
     assert rt_dict['variable_Gordon'] is True
+    assert rt_dict['variable_Gordon_G0'] is False
     assert rt_dict['include_Raman'] is False
     assert rt_dict['include_Chl_fl'] is False
     assert rt_dict['phi_C'] == 0.02
@@ -643,7 +730,8 @@ def test_rt_dict_from_p_defaults():
 
     # No other unexpected keys are added
     assert set(rt_dict.keys()) == {
-        'variable_Gordon', 'include_Raman', 'include_Chl_fl',
+        'variable_Gordon', 'variable_Gordon_G0',
+        'include_Raman', 'include_Chl_fl',
         'phi_C', 'double_gaussian',
     }
 
