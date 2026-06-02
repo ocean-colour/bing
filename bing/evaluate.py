@@ -158,13 +158,9 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
                             in_G0=getattr(a_model, 'G0', None),
                             a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
 
-    # Fluorescence?
-    if rt_dict['include_Chl_fl']:
-        # Error check a bit
-        if a_model.i_Chl_ex is None or a_model.Ed_ex is None or a_model.Ed_em is None:
-            raise ValueError("Need to set i_Chl_ex for fluorescence.\
-                Use a_model.init_Chl_fluorescence() to init.")
-
+    # Fluorescence? Accept rt_dicts that don't specify the key (ad-hoc dicts
+    # built by tests / notebooks pre-date the include_Chl_fl field).
+    if rt_dict.get('include_Chl_fl', False):
         # a_ph
         aph = (10**a_params[...,-1:]) * a_model.a_ph
         aph_ex = aph[a_model.i_Chl_ex]
@@ -182,6 +178,7 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
             double_gaussian=rt_dict['double_gaussian'])
         # Add
         Rrs += Rrs_fl
+
 
     # Return
     return Rrs
