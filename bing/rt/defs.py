@@ -17,6 +17,7 @@ def rt_dict_from_p(p):
     rt_dict = {}
     for key in ['variable_Gordon',
                 'variable_Gordon_G0',
+                'variable_Gordon_bbp',
                 'include_Raman',
                 'include_Chl_fl',
                 'phi_C',

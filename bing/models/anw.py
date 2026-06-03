@@ -191,6 +191,14 @@ class aNWModel:
         If None, the default will be used (if the Gordon approx is done)
     """
 
+    Gb:float | np.ndarray = None
+    """
+    Gordon Gb coefficient (slope on particulate backscatter bbp)
+        If None, the bbp term is omitted (i.e. rrs = G0 + G1·u + G2·u²).
+        If variable_Gordon_bbp is True, Gb(λ) is loaded from
+        ``gordon_coefficients_with_Gb.csv``.
+    """
+
     wave_ex:np.ndarray = None
     """
     Excitation wavelengths for Raman scattering
@@ -404,11 +412,30 @@ class aNWModel:
             a_nw (np.ndarray): The non-water absorption coefficient
         """
 
-    def init_var_gordon(self, include_G0:bool=False):
+    def init_var_gordon(self, include_G0:bool=False, include_Gb:bool=False):
         """
-        Initialize the variable Gordon parameters
+        Initialize the variable Gordon parameters.
+
+        Four recipes are supported, chosen by the two flags:
+
+        - ``include_G0=False, include_Gb=False`` -- 2-parameter
+            ``rrs = G1·u + G2·u²``  (loads ``gordon_coefficients.csv``).
+        - ``include_G0=True,  include_Gb=False`` -- 3-parameter, constant offset
+            ``rrs = G0 + G1·u + G2·u²``  (loads ``gordon_coefficients_with_G0.csv``).
+        - ``include_G0=False, include_Gb=True``  -- 3-parameter, bbp slope
+            ``rrs = G1·u + G2·u² + Gb·bbp``  (loads ``gordon_coefficients_with_Gb.csv``).
+        - ``include_G0=True,  include_Gb=True``  -- 4-parameter
+            ``rrs = G0 + G1·u + G2·u² + Gb·bbp``  (loads ``gordon_coefficients_with_G0_Gb.csv``).
         """
-        self.G1, self.G2, self.G0 = rrs.wave_dependent_gordon(self.wave, include_G0=include_G0)
+        if include_G0 and include_Gb:
+            self.G1, self.G2, self.G0, self.Gb = rrs.wave_dependent_gordon_full(self.wave)
+        elif include_Gb:
+            self.G1, self.G2, self.Gb = rrs.wave_dependent_gordon_bbp(self.wave)
+            self.G0 = None
+        else:
+            self.G1, self.G2, self.G0 = rrs.wave_dependent_gordon(
+                self.wave, include_G0=include_G0)
+            self.Gb = None
 
     def init_raman(self):
         """

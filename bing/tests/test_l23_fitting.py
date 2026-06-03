@@ -455,6 +455,102 @@ def test_single_fit_variable_Gordon_with_G0():
     print(f"  G2 range: [{models[0].G2.min():.4f}, {models[0].G2.max():.4f}]")
 
 
+def test_single_fit_variable_Gordon_with_G0_and_bbp():
+    """4-parameter variable Gordon: both G0 and Gb enabled.
+
+    Verifies the (G0,G1,G2,Gb) recipe -- when both ``variable_Gordon_G0=True``
+    and ``variable_Gordon_bbp=True`` -- loads from
+    ``gordon_coefficients_with_G0_Gb.csv``, sets both G0 and Gb on the
+    absorption model, exposes them via prep_dict, and runs the MCMC.
+    """
+    idx = 2773
+    p_expb = standard.expb_pow(
+        satellite='SBG', add_noise=True,
+        variable_Gordon=True,
+        variable_Gordon_G0=True,
+        variable_Gordon_bbp=True,
+    )
+
+    chains, models, prep_dict, idx_out, extras = fit_l23.fit_one(p_expb, idx)
+
+    validate_basic_returns(chains, models, prep_dict, idx_out, extras, idx)
+    wave = validate_models(models)
+
+    # Both G0 and Gb are set on the absorption model
+    assert getattr(models[0], 'G0', None) is not None, \
+        "G0 should be set when both flags are True"
+    assert getattr(models[0], 'Gb', None) is not None, \
+        "Gb should be set when both flags are True"
+    assert isinstance(models[0].G0, np.ndarray)
+    assert isinstance(models[0].Gb, np.ndarray)
+    assert len(models[0].G0) == len(wave)
+    assert len(models[0].Gb) == len(wave)
+
+    # Magnitudes stay in the empirical envelope from calc_gordon.py
+    assert np.all(np.abs(models[0].G0) < 5e-3), \
+        f"|G0| out of envelope: max = {np.max(np.abs(models[0].G0)):.2e}"
+    assert np.all(np.abs(models[0].Gb) < 5.0), \
+        f"|Gb| out of envelope: max = {np.max(np.abs(models[0].Gb)):.2e}"
+
+    # prep_dict exposes both and matches the model attributes
+    assert 'G0' in prep_dict and 'Gb' in prep_dict
+    np.testing.assert_array_equal(prep_dict['G0'], models[0].G0)
+    np.testing.assert_array_equal(prep_dict['Gb'], models[0].Gb)
+
+    # G1/G2 still loaded and sensible
+    assert models[0].G1 is not None and models[0].G2 is not None
+    assert np.all(models[0].G1 > 0)
+    assert np.all(np.abs(models[0].G2) < 3.0)
+
+    print(f"\n[Variable Gordon, 4-parameter (G0 + Gb)]")
+    print(f"  G0 range: [{models[0].G0.min():+.4e}, {models[0].G0.max():+.4e}]")
+    print(f"  Gb range: [{models[0].Gb.min():+.4e}, {models[0].Gb.max():+.4e}]")
+    print(f"  G1 range: [{models[0].G1.min():.4f}, {models[0].G1.max():.4f}]")
+    print(f"  G2 range: [{models[0].G2.min():.4f}, {models[0].G2.max():.4f}]")
+
+
+def test_single_fit_variable_Gordon_with_bbp():
+    """Variable Gordon with the bbp slope Gb enabled.
+
+    Verifies that ``variable_Gordon_bbp=True`` loads Gb(λ) from
+    ``gordon_coefficients_with_Gb.csv``, sets it on the absorption model,
+    exposes it via ``prep_dict['Gb']``, and runs the MCMC end-to-end.
+    """
+    idx = 2773
+    p_expb = standard.expb_pow(satellite='SBG', add_noise=True,
+                               variable_Gordon=True, variable_Gordon_bbp=True)
+
+    chains, models, prep_dict, idx_out, extras = fit_l23.fit_one(p_expb, idx)
+
+    validate_basic_returns(chains, models, prep_dict, idx_out, extras, idx)
+    wave = validate_models(models)
+
+    # Gb is set on the absorption model
+    assert getattr(models[0], 'Gb', None) is not None, \
+        "Gb should be set when variable_Gordon_bbp=True"
+    assert isinstance(models[0].Gb, np.ndarray)
+    assert len(models[0].Gb) == len(wave), "Gb should match wavelength array"
+    # Gb magnitudes are ~1e-2..2e-1 in absolute value at oceanic bands
+    assert np.all(np.abs(models[0].Gb) < 5.0), \
+        f"|Gb| unphysically large: max = {np.max(np.abs(models[0].Gb)):.2e}"
+
+    # G0 is None in this mode (mutually exclusive with Gb)
+    assert getattr(models[0], 'G0', None) is None, \
+        "G0 should be None when variable_Gordon_bbp=True"
+
+    # prep_dict exposes Gb and matches the model
+    assert 'Gb' in prep_dict, "prep_dict should contain Gb"
+    np.testing.assert_array_equal(prep_dict['Gb'], models[0].Gb)
+
+    # G1/G2 still loaded
+    assert models[0].G1 is not None and models[0].G2 is not None
+
+    print(f"\n[Variable Gordon with Gb]")
+    print(f"  Gb range: [{models[0].Gb.min():+.4e}, {models[0].Gb.max():+.4e}]")
+    print(f"  G1 range: [{models[0].G1.min():.4f}, {models[0].G1.max():.4f}]")
+    print(f"  G2 range: [{models[0].G2.min():.4f}, {models[0].G2.max():.4f}]")
+
+
 # ===== Tests for individual l23 methods =====
 
 def test_load_one_l23_basic():

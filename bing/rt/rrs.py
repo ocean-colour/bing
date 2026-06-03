@@ -98,6 +98,72 @@ def wave_dependent_gordon(wave:np.ndarray, bounds_error:bool=True,
     return G1, G2, None
 
 
+def wave_dependent_gordon_bbp(wave: np.ndarray, bounds_error: bool = True):
+    """
+    Load and interpolate the 3-parameter (G1, G2, Gb) coefficients fit to
+    ``rrs(λ) = G1(λ)·u + G2(λ)·u² + Gb(λ)·bbp``.
+
+    Read from ``bing/data/RT/gordon_coefficients_with_Gb.csv``.
+
+    Returns
+    -------
+    G1, G2, Gb : np.ndarray
+        Wavelength-dependent coefficients. Always a 3-tuple of arrays.
+    """
+    gordon_file = os.path.join(
+        resources.files('bing'),
+        'data', 'RT', 'gordon_coefficients_with_Gb.csv')
+    result = pandas.read_csv(gordon_file, comment='#')
+
+    for col in ('G1', 'G2', 'Gb'):
+        if col not in result.columns:
+            raise IOError(f"{col} column missing from {gordon_file}")
+
+    f_G1 = interpolate.interp1d(result['wavelength'], result['G1'], kind=3,
+                                bounds_error=bounds_error)
+    f_G2 = interpolate.interp1d(result['wavelength'], result['G2'], kind=3,
+                                bounds_error=bounds_error)
+    f_Gb = interpolate.interp1d(result['wavelength'], result['Gb'], kind=3,
+                                bounds_error=bounds_error)
+    return f_G1(wave), f_G2(wave), f_Gb(wave)
+
+
+def wave_dependent_gordon_full(wave: np.ndarray, bounds_error: bool = True):
+    """
+    Load and interpolate the 4-parameter (G1, G2, G0, Gb) coefficients fit to
+    ``rrs(λ) = G0(λ) + G1(λ)·u + G2(λ)·u² + Gb(λ)·bbp``.
+
+    Read from ``bing/data/RT/gordon_coefficients_with_G0_Gb.csv``. Empirically
+    this 4-parameter form matches or beats both 3-parameter recipes at every
+    wavelength on the L23 elastic dataset.
+
+    Returns
+    -------
+    G1, G2, G0, Gb : np.ndarray
+        Wavelength-dependent coefficients. Always a 4-tuple of arrays.
+        (Order parallels ``wave_dependent_gordon(..., include_G0=True)`` which
+        returns ``(G1, G2, G0)``; Gb is appended.)
+    """
+    gordon_file = os.path.join(
+        resources.files('bing'),
+        'data', 'RT', 'gordon_coefficients_with_G0_Gb.csv')
+    result = pandas.read_csv(gordon_file, comment='#')
+
+    for col in ('G0', 'G1', 'G2', 'Gb'):
+        if col not in result.columns:
+            raise IOError(f"{col} column missing from {gordon_file}")
+
+    f_G1 = interpolate.interp1d(result['wavelength'], result['G1'], kind=3,
+                                bounds_error=bounds_error)
+    f_G2 = interpolate.interp1d(result['wavelength'], result['G2'], kind=3,
+                                bounds_error=bounds_error)
+    f_G0 = interpolate.interp1d(result['wavelength'], result['G0'], kind=3,
+                                bounds_error=bounds_error)
+    f_Gb = interpolate.interp1d(result['wavelength'], result['Gb'], kind=3,
+                                bounds_error=bounds_error)
+    return f_G1(wave), f_G2(wave), f_G0(wave), f_Gb(wave)
+
+
 def Rrs_to_rrs(Rrs: np.ndarray, A: float = A_Rrs, B: float = B_Rrs) -> np.ndarray:
     """
     Convert above-surface Rrs to subsurface rrs.
@@ -148,6 +214,8 @@ def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
     bb_ex: Union[float, np.ndarray]=None,
     bb_R: Union[float, np.ndarray]=None,
     in_G0: Union[float, np.ndarray, None]=None,
+    in_Gb: Union[float, np.ndarray, None]=None,
+    in_bbp: Union[float, np.ndarray, None]=None,
     ):
     """
     Calculate remote sensing reflectance (Rrs) including optional Raman correction.
@@ -212,7 +280,8 @@ def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
     calc_raman_correction_factor : Compute the Raman correction factor.
     """
     # Elastic
-    Rrs = calc_elastic_Rrs(a, bb, in_G1=in_G1, in_G2=in_G2, in_G0=in_G0)
+    Rrs = calc_elastic_Rrs(a, bb, in_G1=in_G1, in_G2=in_G2, in_G0=in_G0,
+                           in_Gb=in_Gb, in_bbp=in_bbp)
 
     # Raman?
     if a_ex is not None:
@@ -228,21 +297,27 @@ def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
 
 
 def calc_elastic_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
-                     in_G0:Union[float, np.ndarray, None]=None):
+                     in_G0:Union[float, np.ndarray, None]=None,
+                     in_Gb:Union[float, np.ndarray, None]=None,
+                     in_bbp:Union[float, np.ndarray, None]=None):
     """
     Calculates the remote sensing reflectance (Rrs) using
     the given absorption (a) and backscattering (bb) coefficients.
 
-    Evaluates ``rrs = G0 + G1·u + G2·u²`` where u = bb/(a+bb), then
-    converts to above-surface Rrs.
+    Evaluates ``rrs = G0 + G1·u + G2·u² + Gb·bbp`` where u = bb/(a+bb),
+    then converts to above-surface Rrs. G0 and Gb are independent optional
+    third coefficients; in practice only one is used at a time.
 
     Parameters:
         a (float or array-like): Absorption coefficient.
         bb (float or array-like): Backscattering coefficient.
         in_G1 (float or array-like, optional): G1 value. Default uses G1_STANDARD.
         in_G2 (float or array-like, optional): G2 value. Default uses G2_STANDARD.
-        in_G0 (float or array-like, optional): Constant offset G0. Default None
-            (== 0, i.e. classic 2-parameter Gordon).
+        in_G0 (float or array-like, optional): Constant offset. Default None.
+        in_Gb (float or array-like, optional): Slope on bbp. Default None.
+            Requires ``in_bbp`` when supplied.
+        in_bbp (float or array-like, optional): Particulate backscatter
+            (= bbnw). Required when ``in_Gb`` is provided.
 
     Returns:
         float or array-like: Remote Sensing Reflectance (Rrs) value.
@@ -253,6 +328,10 @@ def calc_elastic_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=
     rrs = t1 + t2
     if in_G0 is not None:
         rrs = rrs + in_G0
+    if in_Gb is not None:
+        if in_bbp is None:
+            raise IOError("in_bbp must be supplied when in_Gb is provided")
+        rrs = rrs + in_Gb * in_bbp
     return rrs_to_Rrs(rrs)
 
 

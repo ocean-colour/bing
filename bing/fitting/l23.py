@@ -303,7 +303,10 @@ def prep_one_l23(p, idx, chk:bool=False):
 
     ## Gordon coefficients
     if p.variable_Gordon:
-        models[0].init_var_gordon(include_G0=getattr(p, 'variable_Gordon_G0', False))
+        models[0].init_var_gordon(
+            include_G0=getattr(p, 'variable_Gordon_G0', False),
+            include_Gb=getattr(p, 'variable_Gordon_bbp', False),
+        )
 
     ## Raman
     if p.include_Raman:
@@ -314,12 +317,28 @@ def prep_one_l23(p, idx, chk:bool=False):
         bb_ex = None
 
     ## Calculate Rrs
-    # NOTE: in_G0 must be passed here too so the synthetic observation Rrs
-    # is generated with the same forward model the MCMC reconstructs against.
-    # If variable_Gordon_G0=False, models[0].G0 is None and this is a no-op.
+    # NOTE: in_G0/in_Gb/in_bbp must be passed here so the synthetic observation
+    # Rrs is generated with the same forward model the MCMC reconstructs against.
+    # When the respective flag is False, the attribute is None and these are no-ops.
+    # Convention for in_bbp:
+    #   - 4-param mode (G0 AND Gb set): bbp(700nm), broadcast (trophic-state proxy).
+    #   - 3-param Gb mode (Gb set, G0 not):    bbp(λ) at every wavelength.
+    _G0 = getattr(models[0], 'G0', None)
+    _Gb = getattr(models[0], 'Gb', None)
+    if _Gb is not None:
+        if _G0 is not None:
+            # 4-param: use bbp at 700 nm as a single trophic proxy
+            _j700 = int(np.argmin(np.abs(odict['true_wave'] - 700.)))
+            _in_bbp = odict['bbnw'][_j700]
+        else:
+            _in_bbp = odict['bbnw']
+    else:
+        _in_bbp = None
     gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'],
         in_G1=models[0].G1, in_G2=models[0].G2,
-        in_G0=getattr(models[0], 'G0', None),
+        in_G0=_G0,
+        in_Gb=_Gb,
+        in_bbp=_in_bbp,
         a_ex = a_ex, bb_ex=bb_ex,
         bb_R=models[1].bb_R)
     
@@ -388,6 +407,7 @@ def prep_one_l23(p, idx, chk:bool=False):
     ret_dict['G0'] = models[0].G0
     ret_dict['G1'] = models[0].G1
     ret_dict['G2'] = models[0].G2
+    ret_dict['Gb'] = getattr(models[0], 'Gb', None)
 
     return ret_dict
     

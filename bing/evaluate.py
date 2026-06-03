@@ -152,10 +152,26 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
     else:
         a_ex, bb_ex, bb_R = None, None, None
 
+    # bbp required when Gb mode is on. Two conventions:
+    #   4-param (G0 AND Gb set): bbp(700 nm) as a trophic-state proxy.
+    #   3-param Gb-only:        bbp(λ) at every wavelength.
+    _G0 = getattr(a_model, 'G0', None)
+    _Gb = getattr(a_model, 'Gb', None)
+    if _Gb is not None:
+        _bbnw_full = bb_model.eval_bbnw(bb_params)
+        if _G0 is not None:
+            j700 = int(np.argmin(np.abs(a_model.wave - 700.)))
+            _bbp = _bbnw_full[..., j700:j700 + 1]  # broadcast over wavelength
+        else:
+            _bbp = _bbnw_full
+    else:
+        _bbp = None
+
     # Call me
     Rrs = bing_rrs.calc_Rrs(a, bb,
                             in_G1=a_model.G1, in_G2=a_model.G2,
-                            in_G0=getattr(a_model, 'G0', None),
+                            in_G0=_G0,
+                            in_Gb=_Gb, in_bbp=_bbp,
                             a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
 
     # Fluorescence? Accept rt_dicts that don't specify the key (ad-hoc dicts
@@ -259,6 +275,21 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
         aph = (10**chains[...,models[0].nparam-1:models[0].nparam]) * models[0].a_ph
         aph_ex = aph[...,models[0].i_Chl_ex]
 
+    # bbp for the Gb form (must be evaluated before chains are freed).
+    # 4-param mode (G0 AND Gb set): use bbp(700) as a trophic-state proxy.
+    # 3-param Gb-only:              use bbp(λ) per wavelength.
+    _G0 = getattr(models[0], 'G0', None)
+    _Gb = getattr(models[0], 'Gb', None)
+    if _Gb is not None:
+        _bbnw_full = models[1].eval_bbnw(chains[..., models[0].nparam:])
+        if _G0 is not None:
+            j700 = int(np.argmin(np.abs(models[0].wave - 700.)))
+            _bbp = _bbnw_full[..., j700:j700 + 1]
+        else:
+            _bbp = _bbnw_full
+    else:
+        _bbp = None
+
     del chains
 
     # Calculate the mean and standard deviation
@@ -273,6 +304,7 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
     Rrs = bing_rrs.calc_Rrs(a, bb,
             in_G1=models[0].G1, in_G2=models[0].G2,
             in_G0=getattr(models[0], 'G0', None),
+            in_Gb=_Gb, in_bbp=_bbp,
             a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
 
     if rt_dict.get('include_Chl_fl', False):

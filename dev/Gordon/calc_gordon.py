@@ -74,6 +74,34 @@ def rrs_model_const(u: np.ndarray, G0: float, G1: float, G2: float) -> np.ndarra
     return G0 + G1 * u + G2 * u ** 2
 
 
+def rrs_model_bbp(u: np.ndarray, bbp: np.ndarray,
+                  G1: float, G2: float, Gb: float) -> np.ndarray:
+    """
+    Gordon model with an explicit bbp dependence:
+        rrs = G1·u + G2·u² + Gb·bbp
+
+    The third coefficient Gb is a linear slope in particulate backscatter (bbp,
+    i.e. bbnw). Empirically this captures the residual bbp dependence that a
+    pure function of u cannot, and is most useful around 500 nm where the
+    constant-offset (G0) form fails (the trophic-state-driven residual there
+    is roughly linear in bbp).
+    """
+    return G1 * u + G2 * u ** 2 + Gb * bbp
+
+
+def rrs_model_full(u: np.ndarray, bbp: np.ndarray,
+                   G0: float, G1: float, G2: float, Gb: float) -> np.ndarray:
+    """
+    Four-parameter Gordon model: rrs = G0 + G1·u + G2·u² + Gb·bbp.
+
+    Combines the constant offset (G0) and the bbp slope (Gb) of the two
+    competing 3-parameter recipes. Empirically the four-parameter form
+    matches the G0-only fit at red wavelengths (550–700 nm) and improves on
+    the Gb-only fit in the blue (400–500 nm).
+    """
+    return G0 + G1 * u + G2 * u ** 2 + Gb * bbp
+
+
 def Rrs_to_rrs(Rrs: np.ndarray, A: float = A_RRS, B: float = B_RRS) -> np.ndarray:
     """
     Convert above-surface Rrs to subsurface rrs.
@@ -447,6 +475,8 @@ def calc_Rrs_with_variable_gordon(
     G1: np.ndarray,
     G2: np.ndarray,
     G0: Optional[np.ndarray] = None,
+    Gb: Optional[np.ndarray] = None,
+    bbp: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """
     Calculate Rrs using wavelength-dependent Gordon coefficients.
@@ -460,6 +490,12 @@ def calc_Rrs_with_variable_gordon(
     G0 : np.ndarray, optional
         Wavelength-dependent constant offset, shape (n_wave,). If provided,
         evaluates rrs = G0 + G1·u + G2·u² (instead of G1·u + G2·u²).
+    Gb : np.ndarray, optional
+        Wavelength-dependent slope on particulate backscatter. If provided
+        with `bbp`, evaluates rrs = G1·u + G2·u² + Gb·bbp.
+    bbp : np.ndarray, optional
+        Particulate backscatter (= bbnw), shape matching `bb`. Required when
+        `Gb` is provided.
 
     Returns
     -------
@@ -470,6 +506,10 @@ def calc_Rrs_with_variable_gordon(
     rrs = G1 * u + G2 * u**2
     if G0 is not None:
         rrs = rrs + G0
+    if Gb is not None:
+        if bbp is None:
+            raise ValueError("`bbp` must be supplied when `Gb` is given")
+        rrs = rrs + Gb * bbp
     Rrs = rrs_to_Rrs(rrs)
     return Rrs
 
@@ -607,6 +647,442 @@ def save_gordon_const_to_csv(
         f.write("#\n")
         df.to_csv(f, index=False)
     print(f"Saved 3-parameter Gordon coefficients to: {filename}")
+
+
+# ---------------------------------------------------------------------------
+# 3-parameter (G1·u + G2·u² + Gb·bbp) per-wavelength fit
+# ---------------------------------------------------------------------------
+
+def fit_gordon_bbp_at_wavelength(
+    u: np.ndarray,
+    bbp: np.ndarray,
+    rrs: np.ndarray,
+    sigma: Optional[np.ndarray] = None,
+    p0: Tuple[float, float, float] = (0.1, 0.0, 0.0),
+    weight_mode: str = 'relative',
+    rel_floor: float = 1e-5,
+    bounds: Optional[Tuple[Sequence[float], Sequence[float]]] = (
+        (0.05, -2.0, -1.0), (0.15, 0.5, 1.0)
+    ),
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Fit (G1, G2, Gb) at a single wavelength to rrs = G1·u + G2·u² + Gb·bbp.
+
+    Note that the model takes two independent variables (u, bbp). They are
+    bundled into a 2-row array and passed via curve_fit's multi-variable form.
+    """
+    if sigma is None:
+        if weight_mode == 'absolute':
+            sigma = np.full_like(u, 3e-4, dtype=float)
+        elif weight_mode == 'relative':
+            sigma = np.maximum(np.abs(rrs), rel_floor)
+        else:
+            raise ValueError(f"Unknown weight_mode: {weight_mode!r}")
+
+    def _f(X, G1, G2, Gb):
+        u_, bbp_ = X
+        return rrs_model_bbp(u_, bbp_, G1, G2, Gb)
+
+    kwargs = dict(p0=p0, sigma=sigma, absolute_sigma=False)
+    if bounds is not None:
+        kwargs['bounds'] = bounds
+
+    params, cov = curve_fit(_f, (u, bbp), rrs, **kwargs)
+    return params, cov
+
+
+def fit_gordon_bbp_coefficients(
+    wave: np.ndarray,
+    Rrs: np.ndarray,
+    a: np.ndarray,
+    bb: np.ndarray,
+    bbp: np.ndarray,
+    wave_select: Optional[np.ndarray] = None,
+    return_stats: bool = False,
+    weight_mode: str = 'relative',
+    bounds: Optional[Tuple[Sequence[float], Sequence[float]]] = (
+        (0.05, -2.0, -1.0), (0.15, 0.5, 1.0)
+    ),
+) -> Union[Dict, Tuple[Dict, Dict]]:
+    """
+    Per-wavelength 3-parameter fit (G1, G2, Gb) on a Hydrolight-like dataset.
+
+    Parameters
+    ----------
+    wave, Rrs, a, bb : as in fit_gordon_coefficients.
+    bbp : np.ndarray
+        Particulate backscatter (= bbnw), shape (n_samples, n_wave).
+
+    Returns
+    -------
+    result : dict with keys 'wavelength', 'G1', 'G2', 'Gb', 'G1_err', 'G2_err', 'Gb_err'.
+    stats : dict with 'rRMS', 'RMS' per wavelength (if return_stats=True).
+    """
+    u = calc_u(a, bb)
+    rrs = Rrs_to_rrs(Rrs)
+
+    if wave_select is None:
+        wave_fit = wave
+        idx_fit = np.arange(len(wave))
+    else:
+        idx_fit = [np.argmin(np.abs(wave - w)) for w in wave_select]
+        wave_fit = wave[idx_fit]
+
+    n = len(idx_fit)
+    G1_arr = np.zeros(n); G2_arr = np.zeros(n); Gb_arr = np.zeros(n)
+    G1_err = np.zeros(n); G2_err = np.zeros(n); Gb_err = np.zeros(n)
+    rRMS = np.zeros(n);   RMS = np.zeros(n)
+
+    for ii, idx in enumerate(idx_fit):
+        u_wv = u[:, idx]; rrs_wv = rrs[:, idx]; bbp_wv = bbp[:, idx]
+        params, cov = fit_gordon_bbp_at_wavelength(
+            u_wv, bbp_wv, rrs_wv,
+            weight_mode=weight_mode, bounds=bounds,
+        )
+        G1_arr[ii], G2_arr[ii], Gb_arr[ii] = params
+        G1_err[ii] = np.sqrt(cov[0, 0])
+        G2_err[ii] = np.sqrt(cov[1, 1])
+        Gb_err[ii] = np.sqrt(cov[2, 2])
+
+        rrs_pred = rrs_model_bbp(u_wv, bbp_wv, *params)
+        RMS[ii] = np.sqrt(np.mean((rrs_wv - rrs_pred) ** 2))
+        rRMS[ii] = np.sqrt(np.mean(
+            (rrs_wv - rrs_pred) ** 2 / np.maximum(rrs_pred ** 2, 1e-20)
+        ))
+
+    result = {
+        'wavelength': wave_fit,
+        'G1': G1_arr, 'G2': G2_arr, 'Gb': Gb_arr,
+        'G1_err': G1_err, 'G2_err': G2_err, 'Gb_err': Gb_err,
+    }
+    if return_stats:
+        return result, {'rRMS': rRMS, 'RMS': RMS}
+    return result
+
+
+def save_gordon_bbp_to_csv(
+    result: Dict,
+    stats: Dict,
+    filename: str,
+    source: str = "Loisel23 elastic; 3-parameter fit (G1·u + G2·u² + Gb·bbp)",
+    weight_mode: Optional[str] = None,
+    A: float = A_RRS,
+    B: float = B_RRS,
+) -> None:
+    """
+    Save the (G1, G2, Gb) fit to CSV. Mirrors save_gordon_const_to_csv but with
+    a Gb column instead of G0.
+    """
+    import pandas as pd
+    df = pd.DataFrame({
+        'wavelength': result['wavelength'],
+        'G1': result['G1'], 'G2': result['G2'], 'Gb': result['Gb'],
+        'G1_err': result['G1_err'], 'G2_err': result['G2_err'], 'Gb_err': result['Gb_err'],
+        'rRMS': stats['rRMS'], 'RMS': stats['RMS'],
+    })
+    with open(filename, 'w') as f:
+        f.write("# Gordon coefficients (with bbp slope) fitted from Loisel23\n")
+        f.write(f"# Source: {source}\n")
+        f.write(f"# Standard G1: {G1_STANDARD}\n")
+        f.write(f"# Standard G2: {G2_STANDARD}\n")
+        f.write(f"# Rrs<->rrs convention: A={A}, B={B}\n")
+        if weight_mode is not None:
+            f.write(f"# weight_mode: {weight_mode}\n")
+        f.write("#\n")
+        df.to_csv(f, index=False)
+    print(f"Saved 3-parameter (Gb) Gordon coefficients to: {filename}")
+
+
+# ---------------------------------------------------------------------------
+# 4-parameter (G0 + G1·u + G2·u² + Gb·bbp) per-wavelength fit
+# ---------------------------------------------------------------------------
+
+def fit_gordon_full_at_wavelength(
+    u: np.ndarray,
+    bbp: np.ndarray,
+    rrs: np.ndarray,
+    sigma: Optional[np.ndarray] = None,
+    p0: Tuple[float, float, float, float] = (0.0, 0.1, 0.0, 0.0),
+    weight_mode: str = 'relative',
+    rel_floor: float = 1e-5,
+    bounds: Optional[Tuple[Sequence[float], Sequence[float]]] = (
+        (-1e-3, 0.05, -2.0, -1.0), (1e-3, 0.15, 0.5, 1.0)
+    ),
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Fit (G0, G1, G2, Gb) at a single wavelength to
+        rrs = G0 + G1·u + G2·u² + Gb·bbp.
+    """
+    if sigma is None:
+        if weight_mode == 'absolute':
+            sigma = np.full_like(u, 3e-4, dtype=float)
+        elif weight_mode == 'relative':
+            sigma = np.maximum(np.abs(rrs), rel_floor)
+        else:
+            raise ValueError(f"Unknown weight_mode: {weight_mode!r}")
+
+    def _f(X, G0, G1, G2, Gb):
+        u_, bbp_ = X
+        return rrs_model_full(u_, bbp_, G0, G1, G2, Gb)
+
+    kwargs = dict(p0=p0, sigma=sigma, absolute_sigma=False)
+    if bounds is not None:
+        kwargs['bounds'] = bounds
+
+    params, cov = curve_fit(_f, (u, bbp), rrs, **kwargs)
+    return params, cov
+
+
+def fit_gordon_full_coefficients(
+    wave: np.ndarray,
+    Rrs: np.ndarray,
+    a: np.ndarray,
+    bb: np.ndarray,
+    bbp: np.ndarray,
+    wave_select: Optional[np.ndarray] = None,
+    return_stats: bool = False,
+    weight_mode: str = 'relative',
+    bounds: Optional[Tuple[Sequence[float], Sequence[float]]] = (
+        (-1e-3, 0.05, -2.0, -1.0), (1e-3, 0.15, 0.5, 1.0)
+    ),
+) -> Union[Dict, Tuple[Dict, Dict]]:
+    """
+    Per-wavelength 4-parameter (G0, G1, G2, Gb) fit.
+
+    Returns dict with 'wavelength', 'G0', 'G1', 'G2', 'Gb' and per-parameter
+    standard errors; optionally per-wavelength stats {'rRMS', 'RMS'}.
+    """
+    u = calc_u(a, bb)
+    rrs = Rrs_to_rrs(Rrs)
+
+    if wave_select is None:
+        wave_fit = wave
+        idx_fit = np.arange(len(wave))
+    else:
+        idx_fit = [np.argmin(np.abs(wave - w)) for w in wave_select]
+        wave_fit = wave[idx_fit]
+
+    n = len(idx_fit)
+    G0_arr = np.zeros(n); G1_arr = np.zeros(n)
+    G2_arr = np.zeros(n); Gb_arr = np.zeros(n)
+    G0_err = np.zeros(n); G1_err = np.zeros(n)
+    G2_err = np.zeros(n); Gb_err = np.zeros(n)
+    rRMS = np.zeros(n);   RMS = np.zeros(n)
+
+    for ii, idx in enumerate(idx_fit):
+        u_wv = u[:, idx]; rrs_wv = rrs[:, idx]; bbp_wv = bbp[:, idx]
+        params, cov = fit_gordon_full_at_wavelength(
+            u_wv, bbp_wv, rrs_wv,
+            weight_mode=weight_mode, bounds=bounds,
+        )
+        G0_arr[ii], G1_arr[ii], G2_arr[ii], Gb_arr[ii] = params
+        G0_err[ii] = np.sqrt(cov[0, 0])
+        G1_err[ii] = np.sqrt(cov[1, 1])
+        G2_err[ii] = np.sqrt(cov[2, 2])
+        Gb_err[ii] = np.sqrt(cov[3, 3])
+
+        rrs_pred = rrs_model_full(u_wv, bbp_wv, *params)
+        RMS[ii] = np.sqrt(np.mean((rrs_wv - rrs_pred) ** 2))
+        rRMS[ii] = np.sqrt(np.mean(
+            (rrs_wv - rrs_pred) ** 2 / np.maximum(rrs_pred ** 2, 1e-20)
+        ))
+
+    result = {
+        'wavelength': wave_fit,
+        'G0': G0_arr, 'G1': G1_arr, 'G2': G2_arr, 'Gb': Gb_arr,
+        'G0_err': G0_err, 'G1_err': G1_err, 'G2_err': G2_err, 'Gb_err': Gb_err,
+    }
+    if return_stats:
+        return result, {'rRMS': rRMS, 'RMS': RMS}
+    return result
+
+
+def save_gordon_full_to_csv(
+    result: Dict,
+    stats: Dict,
+    filename: str,
+    source: str = "Loisel23 elastic; 4-parameter fit (G0 + G1·u + G2·u² + Gb·bbp)",
+    weight_mode: Optional[str] = None,
+    A: float = A_RRS,
+    B: float = B_RRS,
+) -> None:
+    """
+    Save the (G0, G1, G2, Gb) fit to CSV.
+    """
+    import pandas as pd
+    df = pd.DataFrame({
+        'wavelength': result['wavelength'],
+        'G0': result['G0'], 'G1': result['G1'],
+        'G2': result['G2'], 'Gb': result['Gb'],
+        'G0_err': result['G0_err'], 'G1_err': result['G1_err'],
+        'G2_err': result['G2_err'], 'Gb_err': result['Gb_err'],
+        'rRMS': stats['rRMS'], 'RMS': stats['RMS'],
+    })
+    with open(filename, 'w') as f:
+        f.write("# Gordon coefficients (with G0 + Gb) fitted from Loisel23\n")
+        f.write(f"# Source: {source}\n")
+        f.write(f"# Standard G1: {G1_STANDARD}\n")
+        f.write(f"# Standard G2: {G2_STANDARD}\n")
+        f.write(f"# Rrs<->rrs convention: A={A}, B={B}\n")
+        if weight_mode is not None:
+            f.write(f"# weight_mode: {weight_mode}\n")
+        f.write("#\n")
+        df.to_csv(f, index=False)
+    print(f"Saved 4-parameter (G0,Gb) Gordon coefficients to: {filename}")
+
+
+def fit_gordon_2stage_coefficients(
+    wave: np.ndarray,
+    Rrs: np.ndarray,
+    a: np.ndarray,
+    bb: np.ndarray,
+    bbp_proxy: np.ndarray,
+    wave_select: Optional[np.ndarray] = None,
+    return_stats: bool = False,
+    weight_mode: str = 'relative',
+    bounds_u: Optional[Tuple[Sequence[float], Sequence[float]]] = (
+        (0.05, -2.0), (0.15, 0.5)
+    ),
+    bounds_corr: Optional[Tuple[Sequence[float], Sequence[float]]] = (
+        (-1e-3, -1.0), (1e-3, 1.0)
+    ),
+) -> Union[Dict, Tuple[Dict, Dict]]:
+    """
+    Two-stage 4-parameter fit:
+
+        Stage 1: fit (G1, G2) to rrs ≈ G1·u + G2·u² with the usual recipe.
+        Stage 2: fit (G0, Gb) to the Stage-1 residuals as a function of
+                 ``bbp_proxy`` (a single scalar per sample, e.g. bbp at 700
+                 nm, so it acts as a trophic-state proxy independent of λ).
+
+    The two-stage approach decouples the u-dependent part of the fit (which
+    is what the u-only Gordon family was designed to capture) from the
+    (a, bb) decoupling that the constant offset and bbp slope correct.
+    Motivation: a joint 4-param fit lets G1/G2 absorb part of the bbp-driven
+    residual that should be attributed to G0/Gb -- leaving residual bbp
+    dependence after a joint fit. Holding G1/G2 fixed after Stage 1 prevents
+    that leakage.
+
+    Parameters
+    ----------
+    wave, Rrs, a, bb : as in ``fit_gordon_full_coefficients``.
+    bbp_proxy : np.ndarray
+        Per-sample bbp value used at every wavelength, shape (n_samples,).
+        Typically the L23 ``bbnw`` evaluated at 700 nm.
+
+    Returns
+    -------
+    result : dict with 'wavelength', 'G0', 'G1', 'G2', 'Gb' (+ _err columns).
+    stats : dict with 'rRMS', 'RMS' per wavelength (if return_stats).
+    """
+    u = calc_u(a, bb)
+    rrs = Rrs_to_rrs(Rrs)
+
+    if wave_select is None:
+        wave_fit = wave
+        idx_fit = np.arange(len(wave))
+    else:
+        idx_fit = [np.argmin(np.abs(wave - w)) for w in wave_select]
+        wave_fit = wave[idx_fit]
+
+    n = len(idx_fit)
+    G0_arr = np.zeros(n); G1_arr = np.zeros(n)
+    G2_arr = np.zeros(n); Gb_arr = np.zeros(n)
+    G0_err = np.zeros(n); G1_err = np.zeros(n)
+    G2_err = np.zeros(n); Gb_err = np.zeros(n)
+    rRMS = np.zeros(n);   RMS = np.zeros(n)
+
+    def _quad(u_, G1, G2):
+        return G1 * u_ + G2 * u_ ** 2
+
+    def _corr(bbp_, G0, Gb):
+        return G0 + Gb * bbp_
+
+    for ii, idx in enumerate(idx_fit):
+        u_wv = u[:, idx]
+        rrs_wv = rrs[:, idx]
+
+        if weight_mode == 'absolute':
+            sigma = np.full_like(u_wv, 3e-4, dtype=float)
+        elif weight_mode == 'relative':
+            sigma = np.maximum(np.abs(rrs_wv), 1e-5)
+        else:
+            raise ValueError(f"Unknown weight_mode: {weight_mode!r}")
+
+        # Stage 1: fit G1, G2 (no offset, no bbp)
+        p_u, cov_u = curve_fit(
+            _quad, u_wv, rrs_wv,
+            p0=(0.1, 0.0), sigma=sigma, absolute_sigma=False,
+            bounds=bounds_u,
+        )
+        G1_arr[ii], G2_arr[ii] = p_u
+        G1_err[ii] = np.sqrt(cov_u[0, 0])
+        G2_err[ii] = np.sqrt(cov_u[1, 1])
+
+        # Stage 2: fit G0, Gb to the residuals against bbp_proxy
+        res = rrs_wv - _quad(u_wv, *p_u)
+        p_c, cov_c = curve_fit(
+            _corr, bbp_proxy, res,
+            p0=(0.0, 0.0), sigma=sigma, absolute_sigma=False,
+            bounds=bounds_corr,
+        )
+        G0_arr[ii], Gb_arr[ii] = p_c
+        G0_err[ii] = np.sqrt(cov_c[0, 0])
+        Gb_err[ii] = np.sqrt(cov_c[1, 1])
+
+        # Stats on the full (4-param) reconstruction
+        rrs_pred = _quad(u_wv, *p_u) + _corr(bbp_proxy, *p_c)
+        RMS[ii] = np.sqrt(np.mean((rrs_wv - rrs_pred) ** 2))
+        rRMS[ii] = np.sqrt(np.mean(
+            (rrs_wv - rrs_pred) ** 2 / np.maximum(rrs_pred ** 2, 1e-20)
+        ))
+
+    result = {
+        'wavelength': wave_fit,
+        'G0': G0_arr, 'G1': G1_arr, 'G2': G2_arr, 'Gb': Gb_arr,
+        'G0_err': G0_err, 'G1_err': G1_err, 'G2_err': G2_err, 'Gb_err': Gb_err,
+    }
+    if return_stats:
+        return result, {'rRMS': rRMS, 'RMS': RMS}
+    return result
+
+
+def load_gordon_csv(filename: str) -> Tuple[Dict, Dict]:
+    """
+    Load a Gordon-coefficient CSV (any of the 2/3/4-parameter recipes) into
+    the (result, stats) dict pair that the fit functions return.
+
+    Used by ``run_full_assessment(..., clobber=False)`` to avoid refitting
+    when a saved CSV is already present.
+
+    Returns
+    -------
+    result : dict
+        {'wavelength', 'G1', 'G2'} always; 'G0' and/or 'Gb' if present in the
+        CSV; corresponding '_err' columns when present (or zeros otherwise).
+    stats : dict
+        {'rRMS', 'RMS'} (from the CSV; if absent, both are NaN arrays).
+    """
+    import pandas as pd
+    df = pd.read_csv(filename, comment='#')
+
+    wave = df['wavelength'].values
+    result = {'wavelength': wave}
+    for col in ('G0', 'G1', 'G2', 'Gb'):
+        if col in df.columns:
+            result[col] = df[col].values
+        # Per-parameter standard errors
+        ecol = f'{col}_err'
+        if ecol in df.columns:
+            result[ecol] = df[ecol].values
+        elif col in result:
+            result[ecol] = np.zeros_like(result[col])
+
+    stats = {}
+    stats['rRMS'] = df['rRMS'].values if 'rRMS' in df.columns else np.full_like(wave, np.nan, dtype=float)
+    stats['RMS']  = df['RMS'].values  if 'RMS' in df.columns  else np.full_like(wave, np.nan, dtype=float)
+    print(f"Loaded Gordon coefficients from: {filename}")
+    return result, stats
 
 
 # Convenience functions for common use cases
@@ -842,6 +1318,8 @@ def evaluate_gordon_on_dataset(
     G1_std: float = G1_STANDARD,
     G2_std: float = G2_STANDARD,
     G0_var: Optional[np.ndarray] = None,
+    Gb_var: Optional[np.ndarray] = None,
+    bbp: Optional[np.ndarray] = None,
 ) -> Dict:
     """
     Compare variable and standard Gordon Rrs against a reference Rrs dataset.
@@ -868,7 +1346,9 @@ def evaluate_gordon_on_dataset(
         - bias_var, bias_std : mean signed residual (truth - pred)
         - rrms_var_pct, rrms_std_pct : relative RMS in percent
     """
-    Rrs_var = calc_Rrs_with_variable_gordon(a, bb, G1_var, G2_var, G0=G0_var)
+    Rrs_var = calc_Rrs_with_variable_gordon(
+        a, bb, G1_var, G2_var, G0=G0_var, Gb=Gb_var, bbp=bbp,
+    )
     Rrs_std = calc_Rrs_with_variable_gordon(
         a, bb,
         np.full(len(wave), G1_std),
@@ -894,281 +1374,21 @@ def evaluate_gordon_on_dataset(
 # Figures for performance assessment
 # =============================================================================
 
-def plot_g_coefficients(
-    result: Dict,
-    outfile: Optional[str] = None,
-    compare: Optional[Dict] = None,
-    compare_label: str = 'old',
-):
-    """
-    Plot fitted G1(λ), G2(λ) with optional comparison curve.
-
-    Parameters
-    ----------
-    result : dict
-        Output of fit_gordon_coefficients (the "new" fit).
-    outfile : str, optional
-        If provided, save figure to this path.
-    compare : dict, optional
-        A second fit result to overlay (e.g. the old/unweighted fit).
-    compare_label : str
-        Legend label for the comparison curve.
-    """
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.2))
-
-    for ax, key, std in zip(axes, ('G1', 'G2'), (G1_STANDARD, G2_STANDARD)):
-        ax.plot(result['wavelength'], result[key], 'C3-', lw=2, label='new fit')
-        if compare is not None:
-            ax.plot(compare['wavelength'], compare[key], 'C0--', lw=1.6, label=compare_label)
-        ax.axhline(std, color='k', ls=':', lw=1, label=f'standard {key}={std}')
-        ax.set_xlabel('wavelength (nm)')
-        ax.set_ylabel(key)
-        ax.grid(alpha=0.3)
-        ax.legend(fontsize=9)
-
-    axes[0].set_title('G1(λ)')
-    axes[1].set_title('G2(λ)')
-    fig.tight_layout()
-    if outfile is not None:
-        fig.savefig(outfile, dpi=150)
-        print(f"Saved: {outfile}")
-    return fig
-
-
-def plot_rrms_vs_wavelength(eval_result: Dict, outfile: Optional[str] = None):
-    """
-    Plot per-wavelength relative-RMS error for variable vs standard Gordon.
-    """
-    fig, ax = plt.subplots(figsize=(8, 4.2))
-    ax.plot(eval_result['wavelength'], eval_result['rrms_std_pct'],
-            'C0-',  lw=2, label='standard Gordon')
-    ax.plot(eval_result['wavelength'], eval_result['rrms_var_pct'],
-            'C3-', lw=2, label='variable Gordon')
-    ax.set_xlabel('wavelength (nm)')
-    ax.set_ylabel('rRMS  [%]')
-    ax.set_title('Rrs reconstruction error vs Hydrolight')
-    ax.grid(alpha=0.3)
-    ax.legend()
-    fig.tight_layout()
-    if outfile is not None:
-        fig.savefig(outfile, dpi=150)
-        print(f"Saved: {outfile}")
-    return fig
-
-
-def plot_rrms_vs_wavelength_3case(
-    eval_no_G0: Dict,
-    eval_with_G0: Dict,
-    outfile: Optional[str] = None,
-):
-    """
-    Three-curve rRMS-vs-wavelength figure: standard, variable (no G0), variable (with G0).
-    """
-    fig, ax = plt.subplots(figsize=(8, 4.5))
-    ax.plot(eval_no_G0['wavelength'], eval_no_G0['rrms_std_pct'],
-            'C0-', lw=2, label='standard Gordon')
-    ax.plot(eval_no_G0['wavelength'], eval_no_G0['rrms_var_pct'],
-            'C3-', lw=2, label='variable, no G0')
-    ax.plot(eval_with_G0['wavelength'], eval_with_G0['rrms_var_pct'],
-            'C2-', lw=2, label='variable, with G0')
-    ax.set_xlabel('wavelength (nm)')
-    ax.set_ylabel('rRMS  [%]')
-    ax.set_title('Rrs reconstruction error vs Hydrolight')
-    ax.grid(alpha=0.3); ax.legend()
-    fig.tight_layout()
-    if outfile is not None:
-        fig.savefig(outfile, dpi=150)
-        print(f"Saved: {outfile}")
-    return fig
-
-
-def plot_residual_vs_bbp(
-    wave: np.ndarray,
-    Rrs_truth: np.ndarray,
-    Rrs_var: np.ndarray,
-    Rrs_std: np.ndarray,
-    bbp: np.ndarray,
-    plot_waves: Sequence[float] = (400., 500., 550., 600., 650., 700.),
-    mask: Optional[np.ndarray] = None,
-    outfile: Optional[str] = None,
-    relative: bool = True,
-):
-    """
-    Plot the Hydrolight - Gordon Rrs residual against bbp at selected wavelengths.
-
-    Parameters
-    ----------
-    wave : np.ndarray
-        Wavelength grid, shape (n_wave,).
-    Rrs_truth, Rrs_var, Rrs_std : np.ndarray
-        Rrs arrays, shape (n_samples, n_wave).
-    bbp : np.ndarray
-        Particulate backscatter (= bbnw in Loisel23), shape (n_samples, n_wave).
-    plot_waves : sequence
-        Wavelengths at which to draw panels.
-    mask : np.ndarray, optional
-        Boolean (n_samples,) selecting which scenes to plot (e.g. oligotrophic).
-    outfile : str, optional
-        Where to save the figure.
-    relative : bool
-        If True, plot residual as percent of Rrs_truth; otherwise absolute sr^-1.
-    """
-    sel = np.ones(Rrs_truth.shape[0], dtype=bool) if mask is None else mask
-    n = len(plot_waves)
-    ncol = 3
-    nrow = int(np.ceil(n / ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(5 * ncol, 3.4 * nrow), squeeze=False)
-    axes = axes.ravel()
-
-    eps = 1e-12
-    for ax, wv in zip(axes, plot_waves):
-        j = int(np.argmin(np.abs(wave - wv)))
-        x = bbp[sel, j]
-        if relative:
-            denom = np.maximum(np.abs(Rrs_truth[sel, j]), eps)
-            y_std = 100.0 * (Rrs_truth[sel, j] - Rrs_std[sel, j]) / denom
-            y_var = 100.0 * (Rrs_truth[sel, j] - Rrs_var[sel, j]) / denom
-            ylabel = r'$(R_{rs}^{HL} - R_{rs}^{G})/R_{rs}^{HL}$  [%]'
-        else:
-            y_std = Rrs_truth[sel, j] - Rrs_std[sel, j]
-            y_var = Rrs_truth[sel, j] - Rrs_var[sel, j]
-            ylabel = r'$R_{rs}^{HL} - R_{rs}^{G}$  [sr$^{-1}$]'
-
-        ax.scatter(x, y_std, s=10, alpha=0.5, color='C0', label='standard')
-        ax.scatter(x, y_var, s=10, alpha=0.7, color='C3', label='variable')
-        ax.axhline(0, color='k', lw=0.8, alpha=0.6)
-        ax.set_xscale('log')
-        ax.set_xlabel(r'$b_{bp}(\lambda)$  [m$^{-1}$]')
-        ax.set_ylabel(ylabel)
-        ax.set_title(f'{wv:.0f} nm')
-        ax.grid(alpha=0.3)
-
-    # Hide unused panels and put one legend
-    for ax in axes[n:]:
-        ax.axis('off')
-    axes[0].legend(fontsize=9, loc='best')
-
-    fig.tight_layout()
-    if outfile is not None:
-        fig.savefig(outfile, dpi=150)
-        print(f"Saved: {outfile}")
-    return fig
-
-
-def plot_residual_vs_bbp_3case(
-    wave: np.ndarray,
-    Rrs_truth: np.ndarray,
-    Rrs_var_noG0: np.ndarray,
-    Rrs_var_withG0: np.ndarray,
-    Rrs_std: np.ndarray,
-    bbp: np.ndarray,
-    plot_waves: Sequence[float] = (400., 500., 550., 600., 650., 700.),
-    mask: Optional[np.ndarray] = None,
-    outfile: Optional[str] = None,
-):
-    """
-    Three-case residual-vs-bbp panels (standard / variable noG0 / variable withG0).
-    """
-    sel = np.ones(Rrs_truth.shape[0], dtype=bool) if mask is None else mask
-    n = len(plot_waves); ncol = 3; nrow = int(np.ceil(n / ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(5 * ncol, 3.4 * nrow), squeeze=False)
-    axes = axes.ravel()
-
-    eps = 1e-12
-    for ax, wv in zip(axes, plot_waves):
-        j = int(np.argmin(np.abs(wave - wv)))
-        x = bbp[sel, j]
-        denom = np.maximum(np.abs(Rrs_truth[sel, j]), eps)
-        y_std    = 100.0 * (Rrs_truth[sel, j] - Rrs_std[sel, j]) / denom
-        y_noG0   = 100.0 * (Rrs_truth[sel, j] - Rrs_var_noG0[sel, j]) / denom
-        y_withG0 = 100.0 * (Rrs_truth[sel, j] - Rrs_var_withG0[sel, j]) / denom
-
-        ax.scatter(x, y_std,    s=8, alpha=0.4, color='C0', label='standard')
-        ax.scatter(x, y_noG0,   s=8, alpha=0.5, color='C3', label='variable, no G0')
-        ax.scatter(x, y_withG0, s=8, alpha=0.7, color='C2', label='variable, with G0')
-        ax.axhline(0, color='k', lw=0.8, alpha=0.6)
-        ax.set_xscale('log')
-        ax.set_xlabel(r'$b_{bp}(\lambda)$  [m$^{-1}$]')
-        ax.set_ylabel(r'$(R_{rs}^{HL} - R_{rs}^{G})/R_{rs}^{HL}$  [%]')
-        ax.set_title(f'{wv:.0f} nm')
-        ax.grid(alpha=0.3)
-
-    for ax in axes[n:]:
-        ax.axis('off')
-    axes[0].legend(fontsize=9, loc='best')
-    fig.tight_layout()
-    if outfile is not None:
-        fig.savefig(outfile, dpi=150)
-        print(f"Saved: {outfile}")
-    return fig
-
-
-def plot_rrs_vs_u(
-    wave: np.ndarray,
-    Rrs: np.ndarray,
-    a: np.ndarray,
-    bb: np.ndarray,
-    result: Dict,
-    plot_waves: Sequence[float] = (370., 440., 550., 670.),
-    outfile: Optional[str] = None,
-    result_with_G0: Optional[Dict] = None,
-):
-    """
-    Plot rrs vs u at select wavelengths with Gordon fits overlaid.
-
-    Parameters
-    ----------
-    result : dict
-        2-parameter fit result with 'wavelength', 'G1', 'G2'.
-    result_with_G0 : dict, optional
-        3-parameter fit result with 'wavelength', 'G0', 'G1', 'G2'. When
-        provided, overlay all three cases per panel: standard Gordon,
-        variable no G0, variable with G0.
-    """
-    n = len(plot_waves)
-    ncol = 2
-    nrow = int(np.ceil(n / ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(6 * ncol, 4 * nrow), squeeze=False)
-    axes = axes.ravel()
-
-    for ax, wv in zip(axes, plot_waves):
-        j = int(np.argmin(np.abs(wave - wv)))
-        u = calc_u(a[:, j], bb[:, j])
-        rrs = Rrs_to_rrs(Rrs[:, j])
-        ax.scatter(u, rrs, s=6, alpha=0.3, color='gray', label='Loisel23')
-
-        jf = int(np.argmin(np.abs(result['wavelength'] - wv)))
-        G1f, G2f = result['G1'][jf], result['G2'][jf]
-        u_grid = np.linspace(u.min(), u.max(), 200)
-
-        # Standard Gordon (constant coefficients)
-        ax.plot(u_grid, rrs_model(u_grid, G1_STANDARD, G2_STANDARD), 'C0--', lw=1.6,
-                label=f'standard  G1={G1_STANDARD}, G2={G2_STANDARD}')
-        # Variable Gordon without G0
-        ax.plot(u_grid, rrs_model(u_grid, G1f, G2f), 'C3-', lw=2,
-                label=f'variable, no G0  G1={G1f:.3f}, G2={G2f:+.3f}')
-        # Variable Gordon with G0
-        if result_with_G0 is not None:
-            jf_c = int(np.argmin(np.abs(result_with_G0['wavelength'] - wv)))
-            G0c = result_with_G0['G0'][jf_c]
-            G1c = result_with_G0['G1'][jf_c]
-            G2c = result_with_G0['G2'][jf_c]
-            ax.plot(u_grid, rrs_model_const(u_grid, G0c, G1c, G2c), 'C2-', lw=2,
-                    label=f'variable, with G0  G0={G0c:+.1e}, G1={G1c:.3f}, G2={G2c:+.3f}')
-
-        ax.set_xlabel('u')
-        ax.set_ylabel(r'$r_{rs}$')
-        ax.set_title(f'{wv:.0f} nm')
-        ax.grid(alpha=0.3)
-        ax.legend(fontsize=8, loc='best')
-        ax.set_xscale('log')
-        ax.set_yscale('log')
-
-    fig.tight_layout()
-    if outfile is not None:
-        fig.savefig(outfile, dpi=150)
-        print(f"Saved: {outfile}")
-    return fig
+# All plotting helpers live in plot_gordon.py. Re-export them so the existing
+# run_full_assessment driver below (and any external caller) continues to find
+# them under their original names.
+from plot_gordon import (  # noqa: E402
+    plot_g_coefficients,
+    plot_rrms_vs_wavelength,
+    plot_rrms_vs_wavelength_3case,
+    plot_rrms_vs_wavelength_4case,
+    plot_rrms_vs_wavelength_5case,
+    plot_residual_vs_bbp,
+    plot_residual_vs_bbp_3case,
+    plot_residual_vs_bbp_4case,
+    plot_residual_vs_bbp_5case,
+    plot_rrs_vs_u,
+)
 
 
 def run_full_assessment(
@@ -1187,16 +1407,30 @@ def run_full_assessment(
     alpha_G1: float = 1e6,
     alpha_G2: float = 1e4,
     canonical: str = 'smooth',     # 'smooth' or 'perwave' -- which goes into the CSV
+    clobber: bool = False,
 ):
     """
     End-to-end: fit Gordon coefficients on Loisel23, save CSV, save assessment figures.
 
-    Runs three fits side-by-side for diagnostics:
+    Runs all recipes side-by-side for diagnostics:
       - 'old'     : legacy per-wavelength fit, constant-sigma  (absolute σ).
       - 'perwave' : per-wavelength fit, relative σ, bounded.
       - 'smooth'  : joint G1(λ), G2(λ) fit with Tikhonov 2nd-derivative penalty.
+      - 'const'   : 3-parameter (G0, G1, G2).
+      - 'bbp'     : 3-parameter (G1, G2, Gb).
+      - 'full'    : 4-parameter (G0, G1, G2, Gb).
 
-    The fit named by `canonical` is written to CSV.
+    The fit named by ``canonical`` is written to CSV.
+
+    Parameters
+    ----------
+    clobber : bool, default False
+        If False (default), reuse coefficients from any already-existing CSV
+        instead of refitting. The legacy and per-wavelength baselines are
+        always recomputed (they're cheap and the per-wavelength fit is the
+        warm-start for `smooth`); the smooth, const, bbp, and full fits load
+        from their CSVs when present.
+        If True, always refit and overwrite all CSVs.
     """
     from ocpy.hydrolight import loisel23
 
@@ -1227,18 +1461,29 @@ def run_full_assessment(
         bounds=bounds,
     )
 
+    # Paths for the cached CSVs. The canonical (smooth or perwave) lives at
+    # csv_out; the other three are alongside it.
+    csv_dir = os.path.dirname(csv_out) or '.'
+    const_path = os.path.join(csv_dir, 'gordon_coefficients_with_const.csv')
+    bbp_path   = os.path.join(csv_dir, 'gordon_coefficients_with_Gb.csv')
+    full_path  = os.path.join(csv_dir, 'gordon_coefficients_with_G0_Gb.csv')
+
     # ------ (2) Smoothness-regularized joint fit (uses per-wave as warm start) ------
     bounds_G1 = (bounds[0][0], bounds[1][0])
     bounds_G2 = (bounds[0][1], bounds[1][1])
-    result_sm, stats_sm = fit_gordon_smooth(
-        wave, Rrs, a, bb,
-        alpha_G1=alpha_G1, alpha_G2=alpha_G2,
-        weight_mode=weight_mode,
-        bounds_G1=bounds_G1, bounds_G2=bounds_G2,
-        init_result=result_pw,
-    )
+    if (not clobber) and canonical == 'smooth' and os.path.exists(csv_out):
+        result_sm, stats_sm = load_gordon_csv(csv_out)
+    else:
+        result_sm, stats_sm = fit_gordon_smooth(
+            wave, Rrs, a, bb,
+            alpha_G1=alpha_G1, alpha_G2=alpha_G2,
+            weight_mode=weight_mode,
+            bounds_G1=bounds_G1, bounds_G2=bounds_G2,
+            init_result=result_pw,
+        )
 
     # ------ (3) Legacy (absolute-sigma) per-wavelength fit for diagnostics ------
+    # No CSV for this -- always recompute (cheap; it's the legacy baseline).
     result_old, stats_old = fit_gordon_coefficients(
         wave, Rrs, a, bb,
         return_stats=True,
@@ -1249,16 +1494,57 @@ def run_full_assessment(
     # Allowing a small constant offset absorbs the non-pure-u dependence in
     # Hydrolight rrs(a, bb). At red wavelengths this drops rRMS by ~10x and
     # eliminates the residual-vs-bbp tilt.
-    result_c, stats_c = fit_gordon_const_coefficients(
-        wave, Rrs, a, bb,
-        return_stats=True,
-        weight_mode=weight_mode,
-    )
-    save_gordon_const_to_csv(
-        result_c, stats_c,
-        os.path.join(os.path.dirname(csv_out) or '.', 'gordon_coefficients_with_const.csv'),
-        weight_mode=weight_mode, A=A_RRS, B=B_RRS,
-    )
+    if (not clobber) and os.path.exists(const_path):
+        result_c, stats_c = load_gordon_csv(const_path)
+    else:
+        result_c, stats_c = fit_gordon_const_coefficients(
+            wave, Rrs, a, bb,
+            return_stats=True,
+            weight_mode=weight_mode,
+        )
+        save_gordon_const_to_csv(
+            result_c, stats_c, const_path,
+            weight_mode=weight_mode, A=A_RRS, B=B_RRS,
+        )
+
+    # ------ (5) 3-parameter (G1·u + G2·u² + Gb·bbp) per-wavelength fit ------
+    # The constant offset (G0) form fails near 500 nm where the residual is
+    # linear in bbp rather than constant. A Gb·bbp term captures this directly.
+    if (not clobber) and os.path.exists(bbp_path):
+        result_b, stats_b = load_gordon_csv(bbp_path)
+    else:
+        result_b, stats_b = fit_gordon_bbp_coefficients(
+            wave, Rrs, a, bb, bbnw,
+            return_stats=True,
+            weight_mode=weight_mode,
+        )
+        save_gordon_bbp_to_csv(
+            result_b, stats_b, bbp_path,
+            weight_mode=weight_mode, A=A_RRS, B=B_RRS,
+        )
+
+    # ------ (6) 4-parameter (G0 + G1·u + G2·u² + Gb·bbp(700)) two-stage fit ------
+    # Recipe (per user request, prior turn): Stage 1 fits G1, G2 from a
+    # standard 2-parameter Gordon. Stage 2 fits G0, Gb to the Stage-1
+    # residuals, using bbp(700) as a single trophic-state proxy independent
+    # of wavelength. Decouples u-shape from (a, bb) offsets so G1/G2 don't
+    # absorb bbp-driven residual structure.
+    j_700 = int(np.argmin(np.abs(wave - 700.)))
+    bbp700 = bbnw[:, j_700]
+    if (not clobber) and os.path.exists(full_path):
+        result_f, stats_f = load_gordon_csv(full_path)
+    else:
+        result_f, stats_f = fit_gordon_2stage_coefficients(
+            wave, Rrs, a, bb, bbp700,
+            return_stats=True,
+            weight_mode=weight_mode,
+        )
+        save_gordon_full_to_csv(
+            result_f, stats_f, full_path,
+            source=("Loisel23 elastic; 4-parameter two-stage fit: "
+                    "Stage1 (G1,G2); Stage2 (G0,Gb) on residuals vs bbp(700nm)"),
+            weight_mode=weight_mode, A=A_RRS, B=B_RRS,
+        )
 
     # Choose which 2-parameter result is canonical (written to CSV).
     canonical_result, canonical_stats, canonical_label = {
@@ -1266,7 +1552,15 @@ def run_full_assessment(
                     f'smooth (α_G1={alpha_G1:g}, α_G2={alpha_G2:g})'),
         'perwave': (result_pw, stats_pw, 'per-wavelength bounded'),
     }[canonical]
-    save_gordon_to_csv(canonical_result, canonical_stats, csv_out,
+    # Only write the canonical CSV when we actually recomputed it. The smooth
+    # branch above writes the smooth fit to csv_out; for canonical='perwave'
+    # we write here unconditionally (its CSV path equals csv_out).
+    if canonical == 'perwave':
+        save_gordon_to_csv(canonical_result, canonical_stats, csv_out,
+                       weight_mode=weight_mode, A=A_RRS, B=B_RRS,
+                       source=f"Loisel23 elastic; fit recipe: {canonical_label}")
+    elif clobber or not os.path.exists(csv_out):
+        save_gordon_to_csv(canonical_result, canonical_stats, csv_out,
                        weight_mode=weight_mode, A=A_RRS, B=B_RRS,
                        source=f"Loisel23 elastic; fit recipe: {canonical_label}")
 
@@ -1276,6 +1570,14 @@ def run_full_assessment(
     eval_old = evaluate_gordon_on_dataset(wave, Rrs, a, bb, result_old['G1'], result_old['G2'])
     eval_c   = evaluate_gordon_on_dataset(wave, Rrs, a, bb, result_c['G1'], result_c['G2'],
                                            G0_var=result_c['G0'])
+    eval_b   = evaluate_gordon_on_dataset(wave, Rrs, a, bb, result_b['G1'], result_b['G2'],
+                                           Gb_var=result_b['Gb'], bbp=bbnw)
+    # 4-param fit uses bbp(700) as the trophic-state proxy at every wavelength.
+    # Reshape to (n_samples, 1) so Gb·bbp broadcasts to (n_samples, n_wave).
+    bbp700_col = bbnw[:, j_700:j_700 + 1]
+    eval_f   = evaluate_gordon_on_dataset(wave, Rrs, a, bb, result_f['G1'], result_f['G2'],
+                                           G0_var=result_f['G0'],
+                                           Gb_var=result_f['Gb'], bbp=bbp700_col)
 
     # ------ Figures ------
     plot_g_coefficients(
@@ -1334,35 +1636,77 @@ def run_full_assessment(
         outfile=os.path.join(figs_dir, 'residual_vs_bbp_3case.png'),
     )
 
-    # G0(λ) panel
-    fig, ax = plt.subplots(figsize=(8, 4.2))
-    ax.plot(result_c['wavelength'], result_c['G0'], 'C2-', lw=2, label='G0(λ)')
-    ax.axhline(0, color='k', lw=0.8, alpha=0.6)
-    ax.set_xlabel('wavelength (nm)')
-    ax.set_ylabel(r'$G_0$  [sr$^{-1}$, in $r_{rs}$ units]')
-    ax.set_title('Constant offset of the 3-parameter fit')
-    ax.grid(alpha=0.3); ax.legend()
+    # ------ Four-case comparison figures (standard / noG0 / withG0 / withGb) ------
+    plot_rrms_vs_wavelength_4case(
+        eval_sm, eval_c, eval_b,
+        outfile=os.path.join(figs_dir, 'rrms_vs_wavelength_4case.png'),
+    )
+    plot_residual_vs_bbp_4case(
+        wave, Rrs,
+        eval_sm['Rrs_var'], eval_c['Rrs_var'], eval_b['Rrs_var'],
+        eval_sm['Rrs_std'], bbnw, mask=oligo,
+        outfile=os.path.join(figs_dir, 'residual_vs_bbp_4case.png'),
+    )
+    plot_rrs_vs_u(
+        wave, Rrs, a, bb, result_sm,
+        plot_waves=(370., 440., 500., 550., 600., 670.),
+        result_with_G0=result_c,
+        result_with_Gb=result_b, bbp=bbnw,
+        outfile=os.path.join(figs_dir, 'rrs_vs_u_4case.png'),
+    )
+
+    # ------ Five-case rRMS + residual figures (adds the 4-parameter G0+Gb fit) ------
+    plot_rrms_vs_wavelength_5case(
+        eval_sm, eval_c, eval_b, eval_f,
+        outfile=os.path.join(figs_dir, 'rrms_vs_wavelength_5case.png'),
+    )
+    plot_residual_vs_bbp_5case(
+        wave, Rrs,
+        eval_sm['Rrs_var'], eval_c['Rrs_var'], eval_b['Rrs_var'], eval_f['Rrs_var'],
+        eval_sm['Rrs_std'], bbnw, mask=oligo,
+        outfile=os.path.join(figs_dir, 'residual_vs_bbp_5case.png'),
+    )
+
+    # G0(λ), Gb(λ), and (G0,Gb)-from-4-param panels
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.2))
+    axes[0].plot(result_c['wavelength'], result_c['G0'], 'C2-',  lw=2, label='G0 (3-param)')
+    axes[0].plot(result_f['wavelength'], result_f['G0'], 'C5--', lw=2, label='G0 (4-param)')
+    axes[0].axhline(0, color='k', lw=0.8, alpha=0.6)
+    axes[0].set_xlabel('wavelength (nm)'); axes[0].set_ylabel(r'$G_0$')
+    axes[0].set_title('Constant offset')
+    axes[0].grid(alpha=0.3); axes[0].legend()
+    axes[1].plot(result_b['wavelength'], result_b['Gb'], 'C4-',  lw=2, label='Gb (3-param)')
+    axes[1].plot(result_f['wavelength'], result_f['Gb'], 'C5--', lw=2, label='Gb (4-param)')
+    axes[1].axhline(0, color='k', lw=0.8, alpha=0.6)
+    axes[1].set_xlabel('wavelength (nm)'); axes[1].set_ylabel(r'$G_b$')
+    axes[1].set_title('bbp slope')
+    axes[1].grid(alpha=0.3); axes[1].legend()
     fig.tight_layout()
-    fig.savefig(os.path.join(figs_dir, 'G0_vs_wavelength.png'), dpi=150)
-    print(f"Saved: {os.path.join(figs_dir, 'G0_vs_wavelength.png')}")
+    fig.savefig(os.path.join(figs_dir, 'G0_Gb_vs_wavelength.png'), dpi=150)
+    print(f"Saved: {os.path.join(figs_dir, 'G0_Gb_vs_wavelength.png')}")
 
     # ------ Summary table at the canonical check wavelengths ------
     check_waves = [400., 500., 550., 600., 650., 700.]
-    print("\nWavelength   rRMS_std%   rRMS_old%   rRMS_perwave%   rRMS_smooth%   rRMS_const%")
-    print("-" * 86)
+    print("\nWavelength   rRMS_std%   rRMS_smooth%   rRMS_G0%   rRMS_Gb%   rRMS_full%")
+    print("-" * 80)
     for wv in check_waves:
         j = int(np.argmin(np.abs(wave - wv)))
         print(f"  {wv:6.1f}     {eval_pw['rrms_std_pct'][j]:8.3f}    "
-              f"{eval_old['rrms_var_pct'][j]:8.3f}    "
-              f"{eval_pw['rrms_var_pct'][j]:11.3f}    "
               f"{eval_sm['rrms_var_pct'][j]:11.3f}    "
-              f"{eval_c['rrms_var_pct'][j]:9.3f}")
+              f"{eval_c['rrms_var_pct'][j]:7.3f}    "
+              f"{eval_b['rrms_var_pct'][j]:7.3f}    "
+              f"{eval_f['rrms_var_pct'][j]:9.3f}")
 
     print(f"\nG2 ranges:")
     print(f"  per-wave: [{result_pw['G2'].min():.4f}, {result_pw['G2'].max():.4f}]")
     print(f"  smooth:   [{result_sm['G2'].min():.4f}, {result_sm['G2'].max():.4f}]")
     print(f"  const:    [{result_c['G2'].min():.4f}, {result_c['G2'].max():.4f}]")
+    print(f"  bbp:      [{result_b['G2'].min():.4f}, {result_b['G2'].max():.4f}]")
+    print(f"  full:     [{result_f['G2'].min():.4f}, {result_f['G2'].max():.4f}]")
     print(f"G0 range (const fit): [{result_c['G0'].min():+.4e}, {result_c['G0'].max():+.4e}]")
+    print(f"G0 range (full fit):  [{result_f['G0'].min():+.4e}, {result_f['G0'].max():+.4e}]")
+    print(f"Gb range (bbp fit):   [{result_b['Gb'].min():+.4e}, {result_b['Gb'].max():+.4e}]")
+    print(f"Gb range (full fit):  [{result_f['Gb'].min():+.4e}, {result_f['Gb'].max():+.4e}]")
 
     return {
         'wave': wave,
@@ -1370,9 +1714,12 @@ def run_full_assessment(
         'result_sm':  result_sm,  'stats_sm':  stats_sm,  'eval_sm':  eval_sm,
         'result_old': result_old, 'stats_old': stats_old, 'eval_old': eval_old,
         'result_c':   result_c,   'stats_c':   stats_c,   'eval_c':   eval_c,
+        'result_b':   result_b,   'stats_b':   stats_b,   'eval_b':   eval_b,
+        'result_f':   result_f,   'stats_f':   stats_f,   'eval_f':   eval_f,
     }
 
 
 if __name__ == '__main__':
     print("Fitting wavelength-dependent Gordon coefficients from Loisel23 data...")
-    run_full_assessment()
+    run_full_assessment(clobber=False)
+
