@@ -62,6 +62,11 @@ Examine the files in the docs/ directory and update the docs to reflect the new 
 - Implement this change to the code
 - Log your work and results below in the Logs section.  
 
+6. The memory issue is now fixed, but the MCMC fitting is now 7x slower.  Can you examine why and suggest a fix?
+
+- Log your work and results below in the Logs section.  
+- make recommendations for the next stage of development.  
+
 ## Tests
 
 1. Update the tests in the bing/tests/test_chl_fl.py file to include tests for the new functionality.
@@ -78,6 +83,7 @@ Examine the files in the docs/ directory and update the docs to reflect the new 
 6. Re-read this doc.  Execute the 3rd item in the Modifications section above.
 7. Re-read this doc.  Execute the 4th item in the Modifications section above.
 8. Re-read this doc.  Execute the 5th item in the Modifications section above.
+9. Re-read this doc.  Execute the 6th item in the Modifications section above.
 
 ## Logging
 
@@ -423,3 +429,80 @@ guard the rest.
   the new code path; the 2 skips are pre-existing). The fluorescence
   file alone, including the new batch-equivalence regression test, is
   **36 passed**.
+
+### 2026-06-04 (MCMC ~7x slower after the memory fix — root cause is the n_samples==1 log_prob path; fix by chunking)
+
+The previous entry's per-emission loop fixed the RAM blow-up but made
+MCMC fitting ~7x slower. Diagnosed and fixed.
+
+**Root cause.** `inference.log_prob` evaluates one parameter vector per
+call, but `models.eval_a` returns shape `(1, nwave)`. So the excitation
+IOPs reach `calc_Rrs_fluorescence` as 2-D `(1, n_ex)` and take the
+*chains* branch with `n_samples == 1`. The old chains branch was a single
+vectorised 3-D op over a trivially small `(1, n_em, n_ex)` tensor
+(~microseconds); the per-emission loop replaced that with an
+`n_em`-long (~60) Python loop, each iteration allocating arrays and
+calling `np.trapezoid`. MCMC calls log_prob ~`nsteps·nwalkers`
+(40000·16 ≈ 6.4e5) times per fit, so that per-call overhead dominates.
+The memory blow-up only ever mattered for *large* `n_samples`
+(reconstruct_from_chains); for `n_samples == 1` the loop was pure cost.
+
+**Benchmark.** [dev/ChlFl/mcmc_speed.py](../dev/ChlFl/mcmc_speed.py)
+times the single-spectrum (`n_samples==1`) call:
+
+| variant                       | µs/call | vs vectorised |
+| ----------------------------- | ------- | ------------- |
+| per-emission loop (regressed) | 252.5   | 9.5x          |
+| vectorised 3-D (old)          | 26.6    | 1.0x          |
+| production (chunked, fixed)   | 28.8    | 1.1x          |
+
+The ~9.5x slowdown of the fluorescence kernel is consistent with the
+user's ~7x end-to-end MCMC report (log_prob also does the elastic Rrs,
+priors, etc., which dilutes it slightly).
+
+**Fix — chunk over samples.** The chains branch of
+`calc_Rrs_fluorescence` now processes samples in blocks sized so the 3-D
+integrand stays under the new module constant `rrs.FL_CHUNK_ELEMENTS`
+(5e7 elements ≈ 0.4 GiB/tensor), each block done with the *fast*
+fully-vectorised 3-D op. For `n_samples == 1` (the log_prob hot path)
+this is a single vectorised block — as fast as the pre-memory-fix code;
+for 528k samples it is ~38 bounded-memory blocks. This keeps both
+properties at once: vectorised speed *and* bounded RAM. The per-emission
+loop is gone.
+
+**Verification.**
+
+- `dev/ChlFl/mcmc_speed.py`: production back to 28.8 µs/call (1.1x over
+  pure vectorised, vs 9.5x for the loop) — the MCMC slowdown is removed.
+- `dev/ChlFl/memory_profile.py`: production peak at 20k samples is now
+  **1.5 GiB** (the chunk bound), independent of total `n_samples`; the
+  528k reconstruction stays a few GiB, still vs the original >100 GB.
+  All three implementations (loop / vectorised / chunked production)
+  agree to `rtol=1e-12`.
+- `pytest bing/tests/test_chl_fl.py`: **36 passed** (the batch-equivalence
+  regression test still holds under chunking).
+  `pytest bing/tests/test_l23_fitting.py`: **26 passed, 2 skipped** — the
+  fluorescence-enabled MCMC/LM fits run cleanly and noticeably faster
+  (203 s for the file vs the sluggish post-loop timing).
+
+**Recommendations for the next stage.**
+
+1. **Add a micro-benchmark guard for the log_prob path.** A fast unit
+   test (e.g. assert `n_samples==1` `calc_Rrs_fluorescence` is within ~3x
+   of the pure vectorised op) would catch a future refactor that
+   re-introduces a per-call Python loop. Timing tests are flaky in CI, so
+   gate it behind a marker / make it advisory rather than hard-failing.
+2. **Tune `FL_CHUNK_ELEMENTS` if needed.** 5e7 (~0.4 GiB/tensor, a few
+   GiB peak) is a deliberate speed/RAM balance. Users on tight RAM can
+   lower it; users with headroom fitting very long chains can raise it.
+   Consider surfacing it via `rt_dict` if per-fit control becomes useful.
+3. **Longer term, give log_prob a true 1-D fast path.** The cleanest fix
+   would be for `eval_a` to return 1-D for 1-D input (or for the
+   fluorescence call to squeeze the singleton sample axis) so the
+   `ndim==1` branch — which never allocates a 3-D tensor at all — is used
+   for single spectra. Chunking already recovers the speed, so this is a
+   tidiness/clarity improvement, not a correctness need.
+4. **Profile the rest of log_prob.** Now that fluorescence is no longer
+   the bottleneck, if further MCMC speedups are wanted, profile the
+   elastic `calc_Rrs` + Raman path and the prior evaluation; those now
+   dominate a fluorescence-enabled step.

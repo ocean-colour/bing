@@ -54,7 +54,7 @@ def fit_with_and_without_argo(cruise_profile, outdir='Argo_Constrained',
     outroot_C = os.path.join(outdir, base.replace('Argo_', 'Argo_Constrained_'))
     print(f"Working on {imatched.cruise}-{imatched.profile:03d}...")
 
-    embed(header='57 of fit_with_argo.py')
+    #embed(header='57 of fit_with_argo.py')
 
     # Load
     d = biomass_io.load_fit_data(fit_file)

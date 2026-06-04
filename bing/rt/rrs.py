@@ -37,6 +37,13 @@ A_Rrs, B_Rrs = 0.52, 1.7
 # Gordon factors
 G1_STANDARD, G2_STANDARD = 0.0949, 0.0794  # Standard Gordon factors
 
+# Max elements in the fluorescence (n_samples, n_em, n_ex) integrand tensor
+# processed in one vectorised block by calc_Rrs_fluorescence's chains path.
+# Caps peak RAM (~this*8 bytes * a few copies) while keeping the per-call
+# vectorisation that the MCMC log_prob hot path depends on.  5e7 -> ~0.4 GiB
+# per tensor, a few GiB peak even for a 528k-sample reconstruction.
+FL_CHUNK_ELEMENTS = 50_000_000
+
 from IPython import embed
 
 
@@ -568,17 +575,22 @@ def calc_Rrs_fluorescence(
                      * (bb_F / mu_d)[None, :] / denom)
         R_F = np.trapezoid(integrand, x=wavelength_ex, axis=1)
     else:
-        # Chains path.  The naive 3-D broadcast denom (n_samples, n_em, n_ex)
+        # Chains path.  The full 3-D broadcast denom (n_samples, n_em, n_ex)
         # blows up RAM: for the standard biomass fit (n_samples~528k, n_em~60,
-        # n_ex~60) that single tensor is ~14 GiB, and the chained arithmetic
-        # holds ~4-5 live copies -> >100 GB.  See dev/ChlFl/memory_profile.py
-        # and the Logs section of prompts/chl_fl.md.
+        # n_ex~60) that single tensor is ~14 GiB and the chained arithmetic
+        # holds several live copies -> >100 GB.  But forming it one *emission
+        # wavelength* at a time instead pays an n_em-long Python loop on every
+        # call, which makes the n_samples==1 log_prob hot path ~9x slower and
+        # the whole MCMC fit ~7x slower (see dev/ChlFl/mcmc_speed.py).
         #
-        # The denominator K(λ') + κ_F(λ_em) is a *sum*, so it can't factor
-        # across the (em, ex) axes.  Instead we loop over the *small* emission
-        # axis (n_em~60); each step touches only an (n_samples, n_ex) slice, so
-        # the 3-D tensor is never formed.  This is bit-for-bit identical to the
-        # old broadcast (verified at rtol=1e-12) but ~24x lighter on memory.
+        # Resolve both by chunking over samples: each chunk is evaluated with
+        # the fast fully-vectorised 3-D op, but the chunk is sized so its
+        # integrand stays under FL_CHUNK_ELEMENTS.  For n_samples==1 this is a
+        # single vectorised block (as fast as the pre-memory-fix code); for
+        # 528k samples it is many bounded-memory blocks (low RAM).  The
+        # denominator K(λ') + κ_F(λ_em) is a *sum* so it can't factor across
+        # the (em, ex) axes — chunking is what bounds the footprint.
+        # See dev/ChlFl/memory_profile.py and the Logs in prompts/chl_fl.md.
         n_samples = a_ex.shape[0]
         if kappa_F_em.ndim == 1:
             kappa_F_em = np.broadcast_to(
@@ -587,15 +599,20 @@ def calc_Rrs_fluorescence(
             bb_F = np.broadcast_to(bb_F, (n_samples,) + bb_F.shape)
 
         n_em = wavelength.size
+        n_ex = wavelength_ex.size
         R_F = np.empty((n_samples, n_em))
-        # Sample-dependent excitation factor, reused for every emission λ.
-        ex_factor = Ed_ex[None, :] * (bb_F / mu_d)  # (n_samples, n_ex)
-        for j in range(n_em):
-            # denom: (n_samples, n_ex) for this single emission wavelength
-            denom = K_ex + kappa_F_em[:, j:j + 1]
-            lambda_ratio = wavelength_ex / wavelength[j]  # (n_ex,)
-            integrand = ex_factor * lambda_ratio[None, :] / denom
-            R_F[:, j] = np.trapezoid(integrand, x=wavelength_ex, axis=1)
+        # λ' / λ_em is sample-independent -> build once and reuse per chunk.
+        lambda_ratio = (wavelength_ex[None, None, :]
+                        / wavelength[None, :, None])  # (1, n_em, n_ex)
+        chunk = max(1, FL_CHUNK_ELEMENTS // (n_em * n_ex))
+        for lo in range(0, n_samples, chunk):
+            hi = min(lo + chunk, n_samples)
+            # denom: (m, n_em, n_ex) for this block of m = hi-lo samples
+            denom = (K_ex[lo:hi, None, :]
+                     + kappa_F_em[lo:hi, :, None])
+            integrand = (Ed_ex[None, None, :] * lambda_ratio
+                         * (bb_F[lo:hi, None, :] / mu_d) / denom)
+            R_F[lo:hi] = np.trapezoid(integrand, x=wavelength_ex, axis=2)
 
     # Normalize by emission-wavelength irradiance
     R_F = R_F / Ed_em
