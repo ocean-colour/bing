@@ -308,7 +308,7 @@ def compare_Rrs(rank:int=1, outroot:str='Low_bbp/compare_Rrs',
     bb_ex = odict_elastic['f_bb'](models[1].wave_ex)
 
     # Gordon models
-    Rrs_GordonE = bing_rt.calc_Rrs(odict_elastic['a'], odict_elastic['bb'])
+    Rrs_GordonS = bing_rt.calc_Rrs(odict_elastic['a'], odict_elastic['bb'])
     Rrs_GordonV = bing_rt.calc_Rrs(odict_elastic['a'], odict_elastic['bb'],
         in_G1=models[0].G1, in_G2=models[0].G2) 
     Rrs_GordonR = bing_rt.calc_Rrs(odict_elastic['a'], odict_elastic['bb'],
@@ -357,10 +357,10 @@ def compare_Rrs(rank:int=1, outroot:str='Low_bbp/compare_Rrs',
     ax = plt.gca()
 
     for lbl, spec in zip(
-        ['Inelastic', 'GordonE', 'GordonV', 'GordonV0',
-         'GordonR', 'GordonRV', 'GordonRVCF', 
+        ['Inelastic', 'BING_S', 'BING_V', 'BING_V0',
+         'BING_R', 'BING_RV', 'BING_RVCF', 
          'L23R', 'L23RCF'], 
-        [odict_inelastic['true_Rrs'], Rrs_GordonE, Rrs_GordonV, Rrs_GordonV0,
+        [odict_inelastic['true_Rrs'], Rrs_GordonS, Rrs_GordonV, Rrs_GordonV0,
          Rrs_GordonR, Rrs_GordonRV, Rrs_GordonRVCF, Rrs_L23R, Rrs_L23RCF]):
 
         # If log10, suppress negative values
@@ -385,7 +385,7 @@ def compare_Rrs(rank:int=1, outroot:str='Low_bbp/compare_Rrs',
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7))
 
     ax.legend(fontsize=12)
-    plotting.set_fontsize(ax, 14)
+    plotting.set_fontsize(ax, 17)
 
     # Zero line
     ax.axhline(1., color='k', ls='--', lw=1.)
@@ -549,7 +549,7 @@ def main(flg):
 
     # Plot various Rrs spectra for a given, low bbp example
     if flg == 3:
-        compare_Rrs(rank=20)
+        compare_Rrs(rank=1) # 3003
 
 
     # Advanced figures

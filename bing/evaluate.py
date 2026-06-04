@@ -90,7 +90,7 @@ def calc_stats(chains, names:list=None,
     return stats
 
 def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params, 
-        rt_dict:dict):
+        rt_dict:dict, debug:bool=False, full_return:bool=False):
     """
     Calculate Rrs from model parameters using Gordon radiative transfer.
 
@@ -113,6 +113,10 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
         Radiative transfer configuration with keys:
         - 'variable_Gordon' : bool - Use wavelength-dependent G1, G2
         - 'include_Raman' : bool - Apply Raman scattering correction
+    debug : bool, optional
+        If True, print debug information. Default is False.
+    full_return : bool, optional
+        If True, return the full Rrs, a, bb arrays. Default is False.
 
     Returns
     -------
@@ -148,7 +152,12 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
         # a_ex, bb_ex
         a_ex = a_model.eval_a_ex(a_params)
         bb_ex = bb_model.eval_bb_ex(bb_params)
-        bb_R = bb_model.bb_R
+        # bb_R
+        if a_params.ndim == 1:
+            bb_R = bb_model.bb_R
+        else:
+            bb_R = np.outer(np.ones(a_params.shape[0]), 
+                            bb_model.bb_R)
     else:
         a_ex, bb_ex, bb_R = None, None, None
 
@@ -167,21 +176,31 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
     else:
         _bbp = None
 
-    # Call me
     Rrs = bing_rrs.calc_Rrs(a, bb,
                             in_G1=a_model.G1, in_G2=a_model.G2,
                             in_G0=_G0,
                             in_Gb=_Gb, in_bbp=_bbp,
                             a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
 
+    # Call me
+    if debug:
+        embed(header='174 of evaluate.py')
+
     # RT correction?
     #  THIS SHOULD BE REMOVED
     if rt_dict.get('RT_correction', None) is not None:
-        Rrs = Rrs * rt_dict['RT_correction']
+        if a_params.ndim == 1:
+            Rrs = Rrs * rt_dict['RT_correction']
+        else:
+            Rrs = Rrs * np.outer(np.ones(a_params.shape[0]), rt_dict['RT_correction'])
 
     # Fluorescence? Accept rt_dicts that don't specify the key (ad-hoc dicts
     # built by tests / notebooks pre-date the include_Chl_fl field).
     if rt_dict.get('include_Chl_fl', False):
+        # Batch (chains) is now supported: calc_Rrs_fluorescence loops over the
+        # small emission axis instead of forming a 3-D (n_samples, n_em, n_ex)
+        # tensor, so reconstruct_from_chains stays within a few GiB even at
+        # nsteps=40000.  See dev/ChlFl/memory_profile.py.
         # a_ph -- shape (nwave,) for 1-D params, (nsample, nwave) for batch.
         # Use ellipsis-indexing so the wavelength slice works in both cases
         # (plain `aph[i_Chl_ex]` would silently index along the sample axis
@@ -203,9 +222,11 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
         # Add
         Rrs += Rrs_fl
 
-
     # Return
-    return Rrs
+    if full_return:
+        return Rrs, a, bb
+    else:
+        return Rrs
 
 def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
                             perc=(5,95)):
@@ -272,24 +293,26 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
     aparams = chains[..., :models[0].nparam]
     bparams = chains[..., models[0].nparam:]
 
-    # IOPs at every chain sample for the credible bands on a, bb.
-    a = models[0].eval_a(aparams)
-    bb = models[1].eval_bb(bparams)
-    a_mean = np.median(a, axis=0)
-    a_low, a_high = np.percentile(a, perc, axis=0)
-    bb_mean = np.median(bb, axis=0)
-    bb_low, bb_high = np.percentile(bb, perc, axis=0)
-    del a, bb
-
     # Forward-model Rrs through the shared helper so the elastic, Raman,
     # G0/Gb, and fluorescence branches stay defined in a single place
     # (also used by inference.log_prob and chisq_fit.fit_func).
-    Rrs = calc_Rrs_from_models(models[0], aparams,
-                               models[1], bparams, rt_dict)
+    #embed(header='287 of evaluate.py')
+    Rrs, a, bb = calc_Rrs_from_models(models[0], aparams,
+                               models[1], bparams, rt_dict,
+                               full_return=True)
+                               #debug=True)
 
     # Stats over the Rrs posterior
     sigRs = np.std(Rrs, axis=0)
     Rrs = np.median(Rrs, axis=0)
+
+    # IOPs at every chain sample for the credible bands on a, bb.
+    #a = models[0].eval_a(aparams)
+    #bb = models[1].eval_bb(bparams)
+    a_mean = np.median(a, axis=0)
+    a_low, a_high = np.percentile(a, perc, axis=0)
+    bb_mean = np.median(bb, axis=0)
+    bb_low, bb_high = np.percentile(bb, perc, axis=0)
 
     # Return
     return a_mean, bb_mean, a_low, a_high, bb_low, bb_high, Rrs, sigRs

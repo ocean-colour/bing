@@ -709,6 +709,40 @@ def test_calc_Rrs_fluorescence_chains():
     assert np.all(np.diff(peaks) > 0)
 
 
+def test_calc_Rrs_fluorescence_chains_matches_per_spectrum():
+    """The batch (chains) path must equal per-spectrum evaluation, row-by-row.
+
+    The chains branch loops over the emission axis to avoid materialising a
+    (n_samples, n_em, n_ex) tensor (a >100 GB RAM blow-up at nsteps=40000;
+    see dev/ChlFl/memory_profile.py).  This pins that low-memory loop to be
+    bit-for-bit identical to calling the function once per sample — so a
+    future refactor can't silently re-introduce the 3-D broadcast or perturb
+    the result.
+    """
+    wave, a_em, bb_em, a_ex, bb_ex, aph_ex, wave_ex, Ed_ex, Ed_em = \
+        _flat_inputs()
+
+    n_samples = 5
+    scale = np.linspace(0.5, 2.0, n_samples)[:, None]
+    aph_ex_2d = aph_ex[None, :] * scale
+    a_ex_2d = a_ex[None, :] * scale
+    bb_ex_2d = bb_ex[None, :] * scale
+    a_em_2d = a_em[None, :] * scale
+    bb_em_2d = bb_em[None, :] * scale
+
+    Rrs_batch = rrs.calc_Rrs_fluorescence(
+        wave, a_em_2d, bb_em_2d, a_ex_2d, bb_ex_2d, aph_ex_2d,
+        wave_ex, Ed_ex, Ed_em, phi_C=0.02, double_gaussian=True)
+
+    for s in range(n_samples):
+        Rrs_one = rrs.calc_Rrs_fluorescence(
+            wave, a_em_2d[s], bb_em_2d[s], a_ex_2d[s], bb_ex_2d[s],
+            aph_ex_2d[s], wave_ex, Ed_ex, Ed_em,
+            phi_C=0.02, double_gaussian=True)
+        np.testing.assert_allclose(
+            Rrs_batch[s], Rrs_one, rtol=1e-12, atol=0.0)
+
+
 # =============================================================================
 # Tests for rt_dict_from_p (bing.rt.defs)
 # =============================================================================

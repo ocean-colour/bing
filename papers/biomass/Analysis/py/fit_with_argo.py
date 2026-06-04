@@ -54,6 +54,8 @@ def fit_with_and_without_argo(cruise_profile, outdir='Argo_Constrained',
     outroot_C = os.path.join(outdir, base.replace('Argo_', 'Argo_Constrained_'))
     print(f"Working on {imatched.cruise}-{imatched.profile:03d}...")
 
+    embed(header='57 of fit_with_argo.py')
+
     # Load
     d = biomass_io.load_fit_data(fit_file)
     items = [d['wave'][0], d['Rrs'][0], d['Rrs_sig'][0]]
@@ -63,8 +65,12 @@ def fit_with_and_without_argo(cruise_profile, outdir='Argo_Constrained',
         print("="*80)
         print("Fitting unconstrained...")
         print("="*80)
+        p_S = standard.expb_pow(satellite='PACE', add_noise=False,
+                variable_Gordon=True, include_Raman=True, 
+                include_Chl_fl=False, phi_C=0.02, double_gaussian=True)
         # Fit
-        models_S, chains_S, ans_S, stats_S, rt_dict_S, pdict_S, p_S = fitting.fit_me(items)
+        models_S, chains_S, ans_S, stats_S, rt_dict_S, pdict_S, p_S = fitting.fit_me(
+            items, in_p=p_S)
         # Reconstruct
         #a_mean_S, bb_mean_S, a_5_S, a_95_S, bb_5_S, bb_95_S,\
         #    model_Rrs_S, sigRs_S = evaluate.reconstruct_from_chains(
@@ -87,7 +93,8 @@ def fit_with_and_without_argo(cruise_profile, outdir='Argo_Constrained',
 
     p_C = standard.expb_pow(satellite='PACE', add_noise=False,
                 variable_Gordon=True, include_Raman=True, bpriors=bpriors,
-                include_Chl_fl=True, phi_C=0.02, double_gaussian=True)
+                include_Chl_fl=False, phi_C=0.02, double_gaussian=True)
+
     print("="*80)
     print("Fitting constrained...")
     print("="*80)
@@ -112,8 +119,8 @@ def fit_with_and_without_argo(cruise_profile, outdir='Argo_Constrained',
     ax.set_xlabel('Wavelength (nm)')
     ax.set_ylabel(r'$R_{\rm rs}$')
     #
-    ax.legend()
-    plotting.set_fontsize(ax, 15.)
+    ax.legend(fontsize=17.)
+    plotting.set_fontsize(ax, 17.)
     #
     outfig = outroot_C + '.png'
     plt.savefig(outfig, dpi=300)

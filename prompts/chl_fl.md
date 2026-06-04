@@ -4,6 +4,11 @@
 
 Adds Chl Fl to the bing.rt module.
 
+## Skills
+
+Consider using the skills in .claude/skills/
+
+
 ## Code
 
 Here are guidelines for the code: 
@@ -14,6 +19,7 @@ Here are guidelines for the code:
 - Use methods, not classes
 - Place import statements at the top of the file.
 - Include a description of inputs/outputs in the doc string of all methods
+- Use lines of code that are less than 80 characters wide
 
 ## Testing
 
@@ -45,6 +51,17 @@ Examine the files in the docs/ directory and update the docs to reflect the new 
 
 3. Please make updates to the docs to reflect the new changes.
 
+4. I am finding that the when applying the correction on the MCMC chains to reconstruct the Rrs, the memory requirements are too high for my standard nsteps=40000 (RAM > 100Gb is required).  Can you:
+
+- Investigate the issue.  I am confident the issue is in the calc_Rrs_fluorescence() method.
+- Log your work and results below in the Logs section.  
+- make recommendations for the next stage of development.  
+
+5. Your recommendation to use the per-emission loop is sound.  Please:
+
+- Implement this change to the code
+- Log your work and results below in the Logs section.  
+
 ## Tests
 
 1. Update the tests in the bing/tests/test_chl_fl.py file to include tests for the new functionality.
@@ -58,7 +75,9 @@ Examine the files in the docs/ directory and update the docs to reflect the new 
 3. Re-read this doc.  Execute the 2nd item in the Tests section above.
 4. Re-read this doc.  Execute the 1st item in the Modifications section above.
 5. Re-read this doc.  Execute the 2nd item in the Modifications section above.
-5. Re-read this doc.  Execute the 3rd item in the Modifications section above.
+6. Re-read this doc.  Execute the 3rd item in the Modifications section above.
+7. Re-read this doc.  Execute the 4th item in the Modifications section above.
+8. Re-read this doc.  Execute the 5th item in the Modifications section above.
 
 ## Logging
 
@@ -271,3 +290,136 @@ I added (``.. note::``, ``.. math::``) and inline roles (``:math:```,
 ``:doc:```) match patterns already in the same files, so the syntax
 should be fine, but the user should run the read-the-docs build to
 confirm before tagging a release.
+
+### 2026-06-04 (RAM blow-up reconstructing Rrs_fl from chains — root cause is the 3-D integrand tensor)
+
+**TL;DR.** The user is right: the OOM is in
+[bing.rt.rrs.calc_Rrs_fluorescence](../bing/rt/rrs.py). Its chains
+(`ndim==2`) branch materialises a full `(n_samples, n_em, n_ex)` float64
+integrand tensor (plus ~4-5 simultaneous temporaries from the chained
+arithmetic). For the standard biomass fit that single tensor is **14 GiB**,
+and the live-copy peak is **57-71 GiB** — which, on top of the elastic Rrs,
+the IOP arrays, and the chains themselves, comfortably exceeds the
+>100 GB the user observed. No approximation or normalization is involved;
+it's purely the array shape.
+
+**Why it's so large.** `evaluate.calc_Rrs_from_models` passes the *full*
+model wave grid as the emission axis, so `n_em ≈ 60` (PACE 5 nm, 400-700),
+`n_ex ≈ 60` (`i_Chl_ex` over the 400-700 excitation range), and
+`n_samples = (nsteps - burn) × nwalkers = (40000 - 7000) × 16 = 528_000`.
+The denominator `K(λ') + κ_F(λ_em)` genuinely couples the em and ex axes
+(it's a *sum*, so it doesn't factor), which is why the per-λ_em κ_F fix
+from the previous log entry introduced the 3-D shape in the first place.
+That correctness fix is right — it's the *layout* that's wrong for chains.
+
+**This is also why the production path is currently guarded.** A
+stop-gap `raise ValueError("Chl fluorescence not supported for batch
+evaluation")` now sits in `evaluate.calc_Rrs_from_models` for `ndim==2`,
+so `reconstruct_from_chains` cannot actually run fluorescence over chains
+today. The investigation below is what's needed to lift that guard
+safely.
+
+**Investigation module.** [dev/ChlFl/memory_profile.py](../dev/ChlFl/memory_profile.py)
+reports the theoretical footprint, measures *peak* RAM with `tracemalloc`
+on a tractable 20k-sample subset for both the current code and a rewrite,
+and asserts they agree.
+
+**Quantitative result** (`conda run -n ocean14 python dev/ChlFl/memory_profile.py`):
+
+| variant                         | peak @ 20k samples | extrapolated @ 528k |
+| ------------------------------- | ------------------ | ------------------- |
+| current 3-D path                | 2.155 GiB          | ~57 GiB (1 tensor) → >100 GiB live |
+| per-emission rewrite (proposed) | 0.089 GiB          | ~2.4 GiB            |
+
+`max |current - rewrite| = 0.0` (rtol=1e-12) — the rewrite is **bit-for-bit
+identical**, not an approximation. Memory drops ~24× at the measured size.
+
+**The fix (prototyped, not yet applied).** Loop over the *small* emission
+axis (`n_em ≈ 60`) instead of broadcasting it. Each iteration touches only
+an `(n_samples, n_ex)` slice, so the 3-D tensor is never formed:
+
+```python
+for j in range(n_em):
+    denom = K_ex + kappa_F_em[:, j:j+1]        # (n_samples, n_ex)
+    lam_ratio = wavelength_ex / wavelength[j]   # (n_ex,)
+    integrand = Ed_ex * (bb_F / mu_d) * lam_ratio[None, :] / denom
+    R_F[:, j] = np.trapezoid(integrand, x=wavelength_ex, axis=1)
+```
+
+This is the math BING already does — just reordered so peak memory is
+bounded by `n_samples × n_ex` rather than `n_samples × n_em × n_ex`. The
+`n_em`-length Python loop is negligible next to the `trapezoid` over
+`n_ex`. The single-spectrum (`ndim==1`) branch is already tiny and needs
+no change.
+
+**Recommendations for the next stage.**
+
+1. **Replace the `ndim==2` branch of `calc_Rrs_fluorescence` with the
+   per-emission loop** above. It's numerically identical (lock it in with
+   an `np.allclose(..., rtol=1e-12)` regression test against the current
+   single-spectrum result evaluated sample-by-sample). Keep the elegant
+   `ndim==1` 2-D tensor path as-is.
+
+2. **Then remove the stop-gap guard** in
+   `evaluate.calc_Rrs_from_models` (`raise ValueError("Chl fluorescence
+   not supported for batch evaluation")`) so `reconstruct_from_chains`
+   can run fluorescence over chains again.
+
+3. **Add a memory regression / smoke test** that reconstructs at a
+   realistic sample count (e.g. 100k) with fluorescence on and asserts it
+   completes — guards against a future broadcast creeping the 3-D tensor
+   back in.
+
+4. **Optional defence-in-depth:** also chunk `reconstruct_from_chains`
+   over samples (process ~50k at a time, accumulate the percentile inputs).
+   Not required once the loop above lands — peak is back to ~2 GiB — but it
+   would cap memory for users who push `nsteps` much higher or fit
+   hyperspectral (full PACE) grids where `n_em` grows.
+
+5. **Update `docs/chlorophyll_fluorescence.rst`** to note that the chains
+   path integrates per emission wavelength to keep memory `O(n_samples ×
+   n_ex)` — so the shortcut isn't "optimised" back into a 3-D broadcast.
+
+### 2026-06-04 (implement the per-emission loop in calc_Rrs_fluorescence — chains path no longer OOMs)
+
+Applied recommendation #1 (and #2) from the previous entry.
+
+**Change to [bing/rt/rrs.py](../bing/rt/rrs.py).** The chains (`ndim==2`)
+branch of `calc_Rrs_fluorescence` no longer builds the 3-D
+`(n_samples, n_em, n_ex)` integrand tensor. It now loops over the small
+emission axis (`n_em ≈ 60`); each iteration forms only an
+`(n_samples, n_ex)` slice (`denom = K_ex + κ_F_em[:, j:j+1]`), integrates
+over the excitation axis with `np.trapezoid`, and writes one column of
+`R_F`. Because the RT denominator `K(λ') + κ_F(λ_em)` is a *sum* it can't
+factor across the two axes, so the reorder — not an algebraic shortcut —
+is what avoids the tensor. The `ndim==1` single-spectrum branch is
+unchanged. The sample-independent excitation factor
+`Ed_ex·(b_bF/μ_d)` is hoisted out of the loop.
+
+**Change to [bing/evaluate.py](../bing/evaluate.py).** Removed the
+stop-gap `raise ValueError("Chl fluorescence not supported for batch
+evaluation")` in `calc_Rrs_from_models`, so `reconstruct_from_chains` can
+again run fluorescence over chains.
+
+**Test ([bing/tests/test_chl_fl.py](../bing/tests/test_chl_fl.py)).**
+Added `test_calc_Rrs_fluorescence_chains_matches_per_spectrum`, which
+asserts the batch result equals calling the function once per sample,
+row-by-row, at `rtol=1e-12`. This locks the loop to be bit-for-bit
+identical to per-spectrum evaluation and will fail if anyone reinstates
+the 3-D broadcast or perturbs the math. The existing
+`test_calc_Rrs_fluorescence_chains` (shape + monotonicity) and
+`test_calc_Rrs_fluorescence_matches_reference` (per-λ_em κ_F) still
+guard the rest.
+
+**Verification.**
+
+- `dev/ChlFl/memory_profile.py` re-run: the *production*
+  `calc_Rrs_fluorescence` now peaks at **0.089 GiB** at 20k samples
+  (was 2.155 GiB) — identical to the standalone rewrite — and is still
+  numerically exact (`max |diff| = 0.0`). Extrapolated to the full
+  528k-sample biomass workload: **~2.4 GiB** vs the previous >100 GB.
+- `pytest bing/tests/test_chl_fl.py bing/tests/test_l23_fitting.py`:
+  **61 passed, 2 skipped** (the L23 MCMC/LM Chl fits run cleanly through
+  the new code path; the 2 skips are pre-existing). The fluorescence
+  file alone, including the new batch-equivalence regression test, is
+  **36 passed**.

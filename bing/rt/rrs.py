@@ -568,23 +568,34 @@ def calc_Rrs_fluorescence(
                      * (bb_F / mu_d)[None, :] / denom)
         R_F = np.trapezoid(integrand, x=wavelength_ex, axis=1)
     else:
-        # Normalize all batched arrays to (n_samples, *) so the 3-D broadcast
-        # below works regardless of whether the caller passed 1-D em IOPs or
-        # 1-D aph_ex (the production log_prob path does).
+        # Chains path.  The naive 3-D broadcast denom (n_samples, n_em, n_ex)
+        # blows up RAM: for the standard biomass fit (n_samples~528k, n_em~60,
+        # n_ex~60) that single tensor is ~14 GiB, and the chained arithmetic
+        # holds ~4-5 live copies -> >100 GB.  See dev/ChlFl/memory_profile.py
+        # and the Logs section of prompts/chl_fl.md.
+        #
+        # The denominator K(λ') + κ_F(λ_em) is a *sum*, so it can't factor
+        # across the (em, ex) axes.  Instead we loop over the *small* emission
+        # axis (n_em~60); each step touches only an (n_samples, n_ex) slice, so
+        # the 3-D tensor is never formed.  This is bit-for-bit identical to the
+        # old broadcast (verified at rtol=1e-12) but ~24x lighter on memory.
         n_samples = a_ex.shape[0]
         if kappa_F_em.ndim == 1:
-            kappa_F_em = np.broadcast_to(kappa_F_em, (n_samples,) + kappa_F_em.shape)
+            kappa_F_em = np.broadcast_to(
+                kappa_F_em, (n_samples,) + kappa_F_em.shape)
         if bb_F.ndim == 1:
             bb_F = np.broadcast_to(bb_F, (n_samples,) + bb_F.shape)
 
-        # K_ex: (n_samples, n_ex), kappa_F_em: (n_samples, n_em)
-        # -> denom: (n_samples, n_em, n_ex)
-        denom = K_ex[:, None, :] + kappa_F_em[:, :, None]
-        # λ' / λ_em broadcasts the same way for every sample
-        lambda_ratio = wavelength_ex[None, None, :] / wavelength[None, :, None]
-        integrand = (Ed_ex[None, None, :] * lambda_ratio
-                     * (bb_F[:, None, :] / mu_d) / denom)
-        R_F = np.trapezoid(integrand, x=wavelength_ex, axis=2)
+        n_em = wavelength.size
+        R_F = np.empty((n_samples, n_em))
+        # Sample-dependent excitation factor, reused for every emission λ.
+        ex_factor = Ed_ex[None, :] * (bb_F / mu_d)  # (n_samples, n_ex)
+        for j in range(n_em):
+            # denom: (n_samples, n_ex) for this single emission wavelength
+            denom = K_ex + kappa_F_em[:, j:j + 1]
+            lambda_ratio = wavelength_ex / wavelength[j]  # (n_ex,)
+            integrand = ex_factor * lambda_ratio[None, :] / denom
+            R_F[:, j] = np.trapezoid(integrand, x=wavelength_ex, axis=1)
 
     # Normalize by emission-wavelength irradiance
     R_F = R_F / Ed_em
