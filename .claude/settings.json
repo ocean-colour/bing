@@ -3,7 +3,7 @@
     "allow": [
       "Bash(python:*)",
       "Read(//home/xavier/Oceanography/python/remote_sensing/remote_sensing/download/**)",
-      "Read(//home/xavier/Oceanography/python/remote_sensing/remote_sensing/tests/**)"
+      "Read(//home/xavier/Oceanography/python/remote_sensing/remote_sensing/tests/**)",
       "WebSearch",
       "Edit(/.claude/skills/run-bing-fit/**)",
       "Edit(/.claude/skills/diagnose-mcmc/**)",

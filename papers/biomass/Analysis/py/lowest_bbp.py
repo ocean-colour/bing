@@ -30,6 +30,25 @@ from IPython import embed
 WV_REF = 700.
 LOWBBP_DIR = 'Low_bbp'
 
+def load_l23(rank:int=1, use_elastic:bool=False, wv_ref:float=WV_REF, 
+             wv_min:float=400., wv_max:float=700.):
+    # Loisel 2023 dataset (cached after the first call)
+    if use_elastic:
+        ds = loisel23.load_ds(1, 0)
+    else:   
+        ds = loisel23.load_ds(4, 0)
+
+    # Pick the spectrum with the smallest bbp at wv_ref
+    idx, bbp_value = find_lowest_bbp_idx(rank=rank, ds=ds, wv_ref=wv_ref)
+    print(f"Lowest bbp spectrum: idx={idx}, "
+          f"bbp({wv_ref:.0f})={bbp_value:.3e} m^-1")
+
+    # Pull the L23 spectrum (uses the same loader as bing.fitting.l23)
+    odict = bing_l23.load_one_l23(idx, ds=ds, wv_min=wv_min, wv_max=wv_max)
+
+    # Return 
+    return ds, idx, bbp_value, odict
+
 def find_lowest_bbp_idx(rank:int=1,ds=None, wv_ref:float=WV_REF):
     """Locate the L23 spectrum with the smallest bbp at a reference wavelength.
 
@@ -73,6 +92,7 @@ def find_lowest_bbp_idx(rank:int=1,ds=None, wv_ref:float=WV_REF):
 def generate_pace_spectrum(rank:int=1, wv_ref:float=WV_REF, wv_min:float=400.,
                            wv_max:float=700., scl_noise:str='PACE',
                            add_satellite_noise:bool=True,
+                           use_elastic:bool=False,
                            seed:int=1234, use_Gordon:bool=False):
     """Build a synthetic PACE Rrs spectrum from the lowest-bbp L23 model.
 
@@ -96,6 +116,9 @@ def generate_pace_spectrum(rank:int=1, wv_ref:float=WV_REF, wv_min:float=400.,
         Seed for reproducibility when ``add_satellite_noise`` is True.
     use_Gordon : bool
         If True, use the Gordon Rrs model instead of the true Rrs.
+        This is the variable Gordon model.
+    use_elastic : bool
+        If True, use the elastic Rrs model instead of the inelastic Rrs model.
 
     Returns
     -------
@@ -104,8 +127,14 @@ def generate_pace_spectrum(rank:int=1, wv_ref:float=WV_REF, wv_min:float=400.,
         free), ``sigRrs``, ``bbp_value``, ``bbp_wave`` (wavelength used
         for the bbp reference), ``idx``, and ``odict`` (raw L23 data).
     """
+    _, idx, bbp_value, odict = load_l23(rank=rank, use_elastic=use_elastic,
+                                         wv_ref=wv_ref, wv_min=wv_min, wv_max=wv_max)
+    '''
     # Loisel 2023 dataset (cached after the first call)
-    ds = loisel23.load_ds(4, 0)
+    if use_elastic:
+        ds = loisel23.load_ds(1, 0)
+    else:   
+        ds = loisel23.load_ds(4, 0)
 
     # Pick the spectrum with the smallest bbp at wv_ref
     idx, bbp_value = find_lowest_bbp_idx(rank=rank, ds=ds, wv_ref=wv_ref)
@@ -114,12 +143,16 @@ def generate_pace_spectrum(rank:int=1, wv_ref:float=WV_REF, wv_min:float=400.,
 
     # Pull the L23 spectrum (uses the same loader as bing.fitting.l23)
     odict = bing_l23.load_one_l23(idx, ds=ds, wv_min=wv_min, wv_max=wv_max)
+    '''
+
+    # Grab aph at 440nm
+    aph_440 = odict['aph'][np.argmin(np.abs(odict['true_wave']-440))]
 
     # PACE wavelength grid
     pace_wave = sat_pace.wave(wv_min=wv_min, wv_max=wv_max)
 
     # Parse Rrs
-    if use_Gordon:
+    if use_Gordon:  # This is variable Gordon
         models = model_utils.init(['ExpBricaud', 'Pow'], 
                                   odict['true_wave'])
         models[0].init_var_gordon()
@@ -150,7 +183,9 @@ def generate_pace_spectrum(rank:int=1, wv_ref:float=WV_REF, wv_min:float=400.,
 
     return dict(
         pace_wave=pace_wave, Rrs=Rrs, Rrs_true=Rrs_true,
-                sigRrs=sigRrs, bbp_value=bbp_value, bbp_wave=wv_ref,
+                sigRrs=sigRrs, bbp_value=bbp_value, 
+                bbp_wave=wv_ref,
+                aph_440=aph_440,
                 idx=idx, odict=odict)
 
 
@@ -192,7 +227,9 @@ def plot_spectrum(spec:dict, outfile:str='Low_bbp/lowest_bbp_spectrum.png',
     # Annotate bbp value and L23 index
     txt = (f"L23 idx = {spec['idx']}\n"
            r"$b_{bp}(" + f"{spec['bbp_wave']:.0f}" + r")$ = "
-           f"{spec['bbp_value']:.3e} m$^{{-1}}$")
+           f"{spec['bbp_value']:.3e} m$^{{-1}}$\n"
+           r"$a_{ph}$ = "
+           f"{spec['aph_440']:.3e} m$^{-1}$")
     ax.text(0.97, 0.95, txt, transform=ax.transAxes, fontsize=13,
             ha='right', va='top',
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.7))
@@ -214,7 +251,31 @@ def plot_spectrum(spec:dict, outfile:str='Low_bbp/lowest_bbp_spectrum.png',
         plt.show()
     plt.close()
 
+def examine_fit(rank:int, fit_file:str, outfile:str, use_elastic:bool=False): 
 
+    # Load L23
+    _, idx, bbp_value, odict = load_l23(rank=rank, use_elastic=use_elastic)
+
+    # Load the fit
+    result = bing_io.load_fit(fit_file)
+
+    # Prep
+    #embed(header='examine_fit 262')
+    Rrs_obs = dict(wave=result['wave'], spec=result['Rrs'], 
+                   var=result['varRrs'])
+
+    # Add Rrs with Gordon
+    Rrs_OrigG = bing_rt.calc_Rrs(odict['a'], odict['bb'])
+
+    # Plot it
+    fitting.plot_fit(result['models'], result['chains'], 
+                     Rrs_obs, "examine", result['rt_dict'],
+                     stats=result['stats'], show_Rsig=True, 
+                     add_Rrs=Rrs_OrigG,
+                     true_bbp=odict['bbnw'],
+                     true_anw=odict['anw'],
+                     outfile=outfile)
+    
 def compare_Rrs(rank:int=1, outroot:str='Low_bbp/compare_Rrs',
                   wv_min=400, show:bool=True, log10:bool=False,
                   use_var:bool=False):
@@ -313,7 +374,7 @@ def compare_Rrs(rank:int=1, outroot:str='Low_bbp/compare_Rrs',
                 ls='-', lw=1.5, label=lbl)
 
     ax.set_xlabel('Wavelength (nm)')
-    ax.set_ylabel(r'$R_{rs}$ relative to Inelastic')
+    ax.set_ylabel(r'$R_{rs}$ relative to Elastic')
 
     # Annotate bbp value and L23 index
     txt = (f"L23 idx = {idx}\n"
@@ -351,6 +412,9 @@ def fit_lowest_bbp(outdir:str=LOWBBP_DIR, wv_ref:float=WV_REF,
                    wv_min:float=400., wv_max:float=700.,
                    scl_noise:str='PACE', add_satellite_noise:bool=True,
                    use_Gordon_G0:bool=False,
+                   use_elastic:bool=False,
+                   correct_RT:bool=False,
+                   variable_Gordon:bool=True,
                    seed:int=1234, use_Gordon:bool=False,
                    show:bool=False, spec:dict=None):
     """Fit the lowest-bbp synthetic PACE spectrum with BING.
@@ -389,7 +453,7 @@ def fit_lowest_bbp(outdir:str=LOWBBP_DIR, wv_ref:float=WV_REF,
         spec = generate_pace_spectrum(
             wv_ref=wv_ref, wv_min=wv_min, wv_max=wv_max,
             scl_noise=scl_noise, add_satellite_noise=add_satellite_noise,
-            seed=seed, use_Gordon=use_Gordon)
+            seed=seed, use_Gordon=use_Gordon, use_elastic=use_elastic)
 
     iwave = spec['pace_wave'].astype(float)
     ispec = spec['Rrs'].astype(float)
@@ -399,16 +463,39 @@ def fit_lowest_bbp(outdir:str=LOWBBP_DIR, wv_ref:float=WV_REF,
     base = f"Lowbbp_L23_{spec['idx']:04d}_fits"
     if use_Gordon_G0:
         base = base.replace('Lowbbp_', 'Lowbbp_G0_')
+    if use_elastic:
+        base = base.replace('Lowbbp_', 'Lowbbp_E_')
+        if correct_RT:
+            base = base.replace('Lowbbp_E', 'Lowbbp_ECRT_')
     if use_Gordon:
         base = base.replace('L23', 'Gordon')
+    if not variable_Gordon:
+        base = base.replace('Lowbbp_', 'Lowbbp_Orig_')
     outroot = os.path.join(outdir, base)
     fit_file = outroot + '.npz'
 
     # Parameters
+    if use_elastic:
+        Raman = False
+        Chl_fl = False
+    else:
+        Raman = True
+        Chl_fl = True
+
     p = standard.expb_pow(satellite='PACE', add_noise=False,
-        variable_Gordon=True, include_Raman=True,
+        variable_Gordon=variable_Gordon, include_Raman=Raman,
         variable_Gordon_G0=use_Gordon_G0,
-        include_Chl_fl=True, phi_C=0.02, double_gaussian=True)
+        include_Chl_fl=Chl_fl, phi_C=0.02, double_gaussian=True)
+
+    # Correct RT
+    if correct_RT:
+        if not use_elastic:
+            raise ValueError("Correct RT only works with elastic Rrs")
+        Rrs_GordonE = bing_rt.calc_Rrs(spec['odict']['a'], 
+                                       spec['odict']['bb'])
+        RT_correction = spec['Rrs_true'] / Rrs_GordonE
+    else:
+        RT_correction = None
 
     # LM + MCMC via the standard pipeline used by fit_with_argo / jr_analysis
     print("=" * 80)
@@ -416,7 +503,7 @@ def fit_lowest_bbp(outdir:str=LOWBBP_DIR, wv_ref:float=WV_REF,
           f"(bbp({spec['bbp_wave']:.0f})={spec['bbp_value']:.3e} m^-1)")
     print("=" * 80)
     models, chains, ans, stats, rt_dict, pdict, p = fitting.fit_me(
-        [iwave, ispec, isig], in_p=p)
+        [iwave, ispec, isig], in_p=p, RT_correction=RT_correction)
 
     # Persist the fit (writes .npz + .json)
     bing_io.save_fit(outroot, p, models, chains, ans, ispec, isig**2)
@@ -425,7 +512,8 @@ def fit_lowest_bbp(outdir:str=LOWBBP_DIR, wv_ref:float=WV_REF,
     # Diagnostic plot in the style of jr_analysis.fit_jr_rrs
     title = (f"L23 idx={spec['idx']}, "
              r"$b_{bp}(" + f"{spec['bbp_wave']:.0f}" + r")$ = "
-             f"{spec['bbp_value']:.3e} m$^{{-1}}$")
+             f"{spec['bbp_value']:.3e} m$^{{-1}}$, "
+             r"$a_{ph}(440)$ = "+f"{spec['aph_440']:.3e}"+r" m$^{-1}$")
     if use_Gordon:
         title = title.replace('L23', 'L23 Gordon')
     Rrs_obs = dict(wave=iwave, spec=ispec, var=isig**2)
@@ -451,12 +539,25 @@ def main(flg):
     # Fit the lowest-bbp synthetic PACE spectrum with BING
     if flg == 2:
         #fit_lowest_bbp()
-        fit_lowest_bbp(use_Gordon_G0=True)
+        #fit_lowest_bbp(use_Gordon_G0=True)
         #fit_lowest_bbp(use_Gordon=True)
+        #fit_lowest_bbp(use_elastic=True)
+        #fit_lowest_bbp(use_elastic=True, variable_Gordon=False) # Orig
+
+        # Corrected RT
+        fit_lowest_bbp(use_elastic=True, correct_RT=True)
 
     # Plot various Rrs spectra for a given, low bbp example
     if flg == 3:
         compare_Rrs(rank=20)
+
+
+    # Advanced figures
+    if flg == 11:
+        examine_fit(rank=1, 
+                    fit_file='Low_bbp/Lowbbp_Orig_E_L23_3003_fits.npz',
+                    outfile='Low_bbp/Examine_L23_Elastic_3003.png',
+                    use_elastic=True)
 
 
 # Command line

@@ -174,12 +174,20 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
                             in_Gb=_Gb, in_bbp=_bbp,
                             a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
 
+    # RT correction?
+    #  THIS SHOULD BE REMOVED
+    if rt_dict.get('RT_correction', None) is not None:
+        Rrs = Rrs * rt_dict['RT_correction']
+
     # Fluorescence? Accept rt_dicts that don't specify the key (ad-hoc dicts
     # built by tests / notebooks pre-date the include_Chl_fl field).
     if rt_dict.get('include_Chl_fl', False):
-        # a_ph
+        # a_ph -- shape (nwave,) for 1-D params, (nsample, nwave) for batch.
+        # Use ellipsis-indexing so the wavelength slice works in both cases
+        # (plain `aph[i_Chl_ex]` would silently index along the sample axis
+        # when called from reconstruct_from_chains).
         aph = (10**a_params[...,-1:]) * a_model.a_ph
-        aph_ex = aph[a_model.i_Chl_ex]
+        aph_ex = aph[..., a_model.i_Chl_ex]
 
         # Call me
         Rrs_fl = bing_rrs.calc_Rrs_fluorescence(
@@ -260,75 +268,31 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
     # Burn/thin the chains
     chains = thin_burn_chains(chains)
 
-    # Calc
-    a = models[0].eval_a(chains[..., :models[0].nparam])
-    bb = models[1].eval_bb(chains[..., models[0].nparam:])
-    if rt_dict['include_Raman']:
-        a_ex = models[0].eval_a_ex(chains[..., :models[0].nparam])
-        bb_ex = models[1].eval_bb_ex(chains[..., models[0].nparam:])
-        bb_R = np.outer(np.ones(chains.shape[0]), models[1].bb_R)
-    else:
-        a_ex, bb_ex, bb_R = None, None, None
+    # Split parameters once
+    aparams = chains[..., :models[0].nparam]
+    bparams = chains[..., models[0].nparam:]
 
-    # Make a_ph before deleting chains
-    if rt_dict.get('include_Chl_fl', False):
-        aph = (10**chains[...,models[0].nparam-1:models[0].nparam]) * models[0].a_ph
-        aph_ex = aph[...,models[0].i_Chl_ex]
-
-    # bbp for the Gb form (must be evaluated before chains are freed).
-    # 4-param mode (G0 AND Gb set): use bbp(700) as a trophic-state proxy.
-    # 3-param Gb-only:              use bbp(λ) per wavelength.
-    _G0 = getattr(models[0], 'G0', None)
-    _Gb = getattr(models[0], 'Gb', None)
-    if _Gb is not None:
-        _bbnw_full = models[1].eval_bbnw(chains[..., models[0].nparam:])
-        if _G0 is not None:
-            j700 = int(np.argmin(np.abs(models[0].wave - 700.)))
-            _bbp = _bbnw_full[..., j700:j700 + 1]
-        else:
-            _bbp = _bbnw_full
-    else:
-        _bbp = None
-
-    del chains
-
-    # Calculate the mean and standard deviation
+    # IOPs at every chain sample for the credible bands on a, bb.
+    a = models[0].eval_a(aparams)
+    bb = models[1].eval_bb(bparams)
     a_mean = np.median(a, axis=0)
     a_low, a_high = np.percentile(a, perc, axis=0)
-    #a_std = np.std(a, axis=0)
     bb_mean = np.median(bb, axis=0)
     bb_low, bb_high = np.percentile(bb, perc, axis=0)
-    #bb_std = np.std(bb, axis=0)
+    del a, bb
 
-    # Calculate the model Rrs
-    Rrs = bing_rrs.calc_Rrs(a, bb,
-            in_G1=models[0].G1, in_G2=models[0].G2,
-            in_G0=getattr(models[0], 'G0', None),
-            in_Gb=_Gb, in_bbp=_bbp,
-            a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
+    # Forward-model Rrs through the shared helper so the elastic, Raman,
+    # G0/Gb, and fluorescence branches stay defined in a single place
+    # (also used by inference.log_prob and chisq_fit.fit_func).
+    Rrs = calc_Rrs_from_models(models[0], aparams,
+                               models[1], bparams, rt_dict)
 
-    if rt_dict.get('include_Chl_fl', False):
-        #embed(header='268 of evaluate.py')
-        # Call me
-        Rrs_fl = bing_rrs.calc_Rrs_fluorescence(
-            models[0].wave, a, bb,
-            a[:,models[0].i_Chl_ex],
-            bb[:,models[0].i_Chl_ex],
-            aph_ex, 
-            np.outer(np.ones(a.shape[0]), models[0].wave[models[0].i_Chl_ex]),
-            np.outer(np.ones(a.shape[0]), models[0].Ed_ex),
-            models[0].Ed_em,
-            phi_C=rt_dict['phi_C'],
-            double_gaussian=rt_dict['double_gaussian'])
-        # Add
-        Rrs += Rrs_fl
-
-    # Stats
+    # Stats over the Rrs posterior
     sigRs = np.std(Rrs, axis=0)
     Rrs = np.median(Rrs, axis=0)
 
     # Return
-    return a_mean, bb_mean, a_low, a_high, bb_low, bb_high, Rrs, sigRs 
+    return a_mean, bb_mean, a_low, a_high, bb_low, bb_high, Rrs, sigRs
 
 
 def reconstruct_chisq_fits(models:list, params:np.ndarray, rt_dict:dict,

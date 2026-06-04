@@ -52,7 +52,7 @@ from IPython import embed
 
 
 def fit_me(items:list[tuple], debug:bool=False, in_p=None, return_early:bool=False,
-    guess_vals:np.ndarray=None):
+    guess_vals:np.ndarray=None, RT_correction:np.ndarray=None):
     """
     Fit a single spectrum.
 
@@ -69,6 +69,8 @@ def fit_me(items:list[tuple], debug:bool=False, in_p=None, return_early:bool=Fal
         If True, return the models, ans, and rt_dict.
     guess_vals : np.ndarray, optional
         An array containing the initial guess values for the parameters.
+    RT_correction : np.ndarray, optional
+        This is a hack to explore RT effects
 
     Returns:
     --------
@@ -122,6 +124,10 @@ def fit_me(items:list[tuple], debug:bool=False, in_p=None, return_early:bool=Fal
     items = [(ispec, isig**2, p0, 0)]
 
     rt_dict = rt_defs.rt_dict_from_p(p)
+
+    if RT_correction is not None:
+        rt_dict['RT_correction'] = RT_correction
+
     #embed(header='101 of fitting.py')
 
     # LM
@@ -323,10 +329,91 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
     
 
 def plot_fit(models, chains, Rrs_obs, title:str, rt_dict:dict, stats:dict=None,
-             outfile:str=None, 
-             ulist:list=None, 
+             add_Rrs:np.ndarray=None,
+             true_bbp:np.ndarray=None,
+             true_anw:np.ndarray=None,
+             outfile:str=None,
+             ulist:list=None,
              perc:tuple=(14,86),
              show_Rsig:bool=False):
+    """
+    Diagnostic figure for a single BING MCMC fit.
+
+    Produces a 5-panel figure laid out via a 3x2 GridSpec:
+
+      - Top-left   : normalized Rrs residuals ``(obs - model)/σ_obs`` vs wavelength,
+                     with grid lines at 0, ±2 σ.
+      - Middle-left: Rrs spectrum -- observations (with optional error bars),
+                     posterior-median model, and the credible band; the
+                     reduced χ² is annotated in the corner.
+      - Bottom-left: total non-water absorption ``a_nw(λ) = a_total - a_water``
+                     with credible band, on a log y-axis; the median fitted
+                     absorption-model parameter values (e.g. log10(Adg), Sdg,
+                     log10(Aph)) are printed in the panel with asymmetric
+                     uncertainties.
+      - Middle-right: non-water backscattering ``b_b,nw(λ) = bb_total - bb_water``
+                     with credible band; median backscatter-model parameters
+                     (e.g. log10(Bnw), β) are printed in the panel.
+      - Bottom-right: an inset mini corner plot of the Sdg / β / Bnw posteriors
+                     produced by ``mini_corner`` (written first to ``tmpc.png``
+                     and then loaded here as an image).
+
+    Side effect: writes a temporary file ``tmpc.png`` in the working directory
+    (used to embed the mini corner plot). The file is not cleaned up.
+
+    Parameters
+    ----------
+    models : list
+        Two-element list ``[a_model, bb_model]`` as returned by the BING
+        fitting machinery. The wavelength grid is read from ``models[0].wave``
+        and the parameter names from ``models[i].pnames``.
+    chains : np.ndarray
+        MCMC chains of shape ``(nsteps, nwalkers, nparam)``. Passed through
+        to ``evaluate.reconstruct_from_chains`` and ``mini_corner``.
+    Rrs_obs : dict
+        Observation dictionary with keys:
+        - ``'wave'`` : observed wavelength grid (1-D array).
+        - ``'spec'`` : observed Rrs at those wavelengths (1-D array).
+        - ``'var'``  : variance of Rrs (1-D array); ``np.sqrt(var)`` is
+                       treated as the per-band 1-σ uncertainty.
+    title : str
+        Suptitle for the figure.
+    rt_dict : dict
+        Radiative-transfer configuration forwarded to
+        ``evaluate.reconstruct_from_chains`` (e.g. ``variable_Gordon``,
+        ``include_Raman``, ``include_Chl_fl``).
+    stats : dict, optional
+        Output of ``evaluate.calc_stats(chains, perc=perc)``. If None, this
+        function computes it.
+    outfile : str, optional
+        If given, the figure is saved at 300 dpi to this path. Otherwise it
+        is shown interactively via ``plt.show()``.
+    ulist : list, optional
+        Pre-computed unpack of ``reconstruct_from_chains`` --
+        ``(a_mean, bb_mean, a_lo, a_hi, bb_lo, bb_hi, model_Rrs, sigRs)``.
+        Lets the caller skip the (potentially slow) chain reconstruction
+        when re-rendering the same fit. If None, the reconstruction is
+        performed here.
+    perc : tuple of int, optional
+        Lower/upper percentiles for the credible interval and the
+        asymmetric uncertainty annotations on the printed parameters.
+        Default ``(14, 86)`` -- the ~1-σ Gaussian-equivalent interval.
+    show_Rsig : bool, optional
+        If True, overlay the per-band Rrs uncertainty as error bars on the
+        observation points. If False (default), only the ``k+`` markers and
+        the credible band of the model are shown.
+    add_Rrs : np.ndarray, optional
+        Rrs to add to the plot.
+    true_bbp : np.ndarray, optional
+        True bbp to add to the plot.
+    true_anw : np.ndarray, optional
+        True anw to add to the plot.
+
+    Returns
+    -------
+    None
+        The figure is either saved to ``outfile`` or shown; nothing is returned.
+    """
 
     # Do this first
     mini_corner(models, chains, ['Sdg', 'beta', 'Bnw'],
@@ -399,6 +486,11 @@ def plot_fit(models, chains, Rrs_obs, title:str, rt_dict:dict, stats:dict=None,
             transform=ax_anw.transAxes, fontsize=13.)
         ypos += 0.11
 
+    # True anw
+    if true_anw is not None:
+        ax_anw.plot(wave, true_anw, 'k-', label='True')
+
+
     # #########################################################
     # bb nw
     ax_bb.plot(wave, bb_mean-bb_w, 'g-', label='Retrieval')
@@ -420,6 +512,10 @@ def plot_fit(models, chains, Rrs_obs, title:str, rt_dict:dict, stats:dict=None,
                   r'}_{-'+f'{lsig:.3f}'+r'}$',
             transform=ax_bb.transAxes, fontsize=13.)
         ypos += 0.11
+
+    # True bbp
+    if true_bbp is not None:
+        ax_bb.plot(wave, true_bbp, 'k-', label='True')
 
     # #########################################################
     # Rs
@@ -448,6 +544,10 @@ def plot_fit(models, chains, Rrs_obs, title:str, rt_dict:dict, stats:dict=None,
     ax_R.text(0.05, 0.1,
               r'$\chi^2_\nu = '+f'{red_chi2:0.2f}'+r'$',
               fontsize=15., transform=ax_R.transAxes)
+
+    # True Rrs
+    if add_Rrs is not None:
+        ax_R.plot(wave, add_Rrs, color='cyan', ls='-', label='Another', zorder=1)
 
     # Plot residuals
     residuals = (Rrs_obs['spec'] - mod_R) / Rsig  # Normalized residuals
