@@ -31,7 +31,7 @@ WV_REF = 700.
 LOWBBP_DIR = 'Low_bbp'
 
 def load_l23(rank:int=1, use_elastic:bool=False, wv_ref:float=WV_REF, 
-             wv_min:float=400., wv_max:float=700.):
+             wv_min:float=400., wv_max:float=700., idx:int=None):
     # Loisel 2023 dataset (cached after the first call)
     if use_elastic:
         ds = loisel23.load_ds(1, 0)
@@ -39,7 +39,10 @@ def load_l23(rank:int=1, use_elastic:bool=False, wv_ref:float=WV_REF,
         ds = loisel23.load_ds(4, 0)
 
     # Pick the spectrum with the smallest bbp at wv_ref
-    idx, bbp_value = find_lowest_bbp_idx(rank=rank, ds=ds, wv_ref=wv_ref)
+    if idx is None:
+        idx, bbp_value = find_lowest_bbp_idx(rank=rank, ds=ds, wv_ref=wv_ref)
+    else:
+        bbp_value = 0.
     print(f"Lowest bbp spectrum: idx={idx}, "
           f"bbp({wv_ref:.0f})={bbp_value:.3e} m^-1")
 
@@ -89,10 +92,11 @@ def find_lowest_bbp_idx(rank:int=1,ds=None, wv_ref:float=WV_REF):
     return idx, float(bbnw_ref[idx])
 
 
-def generate_pace_spectrum(rank:int=1, wv_ref:float=WV_REF, wv_min:float=400.,
+def generate_pace_spectrum(rank:int=1, wv_ref:float=WV_REF, 
+                           wv_min:float=400.,
                            wv_max:float=700., scl_noise:str='PACE',
                            add_satellite_noise:bool=True,
-                           use_elastic:bool=False,
+                           use_elastic:bool=False, idx:int=None,
                            seed:int=1234, use_Gordon:bool=False):
     """Build a synthetic PACE Rrs spectrum from the lowest-bbp L23 model.
 
@@ -128,7 +132,7 @@ def generate_pace_spectrum(rank:int=1, wv_ref:float=WV_REF, wv_min:float=400.,
         for the bbp reference), ``idx``, and ``odict`` (raw L23 data).
     """
     _, idx, bbp_value, odict = load_l23(rank=rank, use_elastic=use_elastic,
-                                         wv_ref=wv_ref, wv_min=wv_min, wv_max=wv_max)
+                                         wv_ref=wv_ref, wv_min=wv_min, wv_max=wv_max, idx=idx)
     '''
     # Loisel 2023 dataset (cached after the first call)
     if use_elastic:
@@ -542,10 +546,10 @@ def main(flg):
         #fit_lowest_bbp(use_Gordon_G0=True)
         #fit_lowest_bbp(use_Gordon=True)
         #fit_lowest_bbp(use_elastic=True)
-        #fit_lowest_bbp(use_elastic=True, variable_Gordon=False) # Orig
+        fit_lowest_bbp(use_elastic=True, variable_Gordon=False) # Orig
 
         # Corrected RT
-        fit_lowest_bbp(use_elastic=True, correct_RT=True)
+        #fit_lowest_bbp(use_elastic=True, correct_RT=True)
 
     # Plot various Rrs spectra for a given, low bbp example
     if flg == 3:

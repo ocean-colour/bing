@@ -67,7 +67,7 @@ def fit_with_and_without_argo(cruise_profile, outdir='Argo_Constrained',
         print("="*80)
         p_S = standard.expb_pow(satellite='PACE', add_noise=False,
                 variable_Gordon=True, include_Raman=True, 
-                include_Chl_fl=False, phi_C=0.02, double_gaussian=True)
+                include_Chl_fl=True, phi_C=0.02, double_gaussian=True)
         # Fit
         models_S, chains_S, ans_S, stats_S, rt_dict_S, pdict_S, p_S = fitting.fit_me(
             items, in_p=p_S)
@@ -93,7 +93,7 @@ def fit_with_and_without_argo(cruise_profile, outdir='Argo_Constrained',
 
     p_C = standard.expb_pow(satellite='PACE', add_noise=False,
                 variable_Gordon=True, include_Raman=True, bpriors=bpriors,
-                include_Chl_fl=False, phi_C=0.02, double_gaussian=True)
+                include_Chl_fl=True, phi_C=0.02, double_gaussian=True)
 
     print("="*80)
     print("Fitting constrained...")

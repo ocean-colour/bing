@@ -332,10 +332,13 @@ def plot_fit(models, chains, Rrs_obs, title:str, rt_dict:dict, stats:dict=None,
              add_Rrs:np.ndarray=None,
              true_bbp:np.ndarray=None,
              true_anw:np.ndarray=None,
+             bb_anno:str=None,
+             anw_anno:str=None,
              outfile:str=None,
              ulist:list=None,
              perc:tuple=(14,86),
-             show_Rsig:bool=False):
+             show_Rsig:bool=False,
+             show_corner:bool=True):
     """
     Diagnostic figure for a single BING MCMC fit.
 
@@ -408,6 +411,16 @@ def plot_fit(models, chains, Rrs_obs, title:str, rt_dict:dict, stats:dict=None,
         True bbp to add to the plot.
     true_anw : np.ndarray, optional
         True anw to add to the plot.
+    bb_anno : str, optional
+        Extra text annotation to print in the backscattering panel (e.g.
+        the true bbp value). If None, nothing extra is drawn.
+    anw_anno : str, optional
+        Extra text annotation to print in the absorption panel (e.g. the
+        true Aph / Adg values). If None, nothing extra is drawn.
+    show_corner : bool, optional
+        If True (default), render the mini corner plot in the bottom-right
+        panel. If False, that panel is left blank (no ``tmpc.png`` is
+        written).
 
     Returns
     -------
@@ -415,9 +428,10 @@ def plot_fit(models, chains, Rrs_obs, title:str, rt_dict:dict, stats:dict=None,
         The figure is either saved to ``outfile`` or shown; nothing is returned.
     """
 
-    # Do this first
-    mini_corner(models, chains, ['Sdg', 'beta', 'Bnw'],
-                outfile='tmpc.png')
+    # Do this first (only when the corner plot is requested)
+    if show_corner:
+        mini_corner(models, chains, ['Sdg', 'beta', 'Bnw'],
+                    outfile='tmpc.png')
 
     if stats is None:
         stats = evaluate.calc_stats(chains, perc=perc)
@@ -490,6 +504,12 @@ def plot_fit(models, chains, Rrs_obs, title:str, rt_dict:dict, stats:dict=None,
     if true_anw is not None:
         ax_anw.plot(wave, true_anw, 'k-', label='True')
 
+    # Extra annotation (e.g. the true Aph / Adg values) in the anw panel
+    # Lower-right, below the legend and the descending a_nw curve.
+    if anw_anno is not None:
+        ax_anw.text(0.55, 0.28, anw_anno, color='k', va='top',
+                    transform=ax_anw.transAxes, fontsize=13.)
+
 
     # #########################################################
     # bb nw
@@ -517,6 +537,11 @@ def plot_fit(models, chains, Rrs_obs, title:str, rt_dict:dict, stats:dict=None,
     if true_bbp is not None:
         ax_bb.plot(wave, true_bbp, 'k-', label='True')
 
+    # Extra annotation (e.g. the true bbp value) in the bb panel
+    if bb_anno is not None:
+        ax_bb.text(0.05, 0.85, bb_anno, color='k',
+                   transform=ax_bb.transAxes, fontsize=13.)
+
     # #########################################################
     # Rs
     
@@ -537,8 +562,10 @@ def plot_fit(models, chains, Rrs_obs, title:str, rt_dict:dict, stats:dict=None,
     ax_R.plot(Rrs_obs['wave'], Rrs_obs['spec'], 'k+', #label='Obs', 
               zorder=5)
     ax_R.plot(wave, model_Rrs, 'r-', label='Fit', zorder=10)
-    ax_R.fill_between(wave, model_Rrs-sigRs, model_Rrs+sigRs, 
-            color='r', alpha=0.5, zorder=10) 
+    ax_R.fill_between(wave, model_Rrs-sigRs, model_Rrs+sigRs,
+            color='r', alpha=0.5, zorder=10)
+    # Zero reference line for the Rrs panel
+    ax_R.axhline(0., color='gray', ls=':', alpha=0.5, zorder=0)
     ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
     #ax_R.set_yscale('log')
     ax_R.text(0.05, 0.1,
@@ -572,10 +599,11 @@ def plot_fit(models, chains, Rrs_obs, title:str, rt_dict:dict, stats:dict=None,
         ax.set_xlabel('Wavelength (nm)')
         ax.legend(fontsize=15.)
 
-    # Mini corner plot
-    img = mpimg.imread('tmpc.png')
-    ax_c.imshow(img)
-    ax_c.axis('off') 
+    # Mini corner plot (only when requested; otherwise leave panel blank)
+    if show_corner:
+        img = mpimg.imread('tmpc.png')
+        ax_c.imshow(img)
+    ax_c.axis('off')
 
     # Title
     fig.suptitle(title, fontsize=14, y=0.99)
@@ -585,6 +613,8 @@ def plot_fit(models, chains, Rrs_obs, title:str, rt_dict:dict, stats:dict=None,
     if outfile is not None:
         plt.savefig(outfile, dpi=300)
         print(f"Saved: {outfile}")
+        # Close to avoid accumulating figures across batch plotting
+        plt.close(fig)
     else:
         plt.show()
 
