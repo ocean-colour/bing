@@ -80,6 +80,10 @@ You can read the outputs from the fits in the $OS_COLOR/Biomass/L23_Fits folder.
 - Remove the existing outputs and rerun the test
 - Update the Logs
 
+3. Can you also parallelize the saving and plotting?
+
+- Update the Logs
+
 ## Prompts
 
 1. Read this doc.  Proceed with the first item under Development
@@ -87,6 +91,7 @@ You can read the outputs from the fits in the $OS_COLOR/Biomass/L23_Fits folder.
 3. Read this doc.  Proceed with the 2nd item under Modifications
 4. Read this doc.  Proceed with the 2nd item under Development
 5. Read this doc.  Proceed with the 3rd item under Development
+6. Read this doc.  Proceed with the 3rd item under Modifications
 
 ## Logging
 
@@ -238,3 +243,26 @@ spectra.
 NPZ/JSON/PNG cleanly (e.g. idx 3003 reduced χ² ≈ 0.88).  At these low-bbp
 spectra the bbp retrieval reads slightly high (idx 3003: fit log Bnw =
 -3.71 vs true -4.01), worth tracking when the full elastic dataset is run.
+
+### 2026-06-05 (Modifications #3: parallelize save + plot)
+
+The per-spectrum save/plot loop inside each batch was serial; since
+`bing_io.save_fit` reconstructs IOPs from the chains (CPU-heavy) and the
+figure rendering is slow, that step dominated wall-clock once the MCMC was
+batched.  Pulled it into a top-level worker `_save_plot_one(args)` and
+fanned it out with a `ProcessPoolExecutor(max_workers=n_cores)` + `tqdm`,
+mirroring the `fit_batch` pattern.
+
+**Gotcha — unpicklable namedtuple.** The first attempt passed the BING
+parameter tuple `p` straight into the worker and hit
+`PicklingError: Can't pickle ... BING20_tuple`: `p_ntuple.gen` builds the
+namedtuple class dynamically, so it isn't importable by name and can't
+cross the process boundary (this is exactly why `fit_batch` never passes
+`p`).  Fixed by sending `p._asdict()` (a plain dict) and rebuilding it in
+the worker with `p_ntuple.gen(**p_dict)`.  Everything else in the packed
+tuple (models, chains, p0, Rrs, varRrs, odict) was already picklable —
+`fit_batch` relies on the same.
+
+**Test.** Reran `fit_all_l23(debug=True, n_cores=3, clobber=True)`: the
+three fits saved + plotted in parallel, and `bing.io.load_fit` round-trips
+each output (NPZ + JSON) without error.

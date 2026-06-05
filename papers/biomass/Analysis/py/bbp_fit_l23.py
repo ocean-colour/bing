@@ -12,11 +12,15 @@ import os
 import glob
 import json
 
+from concurrent.futures import ProcessPoolExecutor
+from tqdm import tqdm
+
 import numpy as np
 
 import pandas
 
 from bing.parameters import standard
+from bing.parameters import p_ntuple
 from bing import io as bing_io
 from bing.preproc import convert_to_satwave
 from bing.rt import defs as rt_defs
@@ -266,6 +270,35 @@ def _prep_spectrum(idx: int, models: list):
                 p0=p0, odict=odict, Chl=Chl)
 
 
+def _save_plot_one(args):
+    """Save one fit (NPZ/JSON) and write its diagnostic PNG.
+
+    Worker function for parallel save/plot via ProcessPoolExecutor; takes a
+    single packed-tuple argument so it can be mapped directly.
+
+    Parameters
+    ----------
+    args : tuple
+        ``(p_dict, models, chains, p0, Rrs, varRrs, odict, idx)`` for one
+        spectrum (see fit_all_l23 for the meaning of each element).  ``p``
+        is passed as a plain dict (``p._asdict()``) because the dynamic
+        BING namedtuple is not picklable across processes; it is rebuilt
+        here with ``p_ntuple.gen``.
+
+    Returns
+    -------
+    int
+        The L23 index that was written (for progress tracking).
+    """
+    p_dict, models, chains, p0, Rrs, varRrs, odict, idx = args
+    p = p_ntuple.gen(**p_dict)
+    outroot = os.path.join(OUTDIR, f'L23_{idx:04d}')
+    bing_io.save_fit(outroot, p, models, chains, p0, Rrs, varRrs)
+    plot_l23_fit(p, models, chains, odict, Rrs, varRrs, idx,
+                 outroot + '.png')
+    return idx
+
+
 def fit_all_l23(debug: bool = True, satellite: str = 'PACE',
                 n_cores: int = 10, clobber: bool = False,
                 batch_size: int = BATCH_SIZE):
@@ -366,13 +399,22 @@ def fit_all_l23(debug: bool = True, satellite: str = 'PACE',
             models, pdict, items, rt_dict, n_cores=n_cores)
         assert np.all(np.array(batch_idx) == sub_idx)
 
-        # Save + plot each spectrum in this batch
-        for ss, idx in enumerate(batch_idx):
-            outroot = os.path.join(OUTDIR, f'L23_{idx:04d}')
-            bing_io.save_fit(outroot, p, models, all_chains[ss],
-                             params[ss], Rrs[ss], varRrs[ss])
-            plot_l23_fit(p, models, all_chains[ss], odicts[ss],
-                         Rrs[ss], varRrs[ss], idx, outroot + '.png')
+        # Save + plot each spectrum in this batch, in parallel.  save_fit
+        # reconstructs IOPs from the chains (CPU-heavy) and plotting is
+        # slow, so fan the per-spectrum work out across cores.
+        print(f"Saving + plotting {len(batch_idx)} fits on "
+              f"{n_cores} cores...")
+        # p is sent as a plain dict (the BING namedtuple is not picklable)
+        p_dict = dict(p._asdict())
+        save_items = [
+            (p_dict, models, all_chains[ss], params[ss], Rrs[ss],
+             varRrs[ss], odicts[ss], idx)
+            for ss, idx in enumerate(batch_idx)]
+        with ProcessPoolExecutor(max_workers=n_cores) as executor:
+            chunksize = max(1, len(save_items) // n_cores)
+            list(tqdm(executor.map(_save_plot_one, save_items,
+                                   chunksize=chunksize),
+                      total=len(save_items)))
 
         # Release this batch's chains before the next one
         n_done += len(batch_idx)

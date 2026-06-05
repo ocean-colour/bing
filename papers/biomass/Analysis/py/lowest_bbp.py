@@ -546,7 +546,8 @@ def main(flg):
         #fit_lowest_bbp(use_Gordon_G0=True)
         #fit_lowest_bbp(use_Gordon=True)
         #fit_lowest_bbp(use_elastic=True)
-        fit_lowest_bbp(use_elastic=True, variable_Gordon=False) # Orig
+        fit_lowest_bbp(use_elastic=True, variable_Gordon=False)
+                       #seed=2522) # Orig
 
         # Corrected RT
         #fit_lowest_bbp(use_elastic=True, correct_RT=True)
