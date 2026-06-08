@@ -416,6 +416,7 @@ def fit_lowest_bbp(outdir:str=LOWBBP_DIR, wv_ref:float=WV_REF,
                    wv_min:float=400., wv_max:float=700.,
                    scl_noise:str='PACE', add_satellite_noise:bool=True,
                    use_Gordon_G0:bool=False,
+                   rank:int=1,
                    use_elastic:bool=False,
                    correct_RT:bool=False,
                    variable_Gordon:bool=True,
@@ -443,6 +444,23 @@ def fit_lowest_bbp(outdir:str=LOWBBP_DIR, wv_ref:float=WV_REF,
         avoid re-loading the Loisel dataset.
     use_Gordon_G0 : bool
         If True, use the Gordon Rrs model with G0.
+    rank : int
+        Rank of the spectrum to select.  Default is 1 (smallest).
+    use_elastic : bool
+        If True, use the elastic Rrs model instead of the inelastic Rrs model.
+    correct_RT : bool
+        If True, correct the RT for the elastic Rrs model.
+    variable_Gordon : bool
+        If True, use the variable Gordon Rrs model.
+    use_Gordon : bool
+        If True, use the Gordon Rrs model instead of the true Rrs.
+    seed : int
+        Seed for reproducibility when ``add_satellite_noise`` is True.
+    show : bool
+        If True, leave the figure open after writing it.
+    spec : dict, optional
+        Pre-built spectrum dict from :func:`generate_pace_spectrum` to
+        avoid re-loading the Loisel dataset.
 
     Returns
     -------
@@ -454,7 +472,7 @@ def fit_lowest_bbp(outdir:str=LOWBBP_DIR, wv_ref:float=WV_REF,
 
     # Build the synthetic PACE spectrum if the caller did not pass one
     if spec is None:
-        spec = generate_pace_spectrum(
+        spec = generate_pace_spectrum(rank=rank,
             wv_ref=wv_ref, wv_min=wv_min, wv_max=wv_max,
             scl_noise=scl_noise, add_satellite_noise=add_satellite_noise,
             seed=seed, use_Gordon=use_Gordon, use_elastic=use_elastic)
@@ -546,8 +564,9 @@ def main(flg):
         #fit_lowest_bbp(use_Gordon_G0=True)
         #fit_lowest_bbp(use_Gordon=True)
         #fit_lowest_bbp(use_elastic=True)
-        fit_lowest_bbp(use_elastic=True, variable_Gordon=False)
+        #fit_lowest_bbp(use_elastic=True, variable_Gordon=False)
                        #seed=2522) # Orig
+        fit_lowest_bbp(rank=3, use_elastic=True, variable_Gordon=False) # 2nd lowest bbp
 
         # Corrected RT
         #fit_lowest_bbp(use_elastic=True, correct_RT=True)

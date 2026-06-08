@@ -301,7 +301,7 @@ def _save_plot_one(args):
 
 def fit_all_l23(debug: bool = True, satellite: str = 'PACE',
                 n_cores: int = 10, clobber: bool = False,
-                batch_size: int = BATCH_SIZE):
+                batch_size: int = BATCH_SIZE, n_cores_save: int = 5):
     """Fit the L23 dataset in batches and save fits + figures per batch.
 
     The spectra are generated with ``lowest_bbp.generate_pace_spectrum``
@@ -411,7 +411,7 @@ def fit_all_l23(debug: bool = True, satellite: str = 'PACE',
              varRrs[ss], odicts[ss], idx)
             for ss, idx in enumerate(batch_idx)]
         with ProcessPoolExecutor(max_workers=n_cores) as executor:
-            chunksize = max(1, len(save_items) // n_cores)
+            chunksize = max(1, len(save_items) // n_cores_save)
             list(tqdm(executor.map(_save_plot_one, save_items,
                                    chunksize=chunksize),
                       total=len(save_items)))
