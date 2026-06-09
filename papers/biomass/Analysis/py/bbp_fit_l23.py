@@ -492,7 +492,7 @@ def parse_fits(indir: str = None, outfile: str = None,
     if indir is None:
         indir = OUTDIR
     if outfile is None:
-        outfile = 'L23_fit_summary.csv'
+        outfile = 'L23_elastic_fit_summary.csv'
 
     # The JSON sidecars hold everything we need (stats + pnames + perc).
     json_files = sorted(glob.glob(os.path.join(indir, 'L23_*.json')))
