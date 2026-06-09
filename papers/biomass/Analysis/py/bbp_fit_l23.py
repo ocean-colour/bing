@@ -17,6 +17,7 @@ from tqdm import tqdm
 
 import numpy as np
 
+from matplotlib import pyplot as plt
 import pandas
 
 from bing.parameters import standard
@@ -31,6 +32,7 @@ from bing.fitting import inference as bing_inf
 from bing.priors import priors as bing_priors
 
 from ocpy.hydrolight import loisel23
+from ocpy.utils import plotting
 
 # Locals
 import fitting
@@ -39,7 +41,8 @@ import lowest_bbp
 from IPython import embed
 
 # Output directory for the L23 fits (NPZ + JSON + PNG per spectrum)
-OUTDIR = os.path.join(os.getenv('OS_COLOR'), 'Biomass', 'L23_Fits')
+OUTDIR = os.path.join(os.getenv('OS_COLOR'), 'Biomass', 
+                      'L23_Fits')
 
 # The three indices used in debug mode (a low/medium/high water-type spread)
 DEBUG_IDX = [3003, 170, 180]
@@ -489,7 +492,7 @@ def parse_fits(indir: str = None, outfile: str = None,
     if indir is None:
         indir = OUTDIR
     if outfile is None:
-        outfile = os.path.join(indir, 'L23_fit_summary.csv')
+        outfile = 'L23_fit_summary.csv'
 
     # The JSON sidecars hold everything we need (stats + pnames + perc).
     json_files = sorted(glob.glob(os.path.join(indir, 'L23_*.json')))
@@ -580,6 +583,39 @@ def load_one_l23_truth(idx: int, ds, wv_min: float, wv_max: float):
     """
     return l23.load_one_l23(idx, ds=ds, wv_min=wv_min, wv_max=wv_max)
 
+def fig_compare_bbp():
+    """Compare the fitted bbp with the true bbp."""
+    #df = parse_fits()
+    df = pandas.read_csv('L23_fit_summary.csv')
+
+    plt.figure(figsize=(8, 6))
+    ax = plt.gca()
+
+    ax.scatter(df['true_bbp'], 100*(df['bbp']-df['true_bbp'])/df['true_bbp'], 
+               color='blue', s=1)
+
+    ax.set_xlabel('True bbp (m^-1) [600 nm]')
+    ax.set_ylabel('Percent difference (Fitted bbp - True bbp) / True bbp')
+
+    ax.set_xscale('log')
+
+    # Horizontal line at 0
+    ax.axhline(0, color='k', linestyle='--')
+
+    ax.set_title('bbp: Elastic fits to L23 dataset', 
+                 fontsize=17)
+
+    plotting.set_fontsize(ax, 17)
+
+    #ax.legend()
+    ax.grid(which='major', linewidth=0.8, alpha=0.7)
+    ax.grid(which='minor', linewidth=0.5, alpha=0.3)
+    #plt.show()
+
+    plt.tight_layout()
+    plt.savefig('bbp_fit_l23.png', dpi=300)
+    print("Saved: bbp_fit_l23.png")
+
 
 def main(flg):
     flg = int(flg)
@@ -595,6 +631,10 @@ def main(flg):
     # Parse the saved fits into a CSV
     if flg == 3:
         parse_fits()
+
+    # Figs
+    if flg == 4:
+        fig_compare_bbp()
 
 
 # Command line
