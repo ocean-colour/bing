@@ -6,9 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 BING (Bayesian INferences with Gordon coefficients) is a Python package for ocean color remote sensing analysis, specializing in bio-optical parameter retrieval through Bayesian inference. It implements Gordon's semi-analytical bio-optical models with MCMC sampling to estimate inherent optical properties (IOPs) from remote sensing reflectance (Rrs) measurements.
 
-**Key Scientific Formula**: `Rrs(λ) = G₀ * bb(λ) / (a(λ) + bb(λ)) + G₁ * [bb(λ) / (a(λ) + bb(λ))]²`
+**Key Scientific Formula** (elastic; Gordon 1988):
+`Rrs(λ) = G₁ * bb(λ) / (a(λ) + bb(λ)) + G₂ * [bb(λ) / (a(λ) + bb(λ))]²`
 
-where G₀=0.0949, G₁=0.0794 are Gordon coefficients, a is absorption, and bb is backscattering.
+where `G1_STANDARD=0.0949`, `G2_STANDARD=0.0794` are the standard Gordon coefficients (constants in [bing/rt/rrs.py](bing/rt/rrs.py)). Wavelength-dependent G₁(λ)/G₂(λ) are also supported via `bing.rt.rrs.wave_dependent_gordon`. `a` is absorption, `bb` is backscattering. The full forward model can additionally include **Raman scattering** ([bing/rt/raman.py](bing/rt/raman.py)) and **chlorophyll fluorescence** ([bing/rt/chl_fl.py](bing/rt/chl_fl.py)) inelastic contributions.
 
 ## Development Commands
 
@@ -54,8 +55,10 @@ Rrs measurements (satellite/in-situ)
     ├─ Absorption: a(λ) = a_w(λ) + a_nw(λ)
     └─ Backscattering: bb(λ) = bb_w(λ) + bb_nw(λ)
     ↓
-[Gordon Formula] (rt.py)
-    ├─ Calculates model Rrs from a and bb
+[Radiation Transfer] (rt/)
+    ├─ Elastic Gordon (rt/rrs.py): Rrs from a, bb
+    ├─ Raman scattering correction (rt/raman.py)
+    └─ Chlorophyll fluorescence (rt/chl_fl.py)
     ↓
 [Fitting Algorithms] (fitting/)
     ├─ MCMC via emcee (inference.py) - full posterior
@@ -70,28 +73,33 @@ Fitted IOPs + Uncertainties
 
 ### Module Organization
 
-**bing/models/** - Bio-optical model implementations
-- `anw.py` (1019 lines): Absorption models (ExpBricaud, GIOP, GSM, Bricaud, etc.)
-- `bbnw.py` (368 lines): Backscattering models (Power-law, Lee, GSM, etc.)
+**[bing/models/](bing/models/)** - Bio-optical model implementations
+- `anw.py` (~1345 lines): Absorption models (Cst, Every, Exp, ExpFix, Bricaud, ExpBricaud, ExpBricaudFix, ExpBricaudFree, GIOP, ExpNMF, GSM, Chase, ChaseMini). Module-level `init_model(name, wave, prior_dicts)` is the entry point.
+- `bbnw.py` (~638 lines): Backscattering models (Cst, Every, Pow, GSM, Lee). Also exposes `init_model(name, wave, prior_dicts)`.
 - `functions.py`: Generic spectral basis functions (exponential, power-law, Gaussian)
-- `utils.py`: Model initialization and configuration
+- `utils.py`: Top-level `init(model_names, wave)` builds both models in a single call
 
-**bing/fitting/** - Parameter estimation algorithms
-- `inference.py`: MCMC sampling with emcee (log_prob, run_emcee, fit_one, fit_batch)
-- `chisq_fit.py`: Least-squares optimization via scipy.optimize.curve_fit
+**[bing/rt/](bing/rt/)** - Radiation transfer (subpackage)
+- `rrs.py`: Gordon elastic model (`calc_Rrs(a, bb)`), wavelength-dependent Gordon coefficients, fluorescence-aware Rrs builders, and `A_Rrs=0.52`/`B_Rrs=1.7` conversion constants
+- `raman.py`: Raman scattering coefficients/redistribution + `calc_Rrs_with_raman`
+- `chl_fl.py`: Low-level chlorophyll fluorescence emission (`calc_R_fluorescence`, `calc_fluorescence_line_height`, `fluorescence_backscattering_coeff`)
+- `defs.py`: Shared definitions/constants for the subpackage
+
+**[bing/fitting/](bing/fitting/)** - Parameter estimation algorithms
+- `inference.py` (~427 lines): MCMC sampling with emcee (`log_prob`, `run_emcee`, `fit_one`, `fit_batch`, `init_mcmc`)
+- `chisq_fit.py`: Least-squares optimization via `scipy.optimize.curve_fit`
 - `l23.py`: Specialized fitting for Loisel et al. 2023 synthetic dataset
 
-**bing/parameters/** - Model configuration system
-- `standard.py`: Pre-configured model combinations (expb_pow, giop, gsm, etc.)
-- `p_ntuple.py`: Named tuple generator for complete fitting configurations
+**[bing/parameters/](bing/parameters/)** - Model configuration system
+- `standard.py`: Pre-configured model combinations (`expb_pow`, `giop`, `gsm`, etc.)
+- `p_ntuple.py`: Named-tuple generator for complete fitting configurations
 
-**bing/priors/** - Bayesian prior distributions
-- `priors.py`: Prior classes (LogUniformPrior, UniformPrior, GaussianPrior, RatioPrior)
-- `adg.py`: Special handling for a_dg (dissolved + detrital absorption)
+**[bing/priors/](bing/priors/)** - Bayesian prior distributions
+- `priors.py`: Prior classes (`LogUniformPrior`, `UniformPrior`, `GaussianPrior`, `RatioPrior`)
+- `adg.py`: Special handling for `a_dg` (dissolved + detrital absorption)
 
-**bing/** - Core utilities
-- `rt.py`: Gordon's radiation transfer model (`calc_Rrs(a, bb)`)
-- `evaluate.py`: Post-fitting analysis (calc_stats, reconstruct_from_chains)
+**[bing/](bing/)** - Core utilities
+- `evaluate.py`: Post-fitting analysis (`calc_stats`, `reconstruct_from_chains`)
 - `plotting.py`: Spectral fit visualization with uncertainties
 - `noise.py`: Satellite-specific noise modeling (PACE, MODIS, SeaWiFS, SBG)
 - `stats.py`: Chi-squared and information criteria calculations
@@ -207,25 +215,33 @@ for chains, idx in zip(chains_list, indices):
 
 ## Model System
 
-### Available Absorption Models (bing/models/anw.py)
+### Available Absorption Models ([bing/models/anw.py](bing/models/anw.py))
 
-| Model | Params | Description | Use Case |
-|-------|--------|-------------|----------|
-| **ExpBricaud** | 3 | Adg*exp(-Sdg*λ) + Aph(Chl) | Standard mixed absorption (CDOM + phytoplankton) |
-| **ExpBricaudFree** | 3 | Like ExpBricaud but Chl as free parameter | When chlorophyll not constrained |
-| **GIOP** | 2 | Standard GIOP algorithm | Industry standard for satellite processing |
-| **GSM** | 2 | Garver-Siegel-Maritorena | Alternative semi-analytical model |
-| **Bricaud** | 1 | Pure phytoplankton absorption | Phytoplankton-dominated waters |
-| **Exp** | 2 | Exponential with free slope | Dissolved/detrital matter only |
+| Model (class) | Name | Params | Description / Use Case |
+|---|---|---|---|
+| `aNWCst` | `Cst` | 1 | Spectrally flat — sanity / null baseline |
+| `aNWEvery` | `Every` | Nwave | Free amplitude per wavelength — non-parametric |
+| `aNWExp` | `Exp` | 2 | Dissolved/detrital exponential with free slope |
+| `aNWExpFix` | `ExpFix` | 1 | Exponential with fixed slope |
+| `aNWBricaud` | `Bricaud` | 1 | Pure phytoplankton via Bricaud (1995) |
+| `aNWExpBricaud` | `ExpBricaud` | 3 | Adg·exp(-Sdg·λ) + Aph(Chl) — CDOM + phytoplankton, the standard combo |
+| `aNWExpBricaudFix` | `ExpBricaudFix` | 2 | ExpBricaud with Sdg fixed |
+| `aNWExpBricaudFree` | `ExpBricaudFree` | 3 | ExpBricaud with Chl as a free parameter |
+| `aNWGIOP` | `GIOP` | 2 | GIOP framework (Werdell et al. 2013) — satellite-processing standard |
+| `aNWGSM` | `GSM` | 2 | Garver-Siegel-Maritorena |
+| `aNWExpNMF` | `ExpNMF` | varies | Exponential + NMF basis for phytoplankton |
+| `aNWChase` | `Chase` | varies | Chase et al. multi-Gaussian phytoplankton + Exp |
+| `aNWChaseMini` | `ChaseMini` | fewer | Reduced-basis Chase variant |
 
-### Available Backscattering Models (bing/models/bbnw.py)
+### Available Backscattering Models ([bing/models/bbnw.py](bing/models/bbnw.py))
 
-| Model | Params | Description | Use Case |
-|-------|--------|-------------|----------|
-| **Pow** | 2 | Bnw * (600/λ)^beta | Power-law particles (most common) |
-| **Lee** | 1 | Bnw * (600/λ)^Y(Rrs) | Lee et al. 2002 with dynamic slope |
-| **GSM** | 1 | Bnw * (443/λ)^1.0337 | Fixed spectral slope |
-| **Cst** | 1 | Spectrally flat | Simple particle model |
+| Model (class) | Name | Params | Description / Use Case |
+|---|---|---|---|
+| `bbNWCst` | `Cst` | 1 | Spectrally flat — simple particle model |
+| `bbNWEvery` | `Every` | Nwave | Free amplitude per wavelength — non-parametric |
+| `bbNWPow` | `Pow` | 2 | Bnw · (600/λ)^β — power-law particles (most common) |
+| `bbNWGSM` | `GSM` | 1 | Fixed spectral slope (1.0337 at 443 nm) |
+| `bbNWLee` | `Lee` | 1 | Bnw · (600/λ)^Y(Rrs) — Lee et al. 2002 dynamic slope (requires `set_basis_func(Y)`) |
 
 ### Standard Model Combinations (bing/parameters/standard.py)
 
@@ -335,22 +351,30 @@ chains = l23.fit_one(params, idx=170)
 
 ## Testing
 
-### Test Structure
+### Test Structure ([bing/tests/](bing/tests/))
 - `test_anw.py`: Absorption model validation (initialization, evaluation, priors, batch processing)
-- `test_inference.py`: MCMC workflow testing
-- `test_l23_fitting.py`: Loisel dataset validation
+- `test_l23_fitting.py`: Loisel et al. 2023 synthetic-dataset fitting validation
+- `test_raman.py`: Raman scattering coefficients and `calc_Rrs_with_raman`
+- `test_chl_fl.py`: Chlorophyll fluorescence emission model
+- `files/`: Reference inputs for tests
 
 ### Running Specific Tests
 ```bash
 # Test all absorption models
 pytest bing/tests/test_anw.py -v
 
-# Test MCMC inference
-pytest bing/tests/test_inference.py
+# Test inelastic processes
+pytest bing/tests/test_raman.py
+pytest bing/tests/test_chl_fl.py
 
-# Test specific model
+# Test L23 fitting end-to-end
+pytest bing/tests/test_l23_fitting.py
+
+# Test a specific function
 pytest bing/tests/test_anw.py::test_expnmf
 ```
+
+When adding a new absorption or backscattering model, extend `test_anw.py` / add a peer file: cover (a) instantiation via `init_model`, (b) shape-correct `eval_*` on both single and batched params, (c) prior attachment, and (d) round-trip through `bing.rt.rrs.calc_Rrs`.
 
 ## Data Formats
 
@@ -377,32 +401,49 @@ results = {
 
 ## Common Pitfalls
 
-1. **Forgetting log10 conversion**: Amplitudes are in log10 space. Always use `10**param` for linear values.
+1. **Forgetting log10 conversion**: Amplitudes are in log10 space. Always use `10**param` for linear values; slopes/exponents stay linear.
 
-2. **Shape mismatches**: Models expect 2D parameter arrays. Use `np.atleast_2d(params)` for single spectra.
+2. **Shape mismatches**: Models expect 2D parameter arrays. Use `np.atleast_2d(params)` for single spectra; `eval_anw` / `eval_bbnw` always return `(nsample, nwave)`.
 
-3. **Prior out-of-bounds**: MCMC returns `-np.inf` for invalid priors. Check prior ranges match parameter scales.
+3. **Prior out-of-bounds**: MCMC returns `-np.inf` for invalid priors. Check prior ranges match parameter scales (log10 vs. linear).
 
-4. **Water components**: Don't reinitialize `a_w` and `bb_w` during fitting - they're computed once at model creation.
+4. **Water components**: Don't reinitialize `a_w` and `bb_w` during fitting — they're computed once at model creation.
 
-5. **Wavelength correspondence**: Always initialize models with the same wavelength array used for Rrs data.
+5. **Wavelength correspondence**: Always initialize models with the same wavelength array used for Rrs data. The `rt` submodules and noise generators must use that grid too.
 
 6. **Chlorophyll models**: If `model.uses_Chl == True`, must call `model.set_aph(Chl)` before evaluation.
 
 7. **Lee backscatter model**: If `model.uses_basis_params == True`, must call `model.set_basis_func(Y)` before evaluation.
+
+8. **`rt` is a package, not a module**: Import as `from bing.rt import rrs` (or `from bing.rt.rrs import calc_Rrs`). Old code that did `from bing import rt; rt.calc_Rrs(...)` still works via re-exports in `bing/rt/__init__.py`, but new code should target the submodule directly.
+
+9. **Inelastic contributions are opt-in**: Standard `calc_Rrs(a, bb)` is purely elastic. To include Raman / fluorescence use `calc_Rrs_with_raman` or `calc_Rrs_with_fluorescence` from `bing.rt` — and remember to add their parameters to the fit (or fix them) so priors and `nparam` stay consistent.
+
+10. **Wavelength-dependent G₁/G₂**: If you call `wave_dependent_gordon(wave)`, pass the same `wave` grid the model uses. Mismatched grids silently extrapolate.
+
+## Working in this repo
+
+- **Branch context**: ongoing work lives on feature branches like `more_Gordon`; the working area for that effort is [dev/Gordon/](dev/Gordon/). Look there before adding new exploration notebooks.
+- **Notebooks vs. package code**: scratch and figures go in `dev/`, `nb/`, or `papers/*/Analysis/`. Anything reusable belongs in the `bing/` package with a matching test.
+- **Don't widen scope**: bug fixes and new models should land as focused changes. Don't refactor the Gordon model, prior system, or `eval_*` shape contract opportunistically — they're load-bearing for every consumer in `papers/`.
+- **External dep boundary**: noise specs and satellite band definitions live in the sibling [ocpy](../ocpy/) package (`ocpy.satellites.*`). Don't duplicate that data in `bing/`.
 
 ## Repository Structure
 
 ```
 bing/
 ├── models/          # Bio-optical models (absorption, backscattering)
+├── rt/              # Radiation transfer subpackage
+│   ├── rrs.py       #   Gordon elastic Rrs + fluorescence Rrs builders
+│   ├── raman.py     #   Raman scattering
+│   ├── chl_fl.py    #   Chlorophyll fluorescence
+│   └── defs.py      #   Shared constants
 ├── fitting/         # MCMC and least-squares algorithms
 ├── parameters/      # Model configuration system
 ├── priors/          # Bayesian prior distributions
-├── scripts/         # Command-line interface scripts
-├── tests/           # Unit tests
+├── scripts/         # Command-line interface scripts (fit_Rrs.py)
+├── tests/           # Unit tests (anw, l23, raman, chl_fl)
 ├── data/            # Reference data (water IOPs, phytoplankton coefficients)
-├── rt.py            # Gordon radiation transfer
 ├── evaluate.py      # Post-fitting analysis
 ├── plotting.py      # Visualization
 ├── noise.py         # Satellite noise modeling
@@ -410,15 +451,18 @@ bing/
 └── preproc.py       # Preprocessing utilities
 
 bin/                 # Executable scripts
-├── bing_fit_Rrs     # Main CLI entry point
+└── bing_fit_Rrs     # Main CLI entry point
 
-papers/              # Research applications
-├── biomass/         # PACE-Argo BGC validation
-├── phytoplankton/   # Model comparison study
-└── bing_2.0/        # Large-scale synthetic dataset benchmarking
+papers/              # Research applications (data + analysis scripts)
+├── biomass/         #   PACE-Argo BGC validation
+├── phytoplankton/   #   Model-comparison study
+├── bing_2.0/        #   Large-scale synthetic dataset benchmarking
+└── Solar/           #   Solar-induced fluorescence / inelastic studies
 
+dev/                 # Active development scratch (e.g. dev/Gordon/)
 docs/                # Sphinx documentation
 nb/                  # Jupyter notebooks for development
+prompts/             # Project-specific Claude prompts and skills
 ```
 
 ## Key References

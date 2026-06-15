@@ -303,7 +303,7 @@ def prep_one_l23(p, idx, chk:bool=False):
 
     ## Gordon coefficients
     if p.variable_Gordon:
-        models[0].init_var_gordon()
+        models[0].init_var_gordon(include_G0=getattr(p, 'variable_Gordon_G0', False))
 
     ## Raman
     if p.include_Raman:
@@ -314,8 +314,12 @@ def prep_one_l23(p, idx, chk:bool=False):
         bb_ex = None
 
     ## Calculate Rrs
+    # NOTE: in_G0 must be passed here too so the synthetic observation Rrs
+    # is generated with the same forward model the MCMC reconstructs against.
+    # If variable_Gordon_G0=False, models[0].G0 is None and this is a no-op.
     gordon_Rrs = bing_rt.calc_Rrs(odict['a'], odict['bb'],
-        in_G1=models[0].G1, in_G2=models[0].G2, 
+        in_G1=models[0].G1, in_G2=models[0].G2,
+        in_G0=getattr(models[0], 'G0', None),
         a_ex = a_ex, bb_ex=bb_ex,
         bb_R=models[1].bb_R)
     
@@ -381,6 +385,7 @@ def prep_one_l23(p, idx, chk:bool=False):
     ret_dict['p0'] = p0
     ret_dict['pdict'] = pdict
     ret_dict['models'] = models
+    ret_dict['G0'] = models[0].G0
     ret_dict['G1'] = models[0].G1
     ret_dict['G2'] = models[0].G2
 

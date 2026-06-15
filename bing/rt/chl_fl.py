@@ -810,11 +810,6 @@ def calc_R_fluorescence_integrated(
         else:
             R_F[i] = integrand[0]
 
-    # Normalize by total Ed if needed (to get ratio-based Ed_ratio)
-    Ed_total = np.trapz(Ed, wavelength_ex) if len(wavelength_ex) > 1 else Ed[0]
-    if Ed_total > 0:
-        R_F = R_F / Ed_total * np.trapz(Ed, wavelength_ex)
-
     return R_F if len(R_F) > 1 else R_F[0]
 
 

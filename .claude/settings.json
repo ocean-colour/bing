@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Edit(/.claude/skills/run-bing-fit/**)",
+      "Edit(/.claude/skills/diagnose-mcmc/**)",
+      "Edit(/.claude/skills/fit-l23-spectrum/**)",
+      "Edit(/.claude/skills/inelastic-rrs/**)"
+    ]
+  }
+}

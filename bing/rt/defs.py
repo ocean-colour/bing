@@ -16,13 +16,14 @@ def rt_dict_from_p(p):
 
     rt_dict = {}
     for key in ['variable_Gordon',
+                'variable_Gordon_G0',
                 'include_Raman',
                 'include_Chl_fl',
                 'phi_C',
                 'double_gaussian']:
         if hasattr(p,key):
             rt_dict[key] = getattr(p, key)
-        else: 
+        else:
             rt_dict[key] = None
 
     # Return
