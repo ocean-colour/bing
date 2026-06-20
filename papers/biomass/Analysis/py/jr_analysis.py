@@ -250,7 +250,8 @@ def list_jr_matchups(jr_file: str = None, argo_file: str = None,
     -------
     pandas.DataFrame
         The JR DataFrame with ``cruise``, ``profile``,
-        ``match_dist_km``, and ``match_dt_hours`` columns appended.
+        ``match_dist_km``, ``match_dt_hours``, ``argo_lat``,
+        ``argo_lon``, and ``argo_time`` columns appended.
     """
     # Load both tables using the helpers from jr_utils
     jr_df = jr_utils.load_jr_data(jr_file)
@@ -259,6 +260,7 @@ def list_jr_matchups(jr_file: str = None, argo_file: str = None,
     # For each JR row, find the closest Argo (cruise, profile).
     # Rows with missing lat/lon/time are reported as unmatched.
     cruises, profiles, dists, dts = [], [], [], []
+    argo_lats, argo_lons, argo_times = [], [], []
     for jr_idx, jr_row in jr_df.iterrows():
         if (pandas.isna(jr_row['PACE_lat']) or
                 pandas.isna(jr_row['PACE_lon']) or
@@ -267,15 +269,22 @@ def list_jr_matchups(jr_file: str = None, argo_file: str = None,
             profiles.append(-1)
             dists.append(np.nan)
             dts.append(np.nan)
+            argo_lats.append(np.nan)
+            argo_lons.append(np.nan)
+            argo_times.append(pandas.NaT)
             continue
 
         mdict = jr_utils.match_jr_to_argo(jr_idx)
-        #argo_row = argo_df.loc[mdict['argo_row']]
+        # Pull the matched Argo profile's lat/lon/time for reporting
+        argo_row = argo_df.loc[mdict['argo_row']]
 
         cruises.append(int(mdict['cruise']))
         profiles.append(int(mdict['profile']))
         dists.append(float(mdict['dist_km']))
         dts.append(float(mdict['dt_hours']))
+        argo_lats.append(float(argo_row['lat']))
+        argo_lons.append(float(argo_row['lon']))
+        argo_times.append(pandas.Timestamp(argo_row['time']))
 
     # Annotate the DataFrame with the matched Argo IDs
     jr_df = jr_df.copy()
@@ -283,6 +292,9 @@ def list_jr_matchups(jr_file: str = None, argo_file: str = None,
     jr_df['profile'] = profiles
     jr_df['match_dist_km'] = dists
     jr_df['match_dt_hours'] = dts
+    jr_df['argo_lat'] = argo_lats
+    jr_df['argo_lon'] = argo_lons
+    jr_df['argo_time'] = argo_times
 
     if verbose:
         print(f"JR spectra in {jr_file or 'jr_test_matchup_L1B.csv'} "
@@ -291,10 +303,16 @@ def list_jr_matchups(jr_file: str = None, argo_file: str = None,
             if row['cruise'] < 0:
                 print(f"  [{ii:2d}] (no PACE lat/lon/time -- unmatched)")
                 continue
+            # UT time of the matched Argo profile (ISO, seconds resolution)
+            ut = pandas.Timestamp(row['argo_time']).strftime(
+                '%Y-%m-%dT%H:%M:%S')
             print(f"  [{ii:2d}] cruise={row['cruise']:>7d}  "
                   f"profile={row['profile']:>4d}  "
                   f"dist={row['match_dist_km']:6.2f} km  "
-                  f"dt={row['match_dt_hours']:7.2f} h")
+                  f"dt={row['match_dt_hours']:7.2f} h  "
+                  f"Argo lat={row['argo_lat']:8.3f}  "
+                  f"lon={row['argo_lon']:8.3f}  "
+                  f"UT={ut}")
 
     return jr_df
 

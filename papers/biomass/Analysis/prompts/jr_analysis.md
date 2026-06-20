@@ -60,6 +60,8 @@ Here are guidelines for writing code:
 - Require the match in time to be nearly exact.  For the time, use the closest time in the CSV file.
 - Refactor the methods in jr_utils.py and jr_analysis.py to use the new method.
 
+2. Modify the list_jr_matchups() method in jr_analysis.py to print the lat,lon and UT time of the matched Argo profile when `verbose` is True.  Log your work in Logs.
+
 ## Prompts
 
 ## Code
@@ -68,4 +70,45 @@ Here are guidelines for writing code:
 2. Read this doc.  Proceed with the 2nd item under Development
 3. Read this doc.  Proceed with the 3rd item under Development
 4. Read this doc.  Proceed with the 4th item under Development
+
 5. Read this doc.  Perform the 1st set of modifications in the Modifications section above.
+6. Read this doc.  Perform the 2nd set of modifications in the Modifications section above.
+
+## Logging
+
+The "Logs" section will record Claude's work.  Please use the following format:
+
+### <Date> (Short summary of the work)
+
+<Detailed description of the work and what you learned>
+
+### <Date> (Short summary of the work)
+
+<Detailed description of the work and what you learned>
+
+...
+
+## Logs
+
+### 2026-06-20 (verbose lat/lon/UT-time in list_jr_matchups)
+
+Performed the 2nd set of modifications: extended `list_jr_matchups()` in
+`Analysis/py/jr_analysis.py` to report the matched Argo profile's location and
+time when `verbose=True`.
+
+- The per-row matcher `jr_utils.match_jr_to_argo()` returns `argo_row` as the
+  *index* into the Argo DataFrame (not the row itself), so I uncommented the
+  `argo_df.loc[mdict['argo_row']]` lookup to pull `lat`, `lon`, and `time`.
+- Appended three new columns to the returned DataFrame — `argo_lat`,
+  `argo_lon`, and `argo_time` — alongside the existing `cruise`/`profile`/
+  `match_dist_km`/`match_dt_hours`. Unmatched rows (missing PACE lat/lon/time)
+  get NaN/NaT placeholders so the column dtypes stay clean.
+- The verbose line now also prints `Argo lat=`, `lon=`, and `UT=` (ISO-8601 to
+  seconds resolution via `Timestamp.strftime`).
+- Updated the docstring Returns section to document the new columns.
+
+Verified with `python jr_analysis.py 5`: all 9 matched JR rows print their Argo
+lat/lon and UT time (e.g. row 6 → cruise 7902226 profile 4 at lat 27.479,
+lon -46.221, UT 2025-02-18T20:26:59); the 6 rows lacking PACE geolocation still
+report as unmatched. Note the matched Argo `time` equals the JR `time` here, so
+all `dt` values are ~0 h, consistent with the near-exact time matching.
