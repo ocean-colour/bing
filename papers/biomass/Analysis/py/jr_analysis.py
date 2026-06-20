@@ -184,8 +184,8 @@ def fit_jr_rrs(cruise_profile, outdir: str = None,
     isig = jr['Rrs_std'][gd].astype(float)
 
     # Floor zero/negative reported std so chi^2 stays finite in the LM step
-    floor_sig = 1e-5
-    isig = np.where(isig > 0, isig, floor_sig)
+    #floor_sig = 1e-5
+    #isig = np.where(isig > 0, isig, floor_sig)
 
     # File naming mirrors the biomass_io convention but tagged "JR_"
     base = f"JR_{cruise_profile[0]}_{cruise_profile[1]:03d}_fits"

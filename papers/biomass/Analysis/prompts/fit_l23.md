@@ -83,6 +83,19 @@ You can read the outputs from the fits in the $OS_COLOR/Biomass/L23_Fits folder.
 
 2. The Inelastic fits are running on my workstation.  Can you omdify the parse_fits() method to parse the inelastic fits while I wait for the outputs?  I have run the test set of 4 spectra that you can use to test the method.
 
+### Figures
+
+#### Residuals vs bbp
+
+1. Thanks for the fig_compare_bbp() method.  Can you modify it to:
+   - Color the points by an estimate of one of (specified as an argument):
+      - Chlorophyll concentration
+      - a_cdom at 400nm
+      - any other quantity you think might be worth exploring
+   - Include a color bar with title
+   - Log your work
+
+
 ## Modifications
 
 1. Please make these modifications to the bbp_fit_l23.py module:
@@ -114,6 +127,7 @@ You can read the outputs from the fits in the $OS_COLOR/Biomass/L23_Fits folder.
 6. Read this doc.  Proceed with the 3rd item under Modifications
 7. Read this doc.  Proceed with the 1st item under Development/In-elastic fits
 8. Read this doc.  Proceed with the 2nd item under Development/In-elastic fits
+9. Read this doc.  Proceed with the 1st item under Development/Figures
 
 ## Logging
 
@@ -363,3 +377,34 @@ true_bbp, true_aph, true_adg).  Consistent with the single-spectrum
 figures, the very-low-bbp cases read high vs truth (e.g. idx 3003:
 fitted bbp = 3.1e-4 vs true 9.9e-5 at 600 nm); the population-level
 inelastic bias will be assessed once the full `flg==6` run completes.
+
+### 2026-06-17 (Figures: color the bbp-residual scatter by water type)
+
+Extended `fig_compare_bbp()` to color each point by an estimate of a
+third quantity (new `color_by` argument) and added a titled colorbar, so
+the bbp bias can be read against the optical regime.  A small helper
+`_color_quantity(df, color_by, inelastic)` resolves the values + label:
+
+- **`'Chl'`** (default): chlorophyll, estimated as `a_ph(440)/0.05582`
+  straight from the CSV `true_aph` column — the exact Bricaud inversion
+  `l23.load_one_l23` uses, so no dataset I/O is needed.
+- **`'acdom'`**: pure CDOM (gelbstoff) absorption at 400 nm, read from the
+  L23 truth `ds.ag` by index (the genuine CDOM term, distinct from the
+  dissolved+detrital `a_dg`).  Uses the inelastic truth `load_ds(4, 0)`
+  when `inelastic=True`, else `load_ds(1, 0)`.
+- **`'adg'`**: dissolved + detrital absorption at 400 nm from the CSV
+  `true_adg` column.
+
+Color is log-scaled (`LogNorm`) since all three span orders of magnitude,
+and the output PNG name is tagged with the coloring (e.g.
+`bbp_fit_l23_chl.png`, `bbp_fit_l23_inelastic_adg.png`) so variants don't
+clobber each other.
+
+**Test.** Rendered the elastic scatter colored by Chl and acdom and the
+inelastic scatter colored by adg; all three saved without error and the
+`acdom` path exercised the dataset read.  The Chl coloring is the most
+informative: the large *positive* bbp bias lives almost entirely in the
+**low-bbp, low-Chl** clear-water points (bias > +25% at bbp < ~3e-4),
+while the higher-bbp / higher-Chl waters settle into a mild *negative*
+bias (~ -10 to -15%).  So the elastic bbp bias is structured by water
+type, not random scatter — exactly the diagnostic this study wants.
