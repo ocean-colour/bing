@@ -7,9 +7,13 @@ import pytest
 import matplotlib.pyplot as plt
 
 from ocpy.utils import plotting
+from ocpy.satellites import pace as sat_pace
+
 from bing.rt import raman
 from bing.rt import rrs
-
+from bing.parameters import standard
+from bing.models import utils as model_utils
+from bing import evaluate
 
 from IPython import embed
 
@@ -147,7 +151,7 @@ def test_calc_R_elastic():
     a = 0.05   # m^-1
     bb = 0.002  # m^-1
 
-    R_E = rrs.calc_R_elastic(a, bb)
+    R_E = raman.calc_R_elastic(a, bb)
 
     # Reflectance should be positive and reasonable (< 0.1 for these values)
     assert R_E > 0
@@ -156,7 +160,7 @@ def test_calc_R_elastic():
     # Test with arrays
     a_arr = np.array([0.03, 0.05, 0.1])
     bb_arr = np.array([0.003, 0.002, 0.001])
-    R_E_arr = rrs.calc_R_elastic(a_arr, bb_arr)
+    R_E_arr = raman.calc_R_elastic(a_arr, bb_arr)
     assert R_E_arr.shape == (3,)
     # Higher bb/a ratio should give higher reflectance
     assert R_E_arr[0] > R_E_arr[2]
@@ -169,12 +173,12 @@ def test_calc_R_raman_first_order():
     a_ex, bb_ex = 0.03, 0.003
     bb_R = raman.raman_backscattering_coeff(443)
 
-    R_R = rrs.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_R = raman.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
 
     # Should be positive
     assert R_R > 0
     # Typically smaller than elastic reflectance but significant
-    R_E = rrs.calc_R_elastic(a_em, bb_em)
+    R_E = raman.calc_R_elastic(a_em, bb_em)
     assert R_R < R_E
     assert R_R > 0.001  # Should be non-negligible
 
@@ -185,9 +189,9 @@ def test_calc_R_raman_second_order():
     a_ex, bb_ex = 0.03, 0.003
     bb_R = raman.raman_backscattering_coeff(443)
 
-    R_R = rrs.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
-    R_RE = rrs.calc_R_raman_RE(a_em, bb_em, a_ex, bb_ex, bb_R)
-    R_ER = rrs.calc_R_raman_ER(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_R = raman.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_RE = raman.calc_R_raman_RE(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_ER = raman.calc_R_raman_ER(a_em, bb_em, a_ex, bb_ex, bb_R)
 
     # Second-order terms should be positive
     assert R_RE > 0
@@ -210,12 +214,12 @@ def test_calc_R_raman_total():
     bb_R = raman.raman_backscattering_coeff(443)
 
     # With second-order terms
-    R_total = rrs.calc_R_raman_total(
+    R_total = raman.calc_R_raman_total(
         a_em, bb_em, a_ex, bb_ex, bb_R, include_second_order=True
     )
 
     # Without second-order terms
-    R_first_only = rrs.calc_R_raman_total(
+    R_first_only = raman.calc_R_raman_total(
         a_em, bb_em, a_ex, bb_ex, bb_R, include_second_order=False
     )
 
@@ -223,7 +227,7 @@ def test_calc_R_raman_total():
     assert R_total > R_first_only
 
     # Difference should be the second-order contribution
-    R_R = rrs.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_R = raman.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
     assert np.isclose(R_first_only, R_R)
 
 
@@ -260,7 +264,7 @@ def test_calc_Rrs_with_raman():
     Rrs_elastic = rrs.calc_Rrs(a_em, bb_em)
 
     # With Raman
-    Rrs_with_raman = rrs.calc_Rrs_with_raman(
+    Rrs_with_raman = raman.calc_Rrs_with_raman(
         a_em, bb_em, a_ex, bb_ex, bb_R
     )
 
@@ -287,13 +291,13 @@ def test_array_calculations():
     bb_R = raman.raman_backscattering_coeff(wavelengths_ex)
 
     # Test all functions with arrays
-    R_E = rrs.calc_R_elastic(a_em, bb_em)
-    R_R = rrs.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
-    R_RE = rrs.calc_R_raman_RE(a_em, bb_em, a_ex, bb_ex, bb_R)
-    R_ER = rrs.calc_R_raman_ER(a_em, bb_em, a_ex, bb_ex, bb_R)
-    R_total = rrs.calc_R_raman_total(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_E = raman.calc_R_elastic(a_em, bb_em)
+    R_R = raman.calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_RE = raman.calc_R_raman_RE(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_ER = raman.calc_R_raman_ER(a_em, bb_em, a_ex, bb_ex, bb_R)
+    R_total = raman.calc_R_raman_total(a_em, bb_em, a_ex, bb_ex, bb_R)
     corr = rrs.calc_raman_correction_factor(a_em, bb_em, a_ex, bb_ex, bb_R)
-    Rrs = rrs.calc_Rrs_with_raman(a_em, bb_em, a_ex, bb_ex, bb_R)
+    Rrs = raman.calc_Rrs_with_raman(a_em, bb_em, a_ex, bb_ex, bb_R)
 
     # Check shapes
     assert R_E.shape == (4,)
@@ -344,12 +348,12 @@ def test_Ed_ratio_effect():
     bb_R = raman.raman_backscattering_coeff(443)
 
     # Ed_ratio = 1 (equal irradiance at both wavelengths)
-    R_R_1 = rrs.calc_R_raman_first_order(
+    R_R_1 = raman.calc_R_raman_first_order(
         a_em, bb_em, a_ex, bb_ex, bb_R, Ed_ratio=1.0
     )
 
     # Ed_ratio = 1.5 (more irradiance at excitation wavelength)
-    R_R_1p5 = rrs.calc_R_raman_first_order(
+    R_R_1p5 = raman.calc_R_raman_first_order(
         a_em, bb_em, a_ex, bb_ex, bb_R, Ed_ratio=1.5
     )
 
@@ -366,17 +370,17 @@ def test_mean_cosine_sensitivity():
     bb_R = raman.raman_backscattering_coeff(443)
 
     # Default mean cosines
-    R_default = rrs.calc_R_raman_total(
+    R_default = raman.calc_R_raman_total(
         a_em, bb_em, a_ex, bb_ex, bb_R
     )
 
     # Higher mu_d (more direct sunlight)
-    R_high_mud = rrs.calc_R_raman_total(
+    R_high_mud = raman.calc_R_raman_total(
         a_em, bb_em, a_ex, bb_ex, bb_R, mu_d=0.95
     )
 
     # Lower mu_d (more diffuse light)
-    R_low_mud = rrs.calc_R_raman_total(
+    R_low_mud = raman.calc_R_raman_total(
         a_em, bb_em, a_ex, bb_ex, bb_R, mu_d=0.7
     )
 
@@ -394,7 +398,7 @@ def test_consistency_with_gordon():
     Rrs_gordon = rrs.calc_Rrs(a, bb)
 
     # Our elastic reflectance converted to Rrs
-    R_E = rrs.calc_R_elastic(a, bb, mu_d=0.9, mu_u=0.5)
+    R_E = raman.calc_R_elastic(a, bb, mu_d=0.9, mu_u=0.5)
 
     # Both should be in the same ballpark (within factor of 2-3)
     # They use different formulations but should give similar magnitude
@@ -419,3 +423,64 @@ def test_raman_wavelength_conversion():
     # Round-trip conversion should return original
     lambda_ex_back = raman.emission_to_excitation_wavelength(lambda_em)
     assert np.isclose(lambda_ex, lambda_ex_back, rtol=0.001)
+
+# Raman related methods
+
+def test_raman_in_models():
+    # Init
+    p_expb = standard.expb_pow(satellite='SBG', add_noise=True,
+                            variable_Gordon=False, include_Raman=True)
+    model_wave = sat_pace.wave(wv_min=p_expb.wv_min,
+                                    wv_max=p_expb.wv_max)                        
+    model_names=['ExpBricaud', 'Pow']
+    a_model, bb_model = model_utils.init(model_names, model_wave)
+
+    # a_ex
+    aparam = np.array([-1.6029689 ,  0.01230832, -2.3059037])
+    a_ex = a_model.eval_a_ex(aparam)
+
+    anw_ex = a_model.eval_anw(aparam, wave=a_model.wave_ex)
+    anw = a_model.eval_anw(aparam)
+
+    if False:
+        fig = plt.figure(figsize=(7,7))
+        ax = plt.gca()
+        ax.plot(a_model.wave, anw.flatten(), label='anw', color='black')
+        ax.plot(a_model.wave_ex, anw_ex.flatten(), label='anw_ex', color='red')
+        #
+        ax.set_xlabel('Wavelength (nm)')
+        ax.set_ylabel(r'$a \; \rm [m^{-1}]$')
+        plotting.set_fontsize(ax, 17.)
+        ax.legend(loc='upper left', fontsize=16.)
+        plt.show()
+
+    # bb_ex
+    bparam = np.array([-3.4574142 ,  1.085985])
+
+    bb_ex = bb_model.eval_bb_ex(bparam)
+
+    bbnw_ex = bb_model.eval_bbnw(bparam, wave=bb_model.wave_ex)
+    bbnw = bb_model.eval_bbnw(bparam)
+
+    if False:
+        fig = plt.figure(figsize=(7,7))
+        ax = plt.gca()
+        ax.plot(bb_model.wave, bbnw.flatten(), label='bbp', color='black')
+        ax.plot(bb_model.wave_ex, bbnw_ex.flatten(), label='bbp_ex', color='red')
+        #
+        ax.set_xlabel('Wavelength (nm)')
+        ax.set_ylabel(r'$b_b \; \rm [m^{-1}]$')
+        plotting.set_fontsize(ax, 17.)
+        ax.legend(loc='upper left', fontsize=16.)
+        plt.show()
+
+    # Generate Rrs
+    rt_dict = {}
+    rt_dict['variable_Gordon'] = True 
+    G1, G2, _ = rrs.wave_dependent_gordon(a_model.wave)
+    a_model.G1 = G1
+    a_model.G2 = G2
+    rt_dict['include_Raman'] = True 
+
+    # Calculate
+    Rrs = evaluate.calc_Rrs_from_models(a_model, aparam, bb_model, bparam, rt_dict)

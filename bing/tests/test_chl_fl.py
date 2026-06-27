@@ -1,8 +1,14 @@
 """ Tests for Chlorophyll Fluorescence module """
 
+from collections import namedtuple
+
 import numpy as np
+import pytest
 
 from bing.rt import chl_fl
+from bing.rt import rrs
+from bing.rt import defs as rt_defs
+
 
 # =============================================================================
 # Tests for emission line shape functions
@@ -25,7 +31,7 @@ def test_emission_line_single_gaussian():
     # Test normalization (integral should be ~1)
     wavelengths = np.linspace(600, 800, 1000)
     h = chl_fl.emission_line_single_gaussian(wavelengths)
-    integral = np.trapz(h, wavelengths)
+    integral = np.trapezoid(h, wavelengths)
     assert np.isclose(integral, 1.0, rtol=0.01)
 
     # Test array input
@@ -54,7 +60,7 @@ def test_emission_line_double_gaussian():
     # Test normalization (integral should be ~1)
     wavelengths = np.linspace(600, 850, 1000)
     h = chl_fl.emission_line_double_gaussian(wavelengths)
-    integral = np.trapz(h, wavelengths)
+    integral = np.trapezoid(h, wavelengths)
     assert np.isclose(integral, 1.0, rtol=0.01)
 
     # Test array input
@@ -246,7 +252,7 @@ def test_absorption_efficiency():
 
 
 # =============================================================================
-# Tests for reflectance calculations
+# Tests for low-level reflectance calculations (chl_fl module)
 # =============================================================================
 
 def test_calc_R_fluorescence():
@@ -495,9 +501,306 @@ def test_fluorescence_vsf():
 
     assert beta_arr.shape == (5,)
     # All values should be equal (isotropic phase function)
-    # Note: The VSF varies with wavelength ratio, but for same em/ex wavelengths
-    # the phase function contribution is equal
     assert np.allclose(beta_arr, beta_arr[0])
+
+
+# =============================================================================
+# Tests for the top-level calc_Rrs_fluorescence (bing.rt.rrs)
+# =============================================================================
+
+# Helper: build a small set of flat IOPs and irradiance arrays for the
+# integrated Rrs fluorescence calculation. Kept local to avoid hard-coding
+# the downwelling spectrum, which depends on the optional correct_atmosphere
+# package.
+def _flat_inputs(n_em=21, n_ex=29, a0=0.5, bb0=0.002,
+                 a_ex0=0.1, bb_ex0=0.003, aph_ex0=0.03, Ed0=1.0):
+    # Return arguments in the positional order expected by
+    # rrs.calc_Rrs_fluorescence so they can be splatted directly.
+    wave = np.linspace(650.0, 750.0, n_em)
+    wave_ex = np.linspace(400.0, 680.0, n_ex)
+    a_em = a0 * np.ones(n_em)
+    bb_em = bb0 * np.ones(n_em)
+    a_ex = a_ex0 * np.ones(n_ex)
+    bb_ex = bb_ex0 * np.ones(n_ex)
+    aph_ex = aph_ex0 * np.ones(n_ex)
+    Ed_ex = Ed0 * np.ones(n_ex)
+    Ed_em = Ed0
+    return wave, a_em, bb_em, a_ex, bb_ex, aph_ex, wave_ex, Ed_ex, Ed_em
+
+
+def test_calc_Rrs_fluorescence_basic():
+    """Top-level calc_Rrs_fluorescence: positive, peaks near 685 nm."""
+    wave, a_em, bb_em, a_ex, bb_ex, aph_ex, wave_ex, Ed_ex, Ed_em = _flat_inputs()
+
+    Rrs_fl = rrs.calc_Rrs_fluorescence(
+        wave, a_em, bb_em,
+        a_ex, bb_ex, aph_ex,
+        wave_ex, Ed_ex, Ed_em,
+        phi_C=0.02,
+        double_gaussian=True,
+    )
+
+    # Shape matches emission grid
+    assert Rrs_fl.shape == wave.shape
+
+    # All non-negative and small
+    assert np.all(Rrs_fl >= 0)
+    assert np.max(Rrs_fl) < 0.01
+
+    # Peak should land near the primary emission peak (685 nm)
+    peak_idx = np.argmax(Rrs_fl)
+    assert 680.0 <= wave[peak_idx] <= 695.0
+
+
+def test_calc_Rrs_fluorescence_aph_scaling():
+    """Higher phytoplankton absorption gives stronger fluorescence."""
+    base = _flat_inputs(aph_ex0=0.01)
+    high = _flat_inputs(aph_ex0=0.05)
+
+    Rrs_low = rrs.calc_Rrs_fluorescence(*base, phi_C=0.02, double_gaussian=True)
+    Rrs_hi  = rrs.calc_Rrs_fluorescence(*high, phi_C=0.02, double_gaussian=True)
+
+    # Linear scaling at the peak (a_em/bb_em are identical, so the only thing
+    # that changes is b_bF ~ phi_C * a_ph(ex))
+    assert np.max(Rrs_hi) > np.max(Rrs_low)
+
+
+def test_calc_Rrs_fluorescence_phi_scaling():
+    """Higher quantum yield gives stronger fluorescence."""
+    args = _flat_inputs()
+
+    Rrs_low_phi = rrs.calc_Rrs_fluorescence(*args, phi_C=0.01, double_gaussian=True)
+    Rrs_hi_phi  = rrs.calc_Rrs_fluorescence(*args, phi_C=0.05, double_gaussian=True)
+
+    assert np.max(Rrs_hi_phi) > np.max(Rrs_low_phi)
+
+
+def test_calc_Rrs_fluorescence_double_vs_single_gaussian():
+    """Double Gaussian shifts some signal into the ~730 nm secondary peak.
+
+    With κ_F evaluated per emission wavelength (flat a_em here so κ_F is the
+    same at 685 and 730), the primary peak shrinks to ~0.75× the single-
+    Gaussian peak because that's the area weight in the double-Gaussian shape.
+    """
+    wave, a_em, bb_em, a_ex, bb_ex, aph_ex, wave_ex, Ed_ex, Ed_em = _flat_inputs()
+
+    Rrs_single = rrs.calc_Rrs_fluorescence(
+        wave, a_em, bb_em, a_ex, bb_ex, aph_ex,
+        wave_ex, Ed_ex, Ed_em, phi_C=0.02, double_gaussian=False)
+    Rrs_double = rrs.calc_Rrs_fluorescence(
+        wave, a_em, bb_em, a_ex, bb_ex, aph_ex,
+        wave_ex, Ed_ex, Ed_em, phi_C=0.02, double_gaussian=True)
+
+    # Around 730 nm, the double-Gaussian model has the secondary peak
+    idx_685 = np.argmin(np.abs(wave - 685.0))
+    idx_730 = np.argmin(np.abs(wave - 730.0))
+    assert Rrs_double[idx_730] > Rrs_single[idx_730]
+
+    # At the primary peak the ratio is set purely by the emission-shape weight
+    # (κ_F is identical across λ_em with flat a_em).  Allow some slack because
+    # the peak bin may not land exactly on 685 nm.
+    primary_ratio = Rrs_double[idx_685] / Rrs_single[idx_685]
+    assert 0.70 < primary_ratio < 0.80
+
+
+def _stepped_em_inputs(n_em=21, n_ex=29):
+    """Same as ``_flat_inputs`` but with a step in ``a_em``: low near 685 nm,
+    high near 730 nm.  Mimics the steep rise of pure-water absorption between
+    those two wavelengths (a_w(685)≈0.49, a_w(730)≈1.96 m^-1) and is what
+    exposes the κ_F(λ_em) dependence in calc_Rrs_fluorescence.
+    """
+    wave = np.linspace(650.0, 750.0, n_em)
+    wave_ex = np.linspace(400.0, 680.0, n_ex)
+    # a_em: ~0.5 at 685, ramping linearly to ~2.0 at 730 and beyond.
+    a_em = 0.5 + 1.5 * np.clip((wave - 685.0) / (730.0 - 685.0), 0.0, 1.0)
+    bb_em = 0.002 * np.ones(n_em)
+    a_ex = 0.1 * np.ones(n_ex)
+    bb_ex = 0.003 * np.ones(n_ex)
+    aph_ex = 0.03 * np.ones(n_ex)
+    Ed_ex = np.ones(n_ex)
+    Ed_em = 1.0
+    return wave, a_em, bb_em, a_ex, bb_ex, aph_ex, wave_ex, Ed_ex, Ed_em
+
+
+def test_calc_Rrs_fluorescence_per_lambda_kappa_F():
+    """Regression test for the per-λ κ_F fix.
+
+    With ``a_em(730) ≈ 4 × a_em(685)``, the upwelling attenuation at 730 nm
+    is ~4× stronger than at 685 nm, so the 730-nm fluorescence shoulder
+    must be much smaller than the emission-shape weight alone would predict.
+
+    Pre-fix (κ_F frozen at 685): Rrs[730]/Rrs[685] ≈ 0.16.
+    Post-fix: Rrs[730]/Rrs[685] should drop well below 0.10.
+    """
+    args = _stepped_em_inputs()
+    wave = args[0]
+
+    Rrs_double = rrs.calc_Rrs_fluorescence(
+        *args, phi_C=0.02, double_gaussian=True)
+
+    i685 = int(np.argmin(np.abs(wave - 685.0)))
+    i730 = int(np.argmin(np.abs(wave - 730.0)))
+    ratio = Rrs_double[i730] / Rrs_double[i685]
+
+    assert 0.02 < ratio < 0.10, f'unexpected 730/685 ratio: {ratio:.3f}'
+
+
+def test_calc_Rrs_fluorescence_matches_reference():
+    """calc_Rrs_fluorescence must agree with an explicit per-λ_em integration.
+
+    This pins the implementation: any future refactor that re-introduces the
+    "freeze κ_F at 685 nm" shortcut will fail here.
+    """
+    args = _stepped_em_inputs()
+    (wave, a_em, bb_em, a_ex, bb_ex, aph_ex,
+     wave_ex, Ed_ex, Ed_em) = args
+
+    # Reference: explicit loop over λ_em with κ_F(λ_em) and λ'/λ_em
+    mu_d, mu_f = 0.9, 0.5
+    phi_C = 0.02
+    h_C = chl_fl.emission_line_double_gaussian(wave)
+    kappa_F_em = (a_em + bb_em) / mu_f
+    K_ex = (a_ex + bb_ex) / mu_d
+    bb_F = chl_fl.fluorescence_backscattering_coeff(aph_ex, phi_C)
+    R_F_ref = np.zeros_like(wave, dtype=float)
+    for i, lam_em in enumerate(wave):
+        lam_ratio = wave_ex / lam_em
+        integrand = Ed_ex * lam_ratio * (bb_F / mu_d) / (K_ex + kappa_F_em[i])
+        R_F_ref[i] = np.trapezoid(integrand, x=wave_ex)
+    R_F_ref /= Ed_em
+    A_Rrs, B_Rrs = 0.52, 1.7
+    Rrs_ref = h_C * A_Rrs * R_F_ref / (1 - B_Rrs * R_F_ref)
+
+    Rrs_got = rrs.calc_Rrs_fluorescence(
+        *args, phi_C=phi_C, double_gaussian=True)
+
+    np.testing.assert_allclose(Rrs_got, Rrs_ref, rtol=1e-12, atol=0.0)
+
+
+def test_calc_Rrs_fluorescence_chains():
+    """2D excitation inputs (MCMC chains) produce a 2D Rrs array."""
+    wave, a_em, bb_em, a_ex, bb_ex, aph_ex, wave_ex, Ed_ex, Ed_em = _flat_inputs()
+
+    n_samples = 4
+    # Broadcast the per-spectrum excitation IOPs to (n_samples, nwave_ex).
+    # Vary the phytoplankton absorption across samples so the result is not
+    # degenerate.
+    aph_ex_2d = aph_ex[None, :] * np.linspace(0.5, 2.0, n_samples)[:, None]
+    a_ex_2d  = np.broadcast_to(a_ex,  (n_samples, a_ex.size)).copy()
+    bb_ex_2d = np.broadcast_to(bb_ex, (n_samples, bb_ex.size)).copy()
+
+    # For 2D excitation, the function also expects 2D emission IOPs and Ed_em
+    a_em_2d  = np.broadcast_to(a_em,  (n_samples, a_em.size)).copy()
+    bb_em_2d = np.broadcast_to(bb_em, (n_samples, bb_em.size)).copy()
+
+    Rrs_fl = rrs.calc_Rrs_fluorescence(
+        wave, a_em_2d, bb_em_2d,
+        a_ex_2d, bb_ex_2d, aph_ex_2d,
+        wave_ex, Ed_ex, Ed_em,
+        phi_C=0.02,
+        double_gaussian=True,
+    )
+
+    # Expect one Rrs spectrum per sample
+    assert Rrs_fl.shape == (n_samples, wave.size)
+
+    # Increasing a_ph across samples should give increasing peak Rrs_fl
+    peaks = Rrs_fl.max(axis=1)
+    assert np.all(np.diff(peaks) > 0)
+
+
+def test_calc_Rrs_fluorescence_chains_matches_per_spectrum():
+    """The batch (chains) path must equal per-spectrum evaluation, row-by-row.
+
+    The chains branch loops over the emission axis to avoid materialising a
+    (n_samples, n_em, n_ex) tensor (a >100 GB RAM blow-up at nsteps=40000;
+    see dev/ChlFl/memory_profile.py).  This pins that low-memory loop to be
+    bit-for-bit identical to calling the function once per sample — so a
+    future refactor can't silently re-introduce the 3-D broadcast or perturb
+    the result.
+    """
+    wave, a_em, bb_em, a_ex, bb_ex, aph_ex, wave_ex, Ed_ex, Ed_em = \
+        _flat_inputs()
+
+    n_samples = 5
+    scale = np.linspace(0.5, 2.0, n_samples)[:, None]
+    aph_ex_2d = aph_ex[None, :] * scale
+    a_ex_2d = a_ex[None, :] * scale
+    bb_ex_2d = bb_ex[None, :] * scale
+    a_em_2d = a_em[None, :] * scale
+    bb_em_2d = bb_em[None, :] * scale
+
+    Rrs_batch = rrs.calc_Rrs_fluorescence(
+        wave, a_em_2d, bb_em_2d, a_ex_2d, bb_ex_2d, aph_ex_2d,
+        wave_ex, Ed_ex, Ed_em, phi_C=0.02, double_gaussian=True)
+
+    for s in range(n_samples):
+        Rrs_one = rrs.calc_Rrs_fluorescence(
+            wave, a_em_2d[s], bb_em_2d[s], a_ex_2d[s], bb_ex_2d[s],
+            aph_ex_2d[s], wave_ex, Ed_ex, Ed_em,
+            phi_C=0.02, double_gaussian=True)
+        np.testing.assert_allclose(
+            Rrs_batch[s], Rrs_one, rtol=1e-12, atol=0.0)
+
+
+# =============================================================================
+# Tests for rt_dict_from_p (bing.rt.defs)
+# =============================================================================
+
+def test_rt_dict_from_p_defaults():
+    """rt_dict_from_p extracts the RT options from a default p_ntuple."""
+    from bing.parameters import p_ntuple
+
+    p = p_ntuple.gen(model_names=['ExpBricaud', 'Pow'])
+    rt_dict = rt_defs.rt_dict_from_p(p)
+
+    # Default values defined in bing.parameters.p_ntuple.def_dict
+    assert rt_dict['variable_Gordon'] is True
+    assert rt_dict['variable_Gordon_G0'] is False
+    assert rt_dict['variable_Gordon_bbp'] is False
+    assert rt_dict['include_Raman'] is False
+    assert rt_dict['include_Chl_fl'] is False
+    assert rt_dict['phi_C'] == 0.02
+    assert rt_dict['double_gaussian'] is True
+
+    # No other unexpected keys are added
+    assert set(rt_dict.keys()) == {
+        'variable_Gordon', 'variable_Gordon_G0', 'variable_Gordon_bbp',
+        'include_Raman', 'include_Chl_fl',
+        'phi_C', 'double_gaussian',
+    }
+
+
+def test_rt_dict_from_p_chl_fl_enabled():
+    """rt_dict_from_p propagates custom chlorophyll-fluorescence options."""
+    from bing.parameters import p_ntuple
+
+    p = p_ntuple.gen(
+        model_names=['ExpBricaud', 'Pow'],
+        include_Chl_fl=True,
+        phi_C=0.05,
+        double_gaussian=False,
+    )
+    rt_dict = rt_defs.rt_dict_from_p(p)
+
+    assert rt_dict['include_Chl_fl'] is True
+    assert rt_dict['phi_C'] == 0.05
+    assert rt_dict['double_gaussian'] is False
+
+
+def test_rt_dict_from_p_missing_attrs():
+    """rt_dict_from_p returns None for missing attributes."""
+    # A minimal named-tuple lacking all RT fields
+    Minimal = namedtuple('Minimal', ['model_names'])
+    p = Minimal(model_names=['ExpBricaud', 'Pow'])
+
+    rt_dict = rt_defs.rt_dict_from_p(p)
+
+    # All five keys are present and set to None
+    for key in ('variable_Gordon', 'include_Raman', 'include_Chl_fl',
+                'phi_C', 'double_gaussian'):
+        assert key in rt_dict
+        assert rt_dict[key] is None
 
 
 # =============================================================================
@@ -505,11 +808,9 @@ def test_fluorescence_vsf():
 # =============================================================================
 
 def test_end_to_end_fluorescence_calculation():
-    """Test complete fluorescence calculation workflow."""
-    # Set up a realistic scenario
+    """Test complete fluorescence calculation workflow with chl_fl primitives."""
     # Excitation at 440 nm, emission at 685 nm
     wavelength_ex = 440.0
-    wavelength_em = 685.0
 
     # IOPs at emission wavelength (red, high water absorption)
     a_w_em = 0.45      # Pure water absorption at 685 nm
@@ -579,426 +880,6 @@ def test_fluorescence_vs_raman_comparison():
     # Fluorescence backscatter coefficient
     bb_F = chl_fl.fluorescence_backscattering_coeff(a_ph_ex, phi_C)
 
-    # Both are typically in similar range (10^-4 to 10^-3)
+    # Both are typically in similar range (10^-5 to 10^-2)
     assert 1e-5 < bb_F < 1e-2
     assert 1e-5 < bb_R < 1e-2
-
-
-# =============================================================================
-# Run all tests (for notebook integration)
-# =============================================================================
-
-# =============================================================================
-# Tests for rrs.py fluorescence Rrs functions
-# =============================================================================
-
-def test_calc_a_ph_bricaud():
-    """Test Bricaud phytoplankton absorption parameterization."""
-    from bing.rt import rrs
-
-    # Test single wavelength, single Chl
-    a_ph = rrs.calc_a_ph_bricaud(440, 1.0)
-    assert a_ph > 0
-    assert 0.01 < a_ph < 0.2  # Reasonable range for Chl=1
-
-    # Test wavelength dependence (blue peak > green)
-    a_ph_440 = rrs.calc_a_ph_bricaud(440, 1.0)
-    a_ph_550 = rrs.calc_a_ph_bricaud(550, 1.0)
-    assert a_ph_440 > a_ph_550
-
-    # Test Chl dependence (higher Chl = higher absorption)
-    a_ph_low = rrs.calc_a_ph_bricaud(440, 0.1)
-    a_ph_high = rrs.calc_a_ph_bricaud(440, 10.0)
-    assert a_ph_high > a_ph_low
-
-    # Test array wavelength input
-    wavelengths = np.array([400, 440, 500, 550, 675])
-    a_ph_arr = rrs.calc_a_ph_bricaud(wavelengths, 1.0)
-    assert a_ph_arr.shape == (5,)
-    assert np.all(a_ph_arr > 0)
-
-    # Test array Chl input
-    Chl_arr = np.array([0.1, 1.0, 10.0])
-    a_ph_multi = rrs.calc_a_ph_bricaud(440, Chl_arr)
-    assert a_ph_multi.shape == (3,)
-    assert np.all(np.diff(a_ph_multi) > 0)  # Increasing with Chl
-
-
-def test_calc_a_water():
-    """Test pure water absorption calculation."""
-    from bing.rt import rrs
-
-    # Test at key wavelengths
-    a_w_450 = rrs.calc_a_water(450)
-    a_w_550 = rrs.calc_a_water(550)
-    a_w_685 = rrs.calc_a_water(685)
-
-    # Water absorption increases with wavelength in red
-    assert a_w_685 > a_w_550 > a_w_450
-
-    # Test known approximate values
-    assert 0.005 < a_w_450 < 0.02   # Blue: low absorption
-    assert 0.4 < a_w_685 < 0.6     # Red: high absorption
-
-    # Test array input
-    wavelengths = np.array([400, 500, 600, 700])
-    a_w_arr = rrs.calc_a_water(wavelengths)
-    assert a_w_arr.shape == (4,)
-    assert np.all(a_w_arr > 0)
-
-
-def test_calc_bb_water():
-    """Test pure water backscattering calculation."""
-    from bing.rt import rrs
-
-    # Test at reference wavelength
-    bb_w_500 = rrs.calc_bb_water(500)
-    assert np.isclose(bb_w_500, 0.00144, rtol=0.01)
-
-    # Test wavelength dependence (decreases with wavelength)
-    bb_w_400 = rrs.calc_bb_water(400)
-    bb_w_600 = rrs.calc_bb_water(600)
-    assert bb_w_400 > bb_w_500 > bb_w_600
-
-    # Test array input
-    wavelengths = np.array([400, 500, 600, 700])
-    bb_w_arr = rrs.calc_bb_water(wavelengths)
-    assert bb_w_arr.shape == (4,)
-    assert np.all(np.diff(bb_w_arr) < 0)  # Decreasing with wavelength
-
-
-def test_calc_Rrs_fluorescence_simple():
-    """Test simplified fluorescence Rrs calculation."""
-    from bing.rt import rrs
-
-    wavelength = np.arange(650, 751, 5)
-
-    # Test for Chl = 1.0 mg/m³
-    Rrs_fl = rrs.calc_Rrs_fluorescence_simple(wavelength, Chl=1.0)
-
-    # Should be array of correct shape
-    assert Rrs_fl.shape == wavelength.shape
-
-    # All values should be positive
-    assert np.all(Rrs_fl >= 0)
-
-    # Peak should be at 685 nm
-    peak_idx = np.argmax(Rrs_fl)
-    assert 680 <= wavelength[peak_idx] <= 690
-
-    # Test Chl dependence
-    Rrs_fl_low = rrs.calc_Rrs_fluorescence_simple(wavelength, Chl=0.1)
-    Rrs_fl_high = rrs.calc_Rrs_fluorescence_simple(wavelength, Chl=10.0)
-    assert np.max(Rrs_fl_high) > np.max(Rrs_fl) > np.max(Rrs_fl_low)
-
-
-def test_calc_Rrs_fluorescence_simple_quantum_yield():
-    """Test quantum yield effect on fluorescence Rrs."""
-    from bing.rt import rrs
-
-    wavelength = np.array([685])  # At peak
-
-    # Higher quantum yield should give higher Rrs
-    Rrs_phi_low = rrs.calc_Rrs_fluorescence_simple(wavelength, Chl=1.0, phi_C=0.01)
-    Rrs_phi_high = rrs.calc_Rrs_fluorescence_simple(wavelength, Chl=1.0, phi_C=0.05)
-
-    assert Rrs_phi_high > Rrs_phi_low
-
-    # Should scale approximately linearly with phi_C
-    ratio = Rrs_phi_high / Rrs_phi_low
-    expected_ratio = 0.05 / 0.01
-    assert np.isclose(ratio, expected_ratio, rtol=0.1)
-
-
-def test_calc_Rrs_fluorescence_simple_double_gaussian():
-    """Test double Gaussian emission model."""
-    from bing.rt import rrs
-
-    wavelength = np.arange(650, 780, 5)
-
-    Rrs_single = rrs.calc_Rrs_fluorescence_simple(
-        wavelength, Chl=1.0, double_gaussian=False
-    )
-    Rrs_double = rrs.calc_Rrs_fluorescence_simple(
-        wavelength, Chl=1.0, double_gaussian=True
-    )
-
-    # Double Gaussian should have more signal around 730 nm
-    idx_730 = np.argmin(np.abs(wavelength - 730))
-    assert Rrs_double[idx_730] > Rrs_single[idx_730]
-
-    # Primary peak (685 nm) should be lower for double Gaussian
-    # (because some weight goes to secondary peak)
-    idx_685 = np.argmin(np.abs(wavelength - 685))
-    assert Rrs_single[idx_685] > Rrs_double[idx_685]
-
-
-def test_calc_Rrs_fluorescence_integrated():
-    """Test integrated fluorescence Rrs calculation."""
-    from bing.rt import rrs
-
-    wavelength = np.arange(660, 720, 5)
-
-    # Integrated calculation
-    Rrs_int = rrs.calc_Rrs_fluorescence(wavelength, Chl=1.0)
-
-    # Should be array of correct shape
-    assert Rrs_int.shape == wavelength.shape
-
-    # All values should be positive
-    assert np.all(Rrs_int >= 0)
-
-    # Peak should still be around 685 nm
-    peak_idx = np.argmax(Rrs_int)
-    assert 680 <= wavelength[peak_idx] <= 690
-
-
-def test_calc_Rrs_with_fluorescence():
-    """Test total Rrs with fluorescence."""
-    from bing.rt import rrs
-
-    wavelength = np.arange(650, 720, 5)
-
-    # Create simple IOPs
-    a = 0.5 * np.ones_like(wavelength, dtype=float)
-    bb = 0.002 * np.ones_like(wavelength, dtype=float)
-
-    # Elastic only
-    Rrs_elastic = rrs.calc_Rrs(a, bb)
-
-    # With fluorescence
-    Rrs_total = rrs.calc_Rrs_with_fluorescence(wavelength, a, bb, Chl=1.0)
-
-    # Total should be >= elastic everywhere
-    assert np.all(Rrs_total >= Rrs_elastic * 0.999)  # Small tolerance
-
-    # Enhancement should be largest around 685 nm
-    enhancement = Rrs_total - Rrs_elastic
-    peak_idx = np.argmax(enhancement)
-    assert 680 <= wavelength[peak_idx] <= 690
-
-
-def test_calc_fluorescence_spectrum():
-    """Test fluorescence spectrum convenience function."""
-    from bing.rt import rrs
-
-    # Single Chl value
-    Rrs_fl = rrs.calc_fluorescence_spectrum(Chl=1.0)
-    assert Rrs_fl.shape == (101,)  # Default 650-750 nm at 1 nm
-
-    # Multiple Chl values
-    Chl_arr = [0.1, 1.0, 10.0]
-    Rrs_fl_multi = rrs.calc_fluorescence_spectrum(Chl_arr)
-    assert Rrs_fl_multi.shape == (3, 101)
-
-    # Higher Chl should give higher fluorescence
-    assert np.max(Rrs_fl_multi[2, :]) > np.max(Rrs_fl_multi[1, :]) > np.max(Rrs_fl_multi[0, :])
-
-
-def test_calc_fluorescence_spectrum_with_components():
-    """Test fluorescence spectrum with component output."""
-    from bing.rt import rrs
-
-    wavelength, Rrs_fl, components = rrs.calc_fluorescence_spectrum(
-        Chl=1.0, return_components=True
-    )
-
-    # Check outputs
-    assert wavelength.shape == (101,)
-    assert Rrs_fl.shape == (101,)
-
-    # Check components dictionary
-    assert 'wavelength' in components
-    assert 'emission_shape' in components
-    assert 'a_water' in components
-    assert 'a_ph' in components
-
-    # Emission shape should be normalized
-    integral = np.trapz(components['emission_shape'], components['wavelength'])
-    assert np.isclose(integral, 1.0, rtol=0.05)
-
-
-def test_calc_fluorescence_spectrum_custom_wavelength():
-    """Test fluorescence spectrum with custom wavelength array."""
-    from bing.rt import rrs
-
-    custom_wave = np.arange(670, 710, 2)
-    Rrs_fl = rrs.calc_fluorescence_spectrum(Chl=1.0, wavelength=custom_wave)
-
-    assert Rrs_fl.shape == custom_wave.shape
-
-
-def test_calc_fluorescence_correction_factor():
-    """Test fluorescence correction factor calculation."""
-    from bing.rt import rrs
-
-    wavelength = np.array([650, 670, 685, 700, 720])
-    a = 0.5 * np.ones_like(wavelength, dtype=float)
-    bb = 0.002 * np.ones_like(wavelength, dtype=float)
-
-    corr = rrs.calc_fluorescence_correction_factor(wavelength, a, bb, Chl=1.0)
-
-    # Correction should be >= 1 everywhere (fluorescence adds signal)
-    assert np.all(corr >= 1.0)
-
-    # Maximum correction should be around 685 nm
-    peak_idx = np.argmax(corr)
-    assert 680 <= wavelength[peak_idx] <= 690
-
-    # Correction should be ~1 far from emission peak
-    assert np.isclose(corr[0], 1.0, rtol=0.01)  # 650 nm
-    assert np.isclose(corr[-1], 1.0, rtol=0.01)  # 720 nm
-
-
-def test_calc_fluorescence_correction_factor_chl_dependence():
-    """Test correction factor dependence on Chl."""
-    from bing.rt import rrs
-
-    wavelength = np.array([685])
-    a = np.array([0.5])
-    bb = np.array([0.002])
-
-    corr_low = rrs.calc_fluorescence_correction_factor(wavelength, a, bb, Chl=0.1)
-    corr_mid = rrs.calc_fluorescence_correction_factor(wavelength, a, bb, Chl=1.0)
-    corr_high = rrs.calc_fluorescence_correction_factor(wavelength, a, bb, Chl=10.0)
-
-    # Higher Chl should give larger correction
-    assert corr_high > corr_mid > corr_low
-
-
-def test_fluorescence_rrs_physical_values():
-    """Test that fluorescence Rrs values are physically reasonable."""
-    from bing.rt import rrs
-
-    wavelength = np.arange(650, 751, 1)
-
-    # Typical ocean conditions
-    for Chl in [0.1, 1.0, 10.0]:
-        Rrs_fl = rrs.calc_Rrs_fluorescence_simple(wavelength, Chl)
-
-        # All values should be positive
-        assert np.all(Rrs_fl >= 0)
-
-        # Peak should be reasonable magnitude
-        # Typically 10^-7 to 10^-4 sr^-1 for ocean fluorescence
-        peak = np.max(Rrs_fl)
-        assert 1e-8 < peak < 1e-3
-
-
-def test_fluorescence_rrs_consistency():
-    """Test consistency between different fluorescence Rrs calculations."""
-    from bing.rt import rrs
-
-    wavelength = np.array([685])  # Single wavelength at peak
-    Chl = 1.0
-
-    # Simple calculation
-    Rrs_simple = rrs.calc_Rrs_fluorescence_simple(wavelength, Chl)
-
-    # From spectrum
-    Rrs_spectrum = rrs.calc_fluorescence_spectrum(Chl, wavelength=wavelength)
-
-    # Should be identical
-    assert np.isclose(Rrs_simple, Rrs_spectrum, rtol=0.01)
-
-
-def test_bricaud_coefficients_wavelength_coverage():
-    """Test Bricaud parameterization across full wavelength range."""
-    from bing.rt import rrs
-
-    # Test wavelengths from UV to NIR
-    wavelengths = np.arange(350, 750, 10)
-
-    # Should not raise errors
-    a_ph = rrs.calc_a_ph_bricaud(wavelengths, 1.0)
-
-    # All values should be positive
-    assert np.all(a_ph > 0)
-
-    # Check spectral shape (peaks in blue and red)
-    idx_440 = np.argmin(np.abs(wavelengths - 440))
-    idx_550 = np.argmin(np.abs(wavelengths - 550))
-    idx_675 = np.argmin(np.abs(wavelengths - 675))
-
-    # Blue peak > green minimum
-    assert a_ph[idx_440] > a_ph[idx_550]
-    # Red peak > green minimum
-    assert a_ph[idx_675] > a_ph[idx_550]
-
-
-# =============================================================================
-# Run all tests (for notebook integration)
-# =============================================================================
-
-def run_all_tests():
-    """Run all chlorophyll fluorescence tests and return summary."""
-    tests = [
-        # chl_fl.py tests
-        ("Emission line single Gaussian", test_emission_line_single_gaussian),
-        ("Emission line double Gaussian", test_emission_line_double_gaussian),
-        ("Quantum yield constant", test_quantum_yield_constant),
-        ("Quantum yield irradiance dependent", test_quantum_yield_irradiance_dependent),
-        ("Quantum yield depth profile", test_quantum_yield_depth_profile),
-        ("Fluorescence scattering coefficient", test_fluorescence_scattering_coeff),
-        ("Fluorescence backscattering coefficient", test_fluorescence_backscattering_coeff),
-        ("Fluorescence backscatter fraction", test_fluorescence_backscatter_fraction),
-        ("Fluorescence phase function", test_fluorescence_phase_function),
-        ("Wavelength redistribution", test_wavelength_redistribution),
-        ("Absorption efficiency", test_absorption_efficiency),
-        ("Fluorescence reflectance", test_calc_R_fluorescence),
-        ("Fluorescence reflectance sensitivity", test_calc_R_fluorescence_sensitivity),
-        ("Fluorescence reflectance array", test_calc_R_fluorescence_array),
-        ("Fluorescence Line Height", test_calc_fluorescence_line_height),
-        ("FLH no fluorescence", test_calc_fluorescence_line_height_no_fluorescence),
-        ("FLH array", test_calc_fluorescence_line_height_array),
-        ("Normalized FLH", test_calc_normalized_fluorescence_line_height),
-        ("Get emission spectrum", test_get_emission_spectrum),
-        ("Get emission spectrum double Gaussian", test_get_emission_spectrum_double_gaussian),
-        ("Summary at wavelength", test_summary_at_wavelength),
-        ("Summary outside excitation range", test_summary_outside_excitation_range),
-        ("Fluorescence VSF", test_fluorescence_vsf),
-        ("End-to-end fluorescence", test_end_to_end_fluorescence_calculation),
-        ("Fluorescence vs Raman comparison", test_fluorescence_vs_raman_comparison),
-        # rrs.py fluorescence Rrs tests
-        ("Bricaud a_ph parameterization", test_calc_a_ph_bricaud),
-        ("Water absorption", test_calc_a_water),
-        ("Water backscattering", test_calc_bb_water),
-        ("Rrs fluorescence simple", test_calc_Rrs_fluorescence_simple),
-        ("Rrs fluorescence quantum yield", test_calc_Rrs_fluorescence_simple_quantum_yield),
-        ("Rrs fluorescence double Gaussian", test_calc_Rrs_fluorescence_simple_double_gaussian),
-        ("Rrs fluorescence integrated", test_calc_Rrs_fluorescence_integrated),
-        ("Rrs with fluorescence", test_calc_Rrs_with_fluorescence),
-        ("Fluorescence spectrum", test_calc_fluorescence_spectrum),
-        ("Fluorescence spectrum components", test_calc_fluorescence_spectrum_with_components),
-        ("Fluorescence spectrum custom wavelength", test_calc_fluorescence_spectrum_custom_wavelength),
-        ("Fluorescence correction factor", test_calc_fluorescence_correction_factor),
-        ("Correction factor Chl dependence", test_calc_fluorescence_correction_factor_chl_dependence),
-        ("Fluorescence Rrs physical values", test_fluorescence_rrs_physical_values),
-        ("Fluorescence Rrs consistency", test_fluorescence_rrs_consistency),
-        ("Bricaud wavelength coverage", test_bricaud_coefficients_wavelength_coverage),
-    ]
-
-    print("=" * 60)
-    print("Running All Chlorophyll Fluorescence Tests")
-    print("=" * 60)
-
-    passed = 0
-    failed = 0
-
-    for name, test_func in tests:
-        print(f"\n{'─' * 50}")
-        print(f"Test: {name}")
-        print("─" * 50)
-        try:
-            test_func()
-            print(f"✓ Passed")
-            passed += 1
-        except Exception as e:
-            print(f"✗ FAILED: {e}")
-            failed += 1
-
-    print(f"\n{'=' * 60}")
-    print(f"Summary: {passed} passed, {failed} failed out of {len(tests)} tests")
-    print("=" * 60)
-
-    return passed, failed

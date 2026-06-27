@@ -40,6 +40,8 @@ import numpy as np
 from typing import Union, Optional, Tuple
 
 
+from IPython import embed
+
 # =============================================================================
 # Physical Constants and Reference Values
 # =============================================================================
@@ -810,11 +812,6 @@ def calc_R_fluorescence_integrated(
         else:
             R_F[i] = integrand[0]
 
-    # Normalize by total Ed if needed (to get ratio-based Ed_ratio)
-    Ed_total = np.trapz(Ed, wavelength_ex) if len(wavelength_ex) > 1 else Ed[0]
-    if Ed_total > 0:
-        R_F = R_F / Ed_total * np.trapz(Ed, wavelength_ex)
-
     return R_F if len(R_F) > 1 else R_F[0]
 
 
@@ -1021,3 +1018,196 @@ def summary_at_wavelength(
         'fluorescence_backscatter_coeff_m-1': bb_C,
         'backscatter_fraction': 0.5,
     }
+
+
+
+
+def calc_Rrs_with_fluorescence(
+    wavelength: Union[float, np.ndarray],
+    a: Union[float, np.ndarray],
+    bb: Union[float, np.ndarray],
+    Chl: float,
+    phi_C: float = 0.02,
+    in_G1: Optional[float] = None,
+    in_G2: Optional[float] = None,
+    mu_d: Optional[float] = None,
+    mu_f: Optional[float] = None,
+    double_gaussian: bool = False
+) -> Union[float, np.ndarray]:
+    """
+    Calculate total Rrs including elastic scattering and fluorescence.
+
+    Parameters
+    ----------
+    wavelength : float or ndarray
+        Wavelength(s) in nanometers.
+    a : float or ndarray
+        Total absorption coefficient [m^-1].
+    bb : float or ndarray
+        Total backscattering coefficient [m^-1].
+    Chl : float
+        Chlorophyll-a concentration in mg m^-3.
+    phi_C : float, optional
+        Fluorescence quantum yield. Default is 0.02.
+    in_G1, in_G2 : float, optional
+        Gordon coefficients. If None, use defaults.
+    mu_d : float, optional
+        Mean cosine for downwelling irradiance. Default is 0.9.
+    mu_f : float, optional
+        Mean cosine for fluorescence emission. Default is 0.5.
+    double_gaussian : bool, optional
+        If True, use double Gaussian emission. Default is False.
+
+    Returns
+    -------
+    float or ndarray
+        Total Rrs (elastic + fluorescence) in sr^-1.
+
+    Examples
+    --------
+    >>> wavelength = np.linspace(400, 750, 100)
+    >>> a = 0.1 * np.ones_like(wavelength)  # Simplified
+    >>> bb = 0.002 * np.ones_like(wavelength)
+    >>> Rrs_total = calc_Rrs_with_fluorescence(wavelength, a, bb, Chl=1.0)
+    """
+    # Elastic Rrs (Gordon model)
+    Rrs_elastic = calc_Rrs(a, bb, in_G1, in_G2)
+
+    # Fluorescence Rrs
+    Rrs_fl = calc_Rrs_fluorescence_simple(
+        wavelength, Chl, phi_C,
+        mu_d=mu_d, mu_f=mu_f,
+        double_gaussian=double_gaussian
+    )
+
+    return Rrs_elastic + Rrs_fl
+
+
+def calc_fluorescence_spectrum(
+    Chl: Union[float, np.ndarray],
+    wavelength: Optional[np.ndarray] = None,
+    phi_C: float = 0.02,
+    double_gaussian: bool = False,
+    return_components: bool = False
+) -> Union[np.ndarray, Tuple[np.ndarray, dict]]:
+    """
+    Calculate the full fluorescence Rrs spectrum for given Chl concentrations.
+
+    This is a convenience function that returns the fluorescence spectrum
+    across the emission range (typically 650-750 nm).
+
+    Parameters
+    ----------
+    Chl : float or ndarray
+        Chlorophyll-a concentration(s) in mg m^-3.
+    wavelength : ndarray, optional
+        Emission wavelengths in nm. If None, uses 650-750 nm at 1 nm resolution.
+    phi_C : float, optional
+        Fluorescence quantum yield. Default is 0.02.
+    double_gaussian : bool, optional
+        If True, use double Gaussian emission. Default is False.
+    return_components : bool, optional
+        If True, also return component spectra. Default is False.
+
+    Returns
+    -------
+    Rrs_fl : ndarray
+        Fluorescence Rrs spectrum. Shape is (len(Chl), len(wavelength)) if
+        Chl is an array, otherwise (len(wavelength),).
+    components : dict, optional
+        If return_components=True, dictionary containing:
+        - 'wavelength': wavelength array
+        - 'emission_shape': normalized emission line shape
+        - 'a_water': water absorption at emission wavelengths
+        - 'a_ph': phytoplankton absorption at emission wavelengths
+
+    Examples
+    --------
+    >>> Chl_values = [0.1, 1.0, 10.0]  # mg m^-3
+    >>> Rrs_fl = calc_fluorescence_spectrum(Chl_values)
+    >>> print(f"Shape: {Rrs_fl.shape}")  # (3, 101)
+
+    >>> wavelength, Rrs_fl, components = calc_fluorescence_spectrum(
+    ...     1.0, return_components=True)
+    """
+    from . import chl_fl
+
+    if wavelength is None:
+        wavelength = np.arange(650, 751, 1.0)
+
+    Chl = np.atleast_1d(Chl)
+
+    # Output array
+    Rrs_fl = np.zeros((len(Chl), len(wavelength)))
+
+    for i, chl in enumerate(Chl):
+        Rrs_fl[i, :] = calc_Rrs_fluorescence_simple(
+            wavelength, chl, phi_C, double_gaussian=double_gaussian
+        )
+
+    Rrs_fl = np.squeeze(Rrs_fl)
+
+    if return_components:
+        # Get emission line shape
+        if double_gaussian:
+            emission_shape = chl_fl.emission_line_double_gaussian(wavelength)
+        else:
+            emission_shape = chl_fl.emission_line_single_gaussian(wavelength)
+
+        components = {
+            'wavelength': wavelength,
+            'emission_shape': emission_shape,
+            'a_water': calc_a_water(wavelength),
+            'a_ph': calc_a_ph_bricaud(wavelength, Chl[0] if len(Chl) == 1 else 1.0),
+        }
+        return wavelength, Rrs_fl, components
+
+    return Rrs_fl
+
+
+def calc_fluorescence_correction_factor(
+    wavelength: Union[float, np.ndarray],
+    a: Union[float, np.ndarray],
+    bb: Union[float, np.ndarray],
+    Chl: float,
+    phi_C: float = 0.02,
+    in_G1: Optional[float] = None,
+    in_G2: Optional[float] = None
+) -> Union[float, np.ndarray]:
+    """
+    Calculate the multiplicative correction factor for fluorescence.
+
+    This returns the ratio of total Rrs (elastic + fluorescence) to elastic Rrs,
+    useful for understanding the fluorescence contribution.
+
+    Parameters
+    ----------
+    wavelength : float or ndarray
+        Wavelength(s) in nanometers.
+    a : float or ndarray
+        Total absorption coefficient [m^-1].
+    bb : float or ndarray
+        Total backscattering coefficient [m^-1].
+    Chl : float
+        Chlorophyll-a concentration in mg m^-3.
+    phi_C : float, optional
+        Fluorescence quantum yield. Default is 0.02.
+    in_G1, in_G2 : float, optional
+        Gordon coefficients. If None, use defaults.
+
+    Returns
+    -------
+    float or ndarray
+        Correction factor: (Rrs_elastic + Rrs_fluorescence) / Rrs_elastic
+
+    Notes
+    -----
+    Values > 1 indicate wavelengths where fluorescence adds signal.
+    The correction is typically largest near 685 nm (the fluorescence peak)
+    and approaches 1 at wavelengths away from the emission band.
+    """
+    Rrs_elastic = calc_Rrs(a, bb, in_G1, in_G2)
+
+    Rrs_fl = calc_Rrs_fluorescence_simple(wavelength, Chl, phi_C)
+
+    return (Rrs_elastic + Rrs_fl) / Rrs_elastic

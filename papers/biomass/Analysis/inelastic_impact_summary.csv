@@ -1,0 +1,17 @@
+Process,Band/Range,ΔRrs (sr^-1),ΔRrs / Rrs_no (%)
+Raman (abs/rel),Integrated 400–550,0.0003463050277787261,8.107637
+Raman (abs/rel),Integrated 660–710,1.0647388171491911e-05,11.312452
+Raman (abs/rel),443 nm,0.00031091622076928616,4.95571
+Raman (abs/rel),490 nm,0.0003760014660656452,8.435014
+Raman (abs/rel),510 nm,0.00024374868371523917,9.569119
+Raman (abs/rel),555 nm,0.00015186957898549736,11.8063755
+Raman (abs/rel),670 nm,1.2603333743754774e-05,11.190379
+Raman (abs/rel),700 nm,8.34631919133244e-06,11.411281
+Fluo-only (abs/rel),Integrated 400–550,0.0,0.0
+Fluo-only (abs/rel),Integrated 660–710,5.207548238104209e-05,36.1574
+Fluo-only (abs/rel),443 nm,0.0,0.0
+Fluo-only (abs/rel),490 nm,0.0,0.0
+Fluo-only (abs/rel),510 nm,0.0,0.0
+Fluo-only (abs/rel),555 nm,0.0,0.0
+Fluo-only (abs/rel),670 nm,3.7541682104347274e-05,24.466139
+Fluo-only (abs/rel),700 nm,3.272837057011202e-05,30.754358

@@ -18,15 +18,16 @@ import seaborn as sns
 
 import corner
 
-from oceancolor.utils import plotting 
-from oceancolor.hydrolight import loisel23
-from oceancolor.satellites import pace as sat_pace
-from oceancolor.satellites import seawifs as sat_seawifs
-from oceancolor.satellites import modis as sat_modis
+from ocpy.utils import plotting 
+from ocpy.hydrolight import loisel23
+from ocpy.pace import io as pace_io
+from ocpy.satellites import pace as sat_pace
+from ocpy.satellites import seawifs as sat_seawifs
+from ocpy.satellites import modis as sat_modis
 
-from bing import plotting as bing_plot
-from bing.models import utils as model_utils
-from bing.models import functions
+#from bing import plotting as bing_plot
+#from bing.models import utils as model_utils
+#from bing.models import functions
 
 #from bing.models import anw as bing_anw
 #from bing.models import bbnw as bing_bbnw
@@ -175,6 +176,65 @@ def talks_compare_models(models:list, idx:int, axes:list,
             ax.tick_params(labelbottom=False)  # Hide x-axis labels
 
 
+def fig_rrs_spectra(outfile = 'fig_rrs_spectra.png', no_pace=False):
+    # Load PACE data
+    gfile = os.path.join(os.getenv('OS_COLOR'), 'PACE', 
+                         'L2_AOP', 'PACE_OCI.20250401T171221.L2.OC_AOP.V3_0.nc')
+    ix,iy = 500, 200
+
+    wls, rrs, rrs_unc, flag, pixel_coords = pace_io.load_oci_l2_spectrum_pixel(gfile, ix, iy)
+
+    # Degrade to GCOM-C
+    bands = {
+        380: 10,
+        412: 10,
+        443: 10,
+        490: 10, 
+        530: 20,
+        565: 20,
+        673.5: 20}
+    gcom_c_wls = []
+    gcom_c_rrs = []
+
+    dw = wls[1] - wls[0]
+    for band, width in bands.items():
+        iband = np.argmin(np.abs(wls-band))
+        npix = int(np.round(width/dw)/2)
+        # Average
+        rrs_band = rrs[iband-npix:iband+npix].mean()
+        # Save
+        gcom_c_wls.append(band)
+        gcom_c_rrs.append(rrs_band)
+
+
+    # Plot
+    fig = plt.figure(figsize=(10,6))
+    plt.clf()
+    ax = plt.subplot(111)
+    #PACE
+    if not no_pace:
+        ax.plot(wls, rrs, 'ko', label='PACE')
+    # GCOM-C
+    ax.plot(gcom_c_wls, gcom_c_rrs, 'bs', markersize=20, label='GCOM-C')
+    #ax.plot(wls, rrs_unc, 'r-', label='Rrs uncertainty')
+
+    # Axes
+    plotting.set_fontsize(ax, 20)
+    ax.legend(fontsize=20)
+    ax.set_xlabel('Wavelength (nm)')
+    ax.set_ylabel(r'$R_{rs}$ (sr$^{-1}$)')
+    ax.set_xlim(400., 700.)
+    ax.set_ylim(-0.001, 1.1*rrs.max())
+    # zero line
+    ax.plot([400., 700.], [0., 0.], '--', color='green', linewidth=2)
+    ax.grid()
+    #ax.set_yscale('log')
+
+    plt.tight_layout()
+    plt.savefig(outfile, dpi=300)
+    print(f"Saved: {outfile}")
+    
+
 
 def main(flg):
     if flg== 'all':
@@ -185,6 +245,12 @@ def main(flg):
     # Spectra
     if flg == 1:
         fig_build_up_the_fits()
+
+    # Example spectrum
+    if flg == 2:
+        fig_rrs_spectra()
+        fig_rrs_spectra(outfile='fig_rrs_spectra_nopace.png',
+                        no_pace=True)
 
 
 # Command line execution

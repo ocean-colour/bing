@@ -1,0 +1,31 @@
+
+
+# RT dict
+
+def rt_dict_from_p(p):
+    """
+    Prepare data and models for L23 fitting.
+    This function initializes the necessary data, models, priors, and MCMC 
+    parameters for fitting L23 data. It also handles wavelength conversions, 
+    noise scaling, and initial guesses for the fitting process.
+
+    Args:
+        p (object): Parameter object containing configuration 
+            radiative transfer options
+    """
+
+    rt_dict = {}
+    for key in ['variable_Gordon',
+                'variable_Gordon_G0',
+                'variable_Gordon_bbp',
+                'include_Raman',
+                'include_Chl_fl',
+                'phi_C',
+                'double_gaussian']:
+        if hasattr(p,key):
+            rt_dict[key] = getattr(p, key)
+        else:
+            rt_dict[key] = None
+
+    # Return
+    return rt_dict

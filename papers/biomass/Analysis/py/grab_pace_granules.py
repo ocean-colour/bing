@@ -13,15 +13,28 @@ from ocpy.utils import coords as ocpy_coords
 
 from remote_sensing.download import earthaccess as rs_ea
 
+# Locals
+import biomass_io
+
 from IPython import embed
 
-# PACE Granule path
-PACE_L2_AOP_PATH = os.path.join(os.getenv('OS_COLOR'),
-                                 'PACE',
-                                 'L2_AOP')
-PACE_L2_IOP_PATH = PACE_L2_AOP_PATH.replace('AOP', 'IOP')
+# PACE Granule paths
 
-def build_json(outfile:str='PACE_50clouds.json', cloud_cover=(0,50)):
+# Short names for earthaccess searches
+PACE_SHORT_NAMES = {
+    'AOP': 'PACE_OCI_L2_AOP',
+    'L1B': 'PACE_OCI_L1B_SCI',
+    'L1C': 'PACE_OCI_L1C_SCI',
+}
+
+# Output paths for each level
+PACE_L1_PATHS = {
+    'L1B': biomass_io.PACE_L1B_PATH,
+    'L1C': biomass_io.PACE_L1C_PATH,
+}
+
+def build_json(outfile:str='PACE_50clouds.json', dataset:str='AOP',
+    cloud_cover=(0,50)):
     """
     Fetches granules from the PACE dataset with specified cloud cover constraints,
     then saves the results to a JSON file.
@@ -48,7 +61,7 @@ def build_json(outfile:str='PACE_50clouds.json', cloud_cover=(0,50)):
 
     # Grab em
     all_results = earthaccess.search_data(
-        short_name="PACE_OCI_L2_AOP",
+        short_name=PACE_SHORT_NAMES[dataset],
         cloud_cover=cloud_cover,
     )
 
@@ -60,12 +73,133 @@ def build_json(outfile:str='PACE_50clouds.json', cloud_cover=(0,50)):
     ocpy_io.savejson(outfile, jdict)
     print(f'Wrote {len(full_dict)} granules to {outfile}')
 
-def download_matched(match_file:str, IOP:bool=False):
+def build_json_l1(outfile:str=None,
+                  level:str='L1C',
+                  temporal:tuple=None,
+                  bounding_box:tuple=None):
+    """
+    Fetches Level-1B or Level-1C granules from the PACE dataset,
+    then saves the results to a JSON file.
+
+    Args:
+        outfile (str): The name of the output JSON file where the granules will be saved.
+                        Defaults to 'PACE_{level}.json'.
+        level (str): Data level to fetch, either 'L1B' or 'L1C'. Defaults to 'L1C'.
+        temporal (tuple): A tuple of date strings (start, end) in format 'YYYY-MM-DD'.
+                          If None, searches all available data.
+        bounding_box (tuple): A tuple of (west, south, east, north) coordinates.
+                              If None, searches globally.
+
+    Returns:
+        None
+    """
+    # Validate level
+    level = level.upper()
+    if level not in PACE_SHORT_NAMES:
+        raise ValueError(f"level must be one of {list(PACE_SHORT_NAMES.keys())}, got '{level}'")
+
+    # Default output file
+    if outfile is None:
+        outfile = f'PACE_{level}.json'
+
+    # Authorize
+    auth = earthaccess.login(persist=True)
+
+    # Build search parameters
+    search_params = dict(short_name=PACE_SHORT_NAMES[level])
+    if temporal is not None:
+        search_params['temporal'] = temporal
+    if bounding_box is not None:
+        search_params['bounding_box'] = bounding_box
+
+    # Grab em
+    all_results = earthaccess.search_data(**search_params)
+
+    # Generate dict
+    full_dict = rs_ea.granules_to_dict(all_results)
+
+    # JSON
+    jdict = ocpy_io.jsonify(full_dict)
+    ocpy_io.savejson(outfile, jdict)
+    print(f'Wrote {len(full_dict)} {level} granules to {outfile}')
+
+
+def download_l1(json_file:str=None,
+                level:str='L1B',
+                max_granules:int=None,
+                output_path:str=None):
+    """
+    Downloads PACE Level-1B or Level-1C granules from a JSON file.
+
+    Args:
+        json_file (str): Path to the JSON file containing granule metadata.
+                         Defaults to 'PACE_{level}.json'.
+        level (str): Data level, either 'L1B' or 'L1C'. Defaults to 'L1B'.
+        max_granules (int, optional): Maximum number of granules to download.
+                                      Set to 1 for testing. If None, downloads all.
+        output_path (str, optional): Path to save downloaded files.
+                                     Defaults to PACE_L1B_PATH or PACE_L1C_PATH based on level.
+
+    Returns:
+        list: List of paths to downloaded files.
+    """
+    # Validate level
+    level = level.upper()
+    if level not in PACE_L1_PATHS:
+        raise ValueError(f"level must be one of {list(PACE_L1_PATHS.keys())}, got '{level}'")
+
+    # Default JSON file
+    if json_file is None:
+        json_file = f'PACE_{level}.json'
+
+    # Default output path
+    if output_path is None:
+        output_path = PACE_L1_PATHS[level]
+
+    # Create output directory if it doesn't exist
+    os.makedirs(output_path, exist_ok=True)
+
+    # Load granules from JSON
+    granules, pace_df = biomass_io.load_granules_from_json(json_file)
+
+    # Limit number of granules if specified
+    if max_granules is not None:
+        pace_df = pace_df.head(max_granules)
+        print(f'Limiting download to {max_granules} granule(s) for testing')
+
+    downloaded_files = []
+
+    # Loop on granules
+    for irow in range(len(pace_df)):
+        granule = pace_df.iloc[irow]
+        url = granule.url
+
+        outfile = os.path.join(output_path, os.path.basename(url))
+
+        # Check if already downloaded
+        if os.path.exists(outfile):
+            print(f'Already downloaded {outfile}')
+            downloaded_files.append(outfile)
+            continue
+
+        # wget
+        print(f'Downloading {irow+1}/{len(pace_df)}: {os.path.basename(url)}')
+        result = subprocess.run(['wget', '-O', outfile, url])
+        if result.returncode == 0:
+            downloaded_files.append(outfile)
+        else:
+            print(f'Failed to download {url}')
+
+    print(f'Downloaded {len(downloaded_files)} {level} granule(s) to {output_path}')
+    return downloaded_files
+
+def download_matched(match_file:str, granule_file:str, IOP:bool=False, L1B:bool=False):
     """ Downloads PACE granules matched to Argo profiles from a given CSV file.
 
     Args:
         match_file (str): Path to the CSV file containing matched Argo profiles and PACE IDs.
         IOP (bool, optional): If True, downloads IOP granules instead of AOP granules. Defaults to False.
+        L1B (bool, optional): If True, downloads L1B granules instead of AOP granules. Defaults to False.
 
     """
 
@@ -73,7 +207,7 @@ def download_matched(match_file:str, IOP:bool=False):
     matched = pandas.read_csv(match_file)
 
     # Load up PACE granules
-    granules, pace = load_from_json('PACE_50clouds.json')
+    granules, pace = biomass_io.load_granules_from_json(granule_file)
 
     # Loop on Argo profiles
     for irow in range(len(matched)):
@@ -90,11 +224,20 @@ def download_matched(match_file:str, IOP:bool=False):
 
             url = granule.url
             if IOP: 
-                path = PACE_L2_IOP_PATH
+                path = biomass_io.PACE_L2_IOP_PATH
                 url = url.replace('AOP', 'IOP')
                 url = url.replace('V3_0', 'V3_1')
-            else:
-                path = PACE_L2_AOP_PATH
+            elif L1B: 
+                path = biomass_io.PACE_L1B_PATH
+                #embed(header='234 1B')
+                url = url.replace('L2.OC_AOP', 'L1B')
+                url = url.replace('V3_0', 'V3')
+            else: # AOP
+                path = biomass_io.PACE_L2_AOP_PATH
+            # Generate path if need be
+            if not os.path.exists(path):
+                os.makedirs(path, exist_ok=True)
+            # Outfile
             outfile = os.path.join(path,
                 os.path.basename(url))
             # Check if already downloaded
@@ -105,8 +248,8 @@ def download_matched(match_file:str, IOP:bool=False):
             subprocess.run(['wget', '-O', outfile, url])
     print(f'Downloaded {len(matched)} Argo profiles to {path}')
 
-def find_closest(match_file:str, iRrs:int=38,
-                 debug:bool=False, skip_to:int=None):
+def find_closest(match_file:str, granule_file:str, iRrs:int=38,
+                 debug:bool=False, skip_to:int=None, update_from:str=None):
     """
     Finds the closest PACE granule for each Argo profile in the given match file.
 
@@ -116,9 +259,14 @@ def find_closest(match_file:str, iRrs:int=38,
 
     Args:
         match_file (str): Path to the CSV file containing matched Argo profiles and PACE IDs.
+        granule_file (str): Path to the JSON file containing PACE granule data.
         iRrs (int, optional): Index of the Rrs band to use for validation. Defaults to 38.
         debug (bool, optional): If True, processes only the first few rows for debugging. Defaults to False.
         skip_to (int, optional): If provided, skips processing rows until the specified index. Defaults to None.
+        update_from (str, optional): Path to a CSV file with pre-computed closest granules
+            (columns: cruise, profile, closest_id, closest_file, closest_dist_km, closest_time).
+            Profiles matching by (cruise, profile) will use cached values and skip reprocessing.
+            Defaults to None.
 
     Returns:
         None: The function modifies the input CSV file in place by adding columns for the closest granule's
@@ -136,7 +284,22 @@ def find_closest(match_file:str, iRrs:int=38,
     matched = pandas.read_csv(match_file)
 
     # Load up PACE granules
-    granules, pace = load_from_json('PACE_50clouds.json')
+    granules, pace = biomass_io.load_granules_from_json(granule_file)
+
+    # Build a lookup from update_from CSV to skip already-processed profiles
+    update_lookup = {}
+    if update_from is not None:
+        update_df = pandas.read_csv(update_from)
+        # Index by (cruise, profile) for fast lookup
+        for _, urow in update_df.iterrows():
+            key = (str(urow['cruise']), int(urow['profile']))
+            update_lookup[key] = {
+                'closest_id': urow['closest_id'],
+                'closest_file': urow['closest_file'],
+                'closest_dist_km': urow['closest_dist_km'],
+                'closest_time': urow['closest_time'],
+            }
+        print(f'Loaded {len(update_lookup)} pre-computed closest granules from {update_from}')
 
     # Items to add to the table
     sv_ids = []
@@ -150,10 +313,23 @@ def find_closest(match_file:str, iRrs:int=38,
         if skip_to is not None and irow < (skip_to-1):
             continue
 
+        # Check if this profile was already processed via update_from
+        profile_key = (str(row['cruise']), int(row['profile']))
+        if profile_key in update_lookup:
+            cached = update_lookup[profile_key]
+            sv_ids.append(cached['closest_id'])
+            sv_file.append(cached['closest_file'])
+            sv_dist.append(cached['closest_dist_km'])
+            sv_time.append(cached['closest_time'])
+            print(f'Using cached closest for {irow+1}/{len(matched)}: '
+                  f'{profile_key[0]} profile {profile_key[1]}')
+            continue
+
         # Get the PACE IDs
         pace_ids = row['pace_ids'].split(',')
 
         mind = 1e9
+        best_g = None
         # Find the granules
         for jj, pace_id in enumerate(pace_ids):
             print(f'Processing {irow+1}/{len(matched)}: {pace_id} ({jj+1}/{len(pace_ids)})')
@@ -161,25 +337,23 @@ def find_closest(match_file:str, iRrs:int=38,
             granule = pace.iloc[ss]
             #embed(header=f'Granule for {pace_id}')
 
-            pace_file = os.path.join(PACE_L2_AOP_PATH,
+            pace_file = os.path.join(biomass_io.PACE_L2_AOP_PATH,
                 os.path.basename(granule.url))
 
             # Load up
             xds, flags = pace_io.load_oci_l2(pace_file)
-            Rrs_ok = xds.Rrs_unc.values[:,:,iRrs] > 0.
-            if not np.any(Rrs_ok):
+            if debug:
+                embed(header='315 of find_closest')
+
+            # Find closest
+            d_min, dmin_ij = closest_Rrs(xds, (row.lat, row.lon),
+                                 nclosest=2, iRrs=iRrs)
+            if d_min is None:
                 print(f'No valid Rrs found in {pace_file}, skipping')
                 continue
-
-            # Closest good Rrs
-            coords = np.stack((xds.latitude.values.flatten(), 
-                   xds.longitude.values.flatten()), axis=1)
-            d = ocpy_coords.distance_from_latlon((
-                row.lat, row.lon), coords)
-            dmin = d[Rrs_ok.flatten()].min()
-            # 
-            if dmin < mind:
-                mind = dmin
+            #
+            if d_min[0] < mind:
+                mind = d_min[0]
                 best_g = granule
 
         # Save best
@@ -202,12 +376,12 @@ def find_closest(match_file:str, iRrs:int=38,
 
     # Debug?
     if debug:
-        embed(header='152 of grab')
         print(f'Debug mode, only processed {irow+1} of {len(matched)}')
         cut = np.array([False]*len(matched))
         cut[:irow+1] = True
         matched = matched[cut].copy()
         matched.reset_index(drop=True, inplace=True)
+        embed(header='355 of grab')
 
     # Add to table
     #embed(header='160 of grab')
@@ -217,7 +391,8 @@ def find_closest(match_file:str, iRrs:int=38,
     matched['closest_time'] = sv_time
 
     # Write
-    matched.to_csv(match_file, index=False)
+    if not debug:
+        matched.to_csv(match_file, index=False)
 
 def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38, nclosest:int=1):
     """
@@ -234,7 +409,9 @@ def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38, nclosest:int=1):
             - float: The minimum distance(s) to the closest valid Rrs value.
             - tuple: The indices (i, j) of the closest valid Rrs value in the dataset.
     """
-    Rrs_ok = xds.Rrs_unc.values[:,:,iRrs] > 0.
+    # Flags would be better
+    Rrs_ok = (xds.Rrs_unc.values[:,:,iRrs] > 0.) & np.isfinite(xds.Rrs.values[:,:,iRrs])
+    #
     lat_ok = np.isfinite(xds.latitude.values)
     lon_ok = np.isfinite(xds.longitude.values)
     ok_idx = np.where((Rrs_ok & lat_ok & lon_ok).flatten())[0]
@@ -257,28 +434,6 @@ def closest_Rrs(xds, lat_lon:tuple, iRrs:int=38, nclosest:int=1):
 
     return d[idx_srt], dmin_ij
 
-def load_from_json(json_file:str):
-    """
-    Load granule data from a JSON file and build a corresponding data table.
-
-    Args:
-        json_file (str): Path to the JSON file containing granule data.
-
-    Returns:
-        tuple: A tuple containing:
-            - granules (dict): The loaded granule data as a dictionary.
-            - df (pandas.DataFrame): A DataFrame representing the granule data table,
-                with optional antimeridian fixes applied.
-    """
-    # Load
-    granules = ocpy_io.loadjson(json_file)
-
-    # Build the table
-    df = rs_ea.build_granule_table(granules, 
-                                   fix_antimeridian=True)
-
-    # Return
-    return granules, df
         
 
 # Command line
@@ -287,9 +442,11 @@ if __name__ == '__main__':
     build = False
     download = True
     closest = False
+    build_l1 = False
+    download_l1b_flag = False
 
     if build:
-        # Build the JSON file
+        # Build the JSON file for L2 AOP
         build_json(outfile='PACE_50clouds.json', cloud_cover=(0,50))
 
     # Download nearest granules
@@ -297,11 +454,37 @@ if __name__ == '__main__':
         # Download nearest granules
         # AOP granules
         #download_matched('matched_argo_bgc_profiles_bbp.csv')
-        
+
         # IOP granules
-        download_matched('matched_argo_bgc_profiles_bbp.csv', IOP=True)
+        #download_matched('matched_argo_bgc_profiles_bbp.csv', IOP=True)
+
+        # L1B granules
+        download_matched('matched_argo_bgc_profiles_bbp.csv', L1B=True)
 
     if closest:
         # Find closest granules
         find_closest('matched_argo_bgc_profiles_bbp.csv',
                      debug=False)#, skip_to=799)
+
+    if build_l1:
+        # Build the JSON file for L1B or L1C granules
+        # Example with temporal and spatial constraints:
+        # build_json_l1(level='L1C',
+        #               temporal=('2024-04-01', '2024-04-30'),
+        #               bounding_box=(-180, -60, 180, 60))
+        #
+        # For L1B:
+        build_json(outfile='PACE_L1B_50clouds.json', 
+            dataset='L1B', cloud_cover=(0,50))
+        #build_json_l1(level='L1C')
+        #build_json_l1(level='L1B')
+
+"""
+    if download_l1c_flag:
+        # Download L1B or L1C granules
+        # Set max_granules=1 to download just 1 image for testing
+        #
+        # For L1B:
+        download_l1(level='L1B', max_granules=1)
+        #download_l1(level='L1C', max_granules=1)
+"""

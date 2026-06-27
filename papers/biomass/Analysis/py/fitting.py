@@ -7,6 +7,7 @@ from matplotlib import pyplot as plt
 import matplotlib as mpl
 import matplotlib.gridspec as gridspec
 import matplotlib.image as mpimg
+
 mpl.rcParams['font.family'] = 'stixgeneral'
 
 from functools import partial
@@ -16,40 +17,95 @@ from tqdm import tqdm
 import corner
 import pandas
 
+
 from ocpy.water import absorption
 from ocpy.water import scattering as w_scattering
 from ocpy.utils import plotting
 from ocpy.pace import io as pace_io
 
+from correct_atmosphere import downwelling
+
 from bing import evaluate
+from bing import plotting as bing_plot
 from bing.parameters import standard
 from bing.models import utils as model_utils
 from bing.priors import priors as bing_priors
 from bing.fitting import inference as bing_inf
 from bing.fitting import chisq_fit
+from bing.rt import defs as rt_defs
+from bing.rt import chl_fl
 
 # Locals
 from grab_pace_granules import closest_Rrs
+import biomass_io
 
 from IPython import embed
 
-def chains_to_param(fit:dict):
-    iwave = fit['wave']
+#def chains_to_param(fit:dict):
+#    iwave = fit['wave']
+#
+#    # Init models
+#    p = standard.expb_pow()
+#    models = model_utils.init(p.model_names, iwave)
+#    bing_priors.set_standard_priors(models, p)
+#    pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
 
-    # Init models
-    p = standard.expb_pow()
-    models = model_utils.init(p.model_names, iwave)
-    bing_priors.set_standard_priors(models, p)
-    pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
 
-def fit_me(items):
+def fit_me(items:list[tuple], debug:bool=False, in_p=None, return_early:bool=False,
+    guess_vals:np.ndarray=None, RT_correction:np.ndarray=None):
+    """
+    Fit a single spectrum.
+
+    Parameters:
+    -----------
+    items : list[tuple]
+        A list containing the following items:
+        - iwave : numpy.ndarray
+        - ispec : numpy.ndarray
+        - isig : numpy.ndarray
+    in_p : dict, optional
+        A dictionary containing the parameters for the model.
+    return_early : bool, optional
+        If True, return the models, ans, and rt_dict.
+    guess_vals : np.ndarray, optional
+        An array containing the initial guess values for the parameters.
+    RT_correction : np.ndarray, optional
+        This is a hack to explore RT effects
+
+    Returns:
+    --------
+    tuple: (models, chains, ans, stats)
+        - models : list
+        - chains : numpy.ndarray
+        - ans : numpy.ndarray
+        - stats : dict
+        - rt_dict : dict
+    """
 
     iwave, ispec, isig = items
 
     # Init models
-    p = standard.expb_pow()
+    if in_p is None:
+        p = standard.expb_pow(satellite='PACE', add_noise=False,
+            variable_Gordon=True, include_Raman=True,
+            include_Chl_fl=True, phi_C=0.02, double_gaussian=True)
+    else:
+        p = in_p
     models = model_utils.init(p.model_names, iwave)
+
+    # RT
+    if p.variable_Gordon:
+        models[0].init_var_gordon(include_G0=p.variable_Gordon_G0)
+    if p.include_Chl_fl:
+        Ed = downwelling.downwelling_irradiance(models[0].wave, 0.)
+        Ed_em = downwelling.downwelling_irradiance(chl_fl.LAMBDA_FL_PRIMARY, 0.)
+        models[0].init_Chl_fluorescence(Ed=Ed, Ed_em=Ed_em)
+
+    #embed(header='102 of fitting.py')
+    # Priors
     bing_priors.set_standard_priors(models, p)
+
+    # Initialize the MCMC
     pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
 
     # Fit with LM for first guess
@@ -61,14 +117,40 @@ def fit_me(items):
     #
     bounds = (np.array(low_bounds), np.array(high_bounds))
 
-    p0 = [-1, 0.015, -1, -1, 1.5]
+    if guess_vals is None:
+        p0 = [-2, 0.015, -2, -2, 1.5]
+    else:
+        p0 = guess_vals
     items = [(ispec, isig**2, p0, 0)]
 
+    rt_dict = rt_defs.rt_dict_from_p(p)
+
+    if RT_correction is not None:
+        rt_dict['RT_correction'] = RT_correction
+
+    #embed(header='101 of fitting.py')
+
+    # LM
     try:
-        ans, cov, idx = chisq_fit.fit(items[0], models, bounds=bounds)
-    except RuntimeError:
+        ans, cov, idx = chisq_fit.fit(items[0], models, rt_dict, bounds=bounds)
+    #except RuntimeError:
+    except:
+        embed(header='127 of fitting.py')
         print("Fit failed: saving -999")
         return None, None, None, None
+    
+    # Return here?
+    if return_early:
+        return models, ans, rt_dict 
+    
+    # Plot?
+    if debug:
+        embed(header='121 of fitting.py')
+        Chl = 10**ans[2] / 0.05582
+        _ = bing_plot.show_fits(models, ans, rt_dict, Chl, None,
+                figsize=(12,4), fontsize=13., show=True,
+                Rrs_true=dict(wave=models[0].wave, spec=ispec, var=isig**2),
+                log_abb=True )
 
     # Now the MCMC
     p0 = ans.tolist()
@@ -78,11 +160,11 @@ def fit_me(items):
 
     print("----- Fitting with MCMC -----")
     chains, idx = bing_inf.fit_one(
-        items[0], models=models, pdict=pdict, chains_only=True)
+        items[0], models=models, pdict=pdict, chains_only=True, rt_dict=rt_dict)
     stats = evaluate.calc_stats(chains)
 
      # Return
-    return models, chains, ans, stats
+    return models, chains, ans, stats, rt_dict, pdict, p
 
 def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
             nclosest:int=1, n_cores:int=10):
@@ -142,8 +224,8 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
     out_dict = {}
 
     # Load PACE file
-    gfile = os.path.join(os.getenv('OS_COLOR'), 'PACE', 'L2_AOP', 
-                     imatched.closest_file)
+    gfile = os.path.join(biomass_io.PACE_L2_AOP_PATH,
+                            imatched.closest_file)
     print(f"----- Loading {gfile} -----")
     xds, flags = pace_io.load_oci_l2(gfile)
 
@@ -156,8 +238,8 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
         np.savez(outfile, **out_dict)
         return
 
-    if debug:
-        embed(header='44 of fitting.py')
+    #if debug:
+    #    embed(header='196 of fitting.py')
 
     # Parse out the data
     gd_wave = (xds.wavelength.data >= 400.) &  (xds.wavelength.data <= 700.) 
@@ -174,7 +256,8 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
         items.append((iwave, ispec, isig))
 
     # Fit
-    #models, chains, ans, stats = fit_me([iwave, ispec, isig])
+    if debug:
+        models, chains, ans, stats, rt_dict, pdict, p = fit_me(items[0], debug=True) 
 
     with ProcessPoolExecutor(max_workers=n_cores) as executor:
         chunksize = nclosest // n_cores if nclosest // n_cores > 0 else 1
@@ -213,7 +296,7 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
         return
 
     # Grab the closest
-    models, chains, ans, stats = answers[ok_ss[0]]
+    models, chains, ans, stats, rt_dict, pdict = answers[ok_ss[0]]
     ispec, isig = all_spec[0][1], all_spec[0][2]
 
     out_dict['chains'] = chains
@@ -237,23 +320,118 @@ def fit_one(imatched:pandas.Series, outfile:str, debug:bool=False,
     # Plot me
     print("----- Plotting -----")
     title = f'Float={imatched.cruise}-{imatched.profile}, lat={imatched.lat:.1f},'+\
-    f'lon={imatched.lon:.1f}, time={imatched.time[:19]}, {imatched.closest_id[12:-9]}, dist={all_dist[0]:.1f} km'
+    f'lon={imatched.lon:.1f}, time={imatched.time[:19]}, {imatched.closest_id[12:-7]}, dist={all_dist[0]:.1f} km'
     Rrs_obs=dict(wave=models[0].wave, spec=ispec, var=isig**2)
     plotfile=outfile.replace('.npz', '.png')
-    plot_fit(models, chains, Rrs_obs, title, show_Rsig=True,
+    plot_fit(models, chains, Rrs_obs, title, rt_dict, show_Rsig=True,
                    outfile=plotfile)
 
     
 
-def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
-             outfile:str=None, 
-             ulist:list=None, 
+def plot_fit(models, chains, Rrs_obs, title:str, rt_dict:dict, stats:dict=None,
+             add_Rrs:np.ndarray=None,
+             true_bbp:np.ndarray=None,
+             true_anw:np.ndarray=None,
+             bb_anno:str=None,
+             anw_anno:str=None,
+             outfile:str=None,
+             ulist:list=None,
              perc:tuple=(14,86),
-             show_Rsig:bool=False):
+             show_Rsig:bool=False,
+             show_corner:bool=True):
+    """
+    Diagnostic figure for a single BING MCMC fit.
 
-    # Do this first
-    mini_corner(models, chains, ['Sdg', 'beta', 'Bnw'],
-                outfile='tmpc.png')
+    Produces a 5-panel figure laid out via a 3x2 GridSpec:
+
+      - Top-left   : normalized Rrs residuals ``(obs - model)/σ_obs`` vs wavelength,
+                     with grid lines at 0, ±2 σ.
+      - Middle-left: Rrs spectrum -- observations (with optional error bars),
+                     posterior-median model, and the credible band; the
+                     reduced χ² is annotated in the corner.
+      - Bottom-left: total non-water absorption ``a_nw(λ) = a_total - a_water``
+                     with credible band, on a log y-axis; the median fitted
+                     absorption-model parameter values (e.g. log10(Adg), Sdg,
+                     log10(Aph)) are printed in the panel with asymmetric
+                     uncertainties.
+      - Middle-right: non-water backscattering ``b_b,nw(λ) = bb_total - bb_water``
+                     with credible band; median backscatter-model parameters
+                     (e.g. log10(Bnw), β) are printed in the panel.
+      - Bottom-right: an inset mini corner plot of the Sdg / β / Bnw posteriors
+                     produced by ``mini_corner`` (written first to ``tmpc.png``
+                     and then loaded here as an image).
+
+    Side effect: writes a temporary file ``tmpc.png`` in the working directory
+    (used to embed the mini corner plot). The file is not cleaned up.
+
+    Parameters
+    ----------
+    models : list
+        Two-element list ``[a_model, bb_model]`` as returned by the BING
+        fitting machinery. The wavelength grid is read from ``models[0].wave``
+        and the parameter names from ``models[i].pnames``.
+    chains : np.ndarray
+        MCMC chains of shape ``(nsteps, nwalkers, nparam)``. Passed through
+        to ``evaluate.reconstruct_from_chains`` and ``mini_corner``.
+    Rrs_obs : dict
+        Observation dictionary with keys:
+        - ``'wave'`` : observed wavelength grid (1-D array).
+        - ``'spec'`` : observed Rrs at those wavelengths (1-D array).
+        - ``'var'``  : variance of Rrs (1-D array); ``np.sqrt(var)`` is
+                       treated as the per-band 1-σ uncertainty.
+    title : str
+        Suptitle for the figure.
+    rt_dict : dict
+        Radiative-transfer configuration forwarded to
+        ``evaluate.reconstruct_from_chains`` (e.g. ``variable_Gordon``,
+        ``include_Raman``, ``include_Chl_fl``).
+    stats : dict, optional
+        Output of ``evaluate.calc_stats(chains, perc=perc)``. If None, this
+        function computes it.
+    outfile : str, optional
+        If given, the figure is saved at 300 dpi to this path. Otherwise it
+        is shown interactively via ``plt.show()``.
+    ulist : list, optional
+        Pre-computed unpack of ``reconstruct_from_chains`` --
+        ``(a_mean, bb_mean, a_lo, a_hi, bb_lo, bb_hi, model_Rrs, sigRs)``.
+        Lets the caller skip the (potentially slow) chain reconstruction
+        when re-rendering the same fit. If None, the reconstruction is
+        performed here.
+    perc : tuple of int, optional
+        Lower/upper percentiles for the credible interval and the
+        asymmetric uncertainty annotations on the printed parameters.
+        Default ``(14, 86)`` -- the ~1-σ Gaussian-equivalent interval.
+    show_Rsig : bool, optional
+        If True, overlay the per-band Rrs uncertainty as error bars on the
+        observation points. If False (default), only the ``k+`` markers and
+        the credible band of the model are shown.
+    add_Rrs : np.ndarray, optional
+        Rrs to add to the plot.
+    true_bbp : np.ndarray, optional
+        True bbp to add to the plot.
+    true_anw : np.ndarray, optional
+        True anw to add to the plot.
+    bb_anno : str, optional
+        Extra text annotation to print in the backscattering panel (e.g.
+        the true bbp value). If None, nothing extra is drawn.
+    anw_anno : str, optional
+        Extra text annotation to print in the absorption panel (e.g. the
+        true Aph / Adg values). If None, nothing extra is drawn.
+    show_corner : bool, optional
+        If True (default), render the mini corner plot in the bottom-right
+        panel. If False, that panel is left blank (no ``tmpc.png`` is
+        written).
+
+    Returns
+    -------
+    None
+        The figure is either saved to ``outfile`` or shown; nothing is returned.
+    """
+
+    # Do this first (only when the corner plot is requested)
+    if show_corner:
+        mini_corner(models, chains, ['Sdg', 'beta', 'Bnw'],
+                    outfile='tmpc.png')
 
     if stats is None:
         stats = evaluate.calc_stats(chains, perc=perc)
@@ -268,7 +446,7 @@ def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
     else:
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
             model_Rrs, sigRs = evaluate.reconstruct_from_chains(
-            models, chains, perc=perc)
+            models, chains, rt_dict, perc=perc)
 
     # Water
     a_w = absorption.a_water(wave, data='IOCCG')
@@ -322,6 +500,17 @@ def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
             transform=ax_anw.transAxes, fontsize=13.)
         ypos += 0.11
 
+    # True anw
+    if true_anw is not None:
+        ax_anw.plot(wave, true_anw, 'k-', label='True')
+
+    # Extra annotation (e.g. the true Aph / Adg values) in the anw panel
+    # Lower-right, below the legend and the descending a_nw curve.
+    if anw_anno is not None:
+        ax_anw.text(0.55, 0.28, anw_anno, color='k', va='top',
+                    transform=ax_anw.transAxes, fontsize=13.)
+
+
     # #########################################################
     # bb nw
     ax_bb.plot(wave, bb_mean-bb_w, 'g-', label='Retrieval')
@@ -344,6 +533,15 @@ def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
             transform=ax_bb.transAxes, fontsize=13.)
         ypos += 0.11
 
+    # True bbp
+    if true_bbp is not None:
+        ax_bb.plot(wave, true_bbp, 'k-', label='True')
+
+    # Extra annotation (e.g. the true bbp value) in the bb panel
+    if bb_anno is not None:
+        ax_bb.text(0.05, 0.85, bb_anno, color='k',
+                   transform=ax_bb.transAxes, fontsize=13.)
+
     # #########################################################
     # Rs
     
@@ -364,13 +562,19 @@ def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
     ax_R.plot(Rrs_obs['wave'], Rrs_obs['spec'], 'k+', #label='Obs', 
               zorder=5)
     ax_R.plot(wave, model_Rrs, 'r-', label='Fit', zorder=10)
-    ax_R.fill_between(wave, model_Rrs-sigRs, model_Rrs+sigRs, 
-            color='r', alpha=0.5, zorder=10) 
+    ax_R.fill_between(wave, model_Rrs-sigRs, model_Rrs+sigRs,
+            color='r', alpha=0.5, zorder=10)
+    # Zero reference line for the Rrs panel
+    ax_R.axhline(0., color='gray', ls=':', alpha=0.5, zorder=0)
     ax_R.set_ylabel(r'$R_{rs}(\lambda) \; [10^{-4} \, {\rm sr}^{-1}$]')
     #ax_R.set_yscale('log')
     ax_R.text(0.05, 0.1,
               r'$\chi^2_\nu = '+f'{red_chi2:0.2f}'+r'$',
               fontsize=15., transform=ax_R.transAxes)
+
+    # True Rrs
+    if add_Rrs is not None:
+        ax_R.plot(wave, add_Rrs, color='cyan', ls='-', label='Another', zorder=1)
 
     # Plot residuals
     residuals = (Rrs_obs['spec'] - mod_R) / Rsig  # Normalized residuals
@@ -395,10 +599,11 @@ def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
         ax.set_xlabel('Wavelength (nm)')
         ax.legend(fontsize=15.)
 
-    # Mini corner plot
-    img = mpimg.imread('tmpc.png')
-    ax_c.imshow(img)
-    ax_c.axis('off') 
+    # Mini corner plot (only when requested; otherwise leave panel blank)
+    if show_corner:
+        img = mpimg.imread('tmpc.png')
+        ax_c.imshow(img)
+    ax_c.axis('off')
 
     # Title
     fig.suptitle(title, fontsize=14, y=0.99)
@@ -408,6 +613,8 @@ def plot_fit(models, chains, Rrs_obs, title:str, stats:dict=None,
     if outfile is not None:
         plt.savefig(outfile, dpi=300)
         print(f"Saved: {outfile}")
+        # Close to avoid accumulating figures across batch plotting
+        plt.close(fig)
     else:
         plt.show()
 
@@ -456,123 +663,51 @@ def mini_corner(models, chains, show_params:list,
         plt.savefig(outfile, dpi=300)
         print(f"Saved: {outfile}")
 
-def slurp_fits(matched, debug:bool=False):
+
+def fit_em_all(match_file:str, clobber = False, nclosest:int=10, debug:bool=False):
     """
-    Processes matched Argo BGC profiles and extracts specific parameters for analysis.
-
-    This function reads a CSV file containing matched Argo BGC profiles, loads corresponding
-    data files for each profile, extracts specific parameters (Bnw, beta, and aph), and appends
-    these parameters to the original dataset. The updated dataset is then saved back to the same
-    CSV file.
-
-    Steps:
-    1. Reads the matched Argo BGC profiles from a CSV file.
-    2. Iterates through each profile, loading associated data files.
-    3. Extracts the median values of Bnw, beta, and aph from the loaded data.
-    4. Appends the extracted values to the dataset.
-    5. Saves the updated dataset back to the CSV file.
-
-
-
-    Args:
-        matched (pandas.DataFrame): DataFrame containing matched Argo BGC profiles.
-        debug (bool, optional): If True, enables debugging mode with an interactive session. 
-                                Default is False.
-
-    Raises:
-        FileNotFoundError: If a required data file does not exist.
-        KeyError: If the expected keys ('med') are not found in the loaded data.
-
-    Notes:
-        - The function assumes the existence of a helper function `set_outfile` to determine
-          the output file path for each profile.
-        - The function uses the `embed` function for debugging when a file is missing.
-
-    Outputs:
-        - Updates the input CSV file with new columns: 'Bnw', 'beta', and 'aph'.
-        - Prints the number of profiles written to the file.
-
-    Dependencies:
-        - Requires the `pandas` and `numpy` libraries.
-        - Assumes the presence of the `set_outfile` and `embed` functions.
+    Fit all the matches in the matched file.
     """
-
-    # Load up Argo profiles, already matched to PACE
-    #match_file = 'matched_argo_bgc_profiles_bbp.csv'
-    #matched = pandas.read_csv(match_file)
-
-    beta_vals = []
-    Bnw_vals = []
-    Bnw_lsig = []
-    Bnw_hsig = []
-    Bnw_std = []
-    aph_vals = []
+    matched = pandas.read_csv(match_file)
 
     for ss in range(len(matched)):
+        #if ss < 798:
+        #    continue
         imatched = matched.iloc[ss]
-        outfile = set_outfile(imatched)
-        print(f'Working on {ss+1}/{len(matched)}: {os.path.basename(outfile)}...')
+        print("*"*50)
+        print("*"*50)
+        print(f"Fitting {ss+1}/{len(matched)}...")
+        print("*"*50)
+        print("*"*50)
 
-        # Load
-        if not os.path.exists(outfile):
-            embed(header=f"303: Missing {outfile}...; ss={ss}")
-            raise FileNotFoundError(f"Missing {outfile}...")
-        d = np.load(outfile)
-
-        if 'chains' not in d:
-            print(f"Skipping {outfile}...")
-            beta_vals.append(np.nan)
-            Bnw_vals.append(np.nan)
-            aph_vals.append(np.nan)
-            Bnw_std.append(np.nan)
-            Bnw_lsig.append(np.nan)
-            Bnw_hsig.append(np.nan)
-            continue
-
-        #if debug:
-        #    embed(header='305 of fitting.py')
-        #    return
-        # Closest
-        Bnw_vals.append(10**d['med'][0,3])
-        beta_vals.append(d['med'][0,4])
-        aph_vals.append(10**d['med'][0,2])
-        # Std
-        Bnw_std.append(np.std(10**d['med'][:,3]))
-        # Sigma
-        Bnw_lsig.append(10**d['med'][0,3] - 10**d['p14'][0,3])
-        Bnw_hsig.append(10**d['p86'][0,3] - 10**d['med'][0,3])
-        if debug:
+        if debug and ss > 0:
             break
 
-    if debug:
-        embed(header='468 of fitting.py')
-        return
+        if debug:
+            imatched.closest_file = 'PACE_OCI.20250601T070425.L2.OC_AOP.V3_1.nc'
+            imatched.closest_id = 'PACE_OCI_L2_AOP_PACE_OCI.20250601T070425.L2.OC_AOP.V3_1.nc_3.1'
 
-    # Add to matched
-    matched['Bnw'] = np.array(Bnw_vals)
-    matched['Bnw_std'] = np.array(Bnw_std)
-    matched['Bnw_lsig'] = np.array(Bnw_lsig)
-    matched['Bnw_hsig'] = np.array(Bnw_hsig)
-    matched['beta'] = beta_vals
-    matched['aph'] = aph_vals
+        # Check
+        outfile = biomass_io.get_fit_file_path(imatched)
+        if os.path.exists(outfile) and not clobber:
+            print(f"Already fitted {outfile}, skipping...")
+            continue
 
-    # Write
-    matched.to_csv(match_file, index=False)
-    print(f'Wrote {len(matched)} profiles to {match_file}')
+        # Fit one
+        print(f"Fitting {imatched.cruise}-{imatched.profile:03d}...")
+        fit_one(imatched, outfile, nclosest=nclosest)#, debug=True)
 
-def set_outfile(imatched:pandas.Series):
-    outfile = os.path.join(os.getenv('OS_COLOR'), 'Biomass', 'Fits',
-            f'Argo_{imatched.cruise}_{imatched.profile:03d}_fits.npz')
-    return outfile
+    print(f"Fitted {len(matched)} profiles")
 
 # Command line
 if __name__ == '__main__':
 
-    test = False
+    test = True
     fit_em = False
-    slurp_em = True
+    slurp_em = False
 
-    match_file = 'matched_argo_bgc_profiles_bbp.csv'
+    #match_file = 'matched_argo_bgc_profiles_bbp.csv'
+    match_file = 'matched_argo_bgc_profiles_bbp_v2.csv'
     # Load up Argo profiles, already matched to PACE
     matched = pandas.read_csv(match_file)
 
@@ -580,34 +715,19 @@ if __name__ == '__main__':
 
     if test:
         # Load the matched file
-        imatched = matched.iloc[30]
+        imatched = matched.iloc[0]
+        imatched.closest_file = 'PACE_OCI.20250601T070425.L2.OC_AOP.V3_1.nc'
+        imatched.closest_id = 'PACE_OCI_L2_AOP_PACE_OCI.20250601T070425.L2.OC_AOP.V3_1.nc_3.1'
 
         # Fit one
-        outfile = set_outfile(imatched)
-        fit_one(imatched, outfile, nclosest=10)#, debug=True)
+        outfile = biomass_io.get_fit_file_path(imatched)
+        #fit_one(imatched, outfile, nclosest=10)
+        fit_one(imatched, outfile, nclosest=2)#, debug=True)
 
     if fit_em:
-        clobber = False
-        for ss in range(len(matched)):
-            #if ss < 798:
-            #    continue
-            imatched = matched.iloc[ss]
-            print("*"*50)
-            print("*"*50)
-            print(f"Fitting {ss+1}/{len(matched)}...")
-            print("*"*50)
-            print("*"*50)
+        match_file='matched_argo_bgc_profiles_bbp.csv'
+        fitting.fit_em_all(match_file, clobber=False, nclosest=10)
 
-            # Check
-            outfile = set_outfile(imatched)
-            if os.path.exists(outfile) and not clobber:
-                print(f"Already fitted {outfile}, skipping...")
-                continue
-            #
-
-            # Fit one
-            print(f"Fitting {imatched.cruise}-{imatched.profile:03d}...")
-            fit_one(imatched, outfile, nclosest=10)#, debug=True)
 
     if slurp_em:
         slurp_fits(matched)#debug=True)

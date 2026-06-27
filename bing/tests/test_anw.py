@@ -5,11 +5,10 @@ import numpy as np
 
 import pytest
 
+
 from bing.models import anw as bing_anw
 from bing.parameters import standard
-from bing.priors import priors as bing_priors
 from bing.models import utils as model_utils
-
 
 from IPython import embed
 
@@ -30,12 +29,12 @@ def test_eval():
 
     # Evaluatee a_nw on a flat array
     #   The code always returns a multi-dimensional array
-    a_nw = anwExp.eval_anw(np.array([-1., np.log10(0.015)]))
+    a_nw = anwExp.eval_anw(np.array([-1., 0.015]))
     assert np.isclose(a_nw[0][0], 0.2117, atol=1e-5)
 
     # Now a 2D param array
-    a_nw = anwExp.eval_anw(np.array([[-1., np.log10(0.015)], 
-                                     [-1., np.log10(0.015)]]))
+    a_nw = anwExp.eval_anw(np.array([[-1., 0.015], 
+                                     [-1., 0.015]]))
     assert a_nw.shape == (2, wave.size)
     assert np.isclose(a_nw[1][0], 0.2117, atol=1e-5)
 
@@ -51,10 +50,10 @@ def test_priors():
     assert np.isclose(anwExp.priors.priors[0].pmin, -6)
     assert np.isclose(anwExp.priors.priors[0].pmax, 5)
 
-def test_expnmf():
-    # Check init -- this requires CNMF
-    wave = np.arange(400, 755, 5.)
-    anwExpNMF = bing_anw.aNWExpNMF(wave)
+#def test_expnmf():
+#    # Check init -- this requires CNMF
+#    wave = np.arange(400, 755, 5.)
+#    anwExpNMF = bing_anw.aNWExpNMF(wave)
 
 
 def test_eval_chains():
