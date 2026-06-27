@@ -985,7 +985,7 @@ def test_raman_fitting_LM():
     rt_dict_R = rt_defs.rt_dict_from_p(p_R)
     Chl = 10**ans[2]/0.05582
     _ = bing_plot.show_fits(models_LM, ans, rt_dict_R, Chl, None,
-                figsize=(12,4), fontsize=13., show=True,
+                figsize=(12,4), fontsize=13., show=False,
                 Rrs_true=dict(wave=models_LM[0].wave, spec=prep_dict_LM['model_Rrs'], var=prep_dict_LM['model_varRrs']),
                 log_abb=True )
 
@@ -997,7 +997,7 @@ def test_raman_fitting_MCMC():
     # Plot
     rt_dict_R = rt_defs.rt_dict_from_p(p_R)
     _ = bing_plot.show_fits(models_R, chains_R, rt_dict_R, None, None,
-                figsize=(12,4), fontsize=13., show=True,
+                figsize=(12,4), fontsize=13., show=False,
                 Rrs_true=dict(wave=models_R[0].wave, 
                     spec=prep_dict_R['model_Rrs'], var=prep_dict_R['model_varRrs']),
                 log_abb=True)
@@ -1034,7 +1034,7 @@ def test_Chl_fitting_MCMC():
 
     # Plot
     _ = bing_plot.show_fits(models_Chl, chains_Chl, rt_dict_Chl, None, None,
-                figsize=(12,4), fontsize=13., show=True,
+                figsize=(12,4), fontsize=13., show=False,
                 Rrs_true=dict(wave=models_Chl[0].wave, 
                     spec=prep_dict_Chl['model_Rrs'], var=prep_dict_Chl['model_varRrs']),
                 log_abb=True )

@@ -38,6 +38,8 @@ If you need to run python, use the "ocean14" environment in conda.
 
 2. One or more of the tests creates figures that are displayed on the screen.  Suppress that. Log your work.
 
+3.  Please let me know what else we need to do to release BING as a pypi package.  Generate a HOWTO_pypi.md file that outlines the steps in docs/.  Log your work
+
 ## Q&A
 
 **Q1 — `ocpy` is not on PyPI (release blocker).** `ocpy` is imported in 26
@@ -147,3 +149,74 @@ bing-ocean` is that `ocpy` isn't on PyPI under this project, and a *different*
 `ocpy` (0.5.x) already squats the name — so it must NOT be listed as a bare
 dependency. `twine` isn't installed locally (release-time tool). See Q&A for
 version, naming, copyright-holder, and `correct_atmosphere`-lazy-import items.
+
+### 2026-06-27 (Suppressed test figures from displaying on screen)
+
+Executed Task 2.
+
+**Diagnosis.** Searched the suite for figure-display calls. Found:
+- `bing/tests/test_l23_fitting.py` — three tests
+  (`test_raman_fitting_LM`, `test_raman_fitting_MCMC`, `test_Chl_fitting_MCMC`)
+  call `bing_plot.show_fits(..., show=True)`, and `show_fits` calls
+  `plt.show()` (plotting.py:286-287) when `show=True`. These were the real
+  culprits popping up windows during a run.
+- `bing/tests/test_raman.py` has two `plt.show()` calls, but both sit inside
+  `if False:` blocks (dead code) so they never fire.
+
+**Fix (two layers).**
+1. Added `bing/tests/conftest.py` that calls
+   `matplotlib.use("Agg", force=True)` at import time. pytest imports
+   `conftest.py` before any test module, so the non-interactive Agg backend
+   is in force before `pyplot` is first used. Under Agg, `plt.show()` is a
+   no-op and nothing is rendered to a display — this guards all current and
+   future tests (and runs headless on CI).
+2. As defense-in-depth and to make intent explicit, flipped the three
+   `show=True` → `show=False` in `test_l23_fitting.py`. The figures are still
+   *built* (so the plotting code path is still exercised), just never shown.
+
+**Verification.** Added a temporary test asserting
+`matplotlib.get_backend().lower() == "agg"` under pytest — it passed,
+confirming conftest takes effect. `test_raman.py` (16 tests) and
+`test_raman_fitting_LM` both pass headless. Ran the LM plotting test with
+`MPLBACKEND=` unset to prove the suppression comes from conftest, not the
+environment. Removed the temporary test afterward.
+
+**Learned.** The grep hits in `test_raman.py` were a red herring (`if False:`);
+the actual display came from `show=True` plumbed through `show_fits`. Forcing
+Agg in `conftest.py` is the robust, idiomatic fix; flipping the flags is the
+explicit-intent complement.
+
+### 2026-06-27 (Wrote docs/HOWTO_pypi.md release guide + remaining-steps summary)
+
+Executed Task 3.
+
+**Deliverable.** Created `docs/HOWTO_pypi.md`, a step-by-step PyPI release
+guide tailored to this repo's actual state (not a generic template). Sections:
+current state checklist (what Tasks 1–2 already finished); blockers to resolve
+first; one-time PyPI/TestPyPI account + token setup; install `build`/`twine`;
+build; `twine check`; TestPyPI dry-run + smoke test; real upload; git tagging;
+optional GitHub Actions Trusted Publishing; post-release housekeeping; and a
+copy-paste "happy path" quick reference.
+
+**What still needs doing before BING can actually ship (the answer to "what
+else"):**
+1. **`ocpy` dependency (hard blocker).** Not on PyPI under this project, and
+   the name is squatted by an unrelated package. Either publish our `ocpy`
+   under a unique name (e.g. `ocpy-ocean`) and add it to
+   `[project].dependencies`, or keep the documented `git+` manual install.
+   PyPI rejects direct-URL/VCS deps in uploaded metadata, so a `git+` dep
+   cannot live in `pyproject.toml`. Same concern for `correct_atmosphere`.
+2. **Confirm the distribution name** `bing-ocean` is free/owned.
+3. **Pick the real release version** (currently 0.1.0 vs README's old 2.0.0);
+   PyPI versions are immutable.
+4. **Create PyPI + TestPyPI accounts and API tokens** (none exist yet).
+5. **Install `build` + `twine`** — `twine` is absent from `ocean14`.
+6. **Dry-run on TestPyPI**, then upload to PyPI, then **tag** `vX.Y.Z`.
+
+Items 1–4 are decisions/credentials only the maintainer can make; 5–6 are
+mechanical and covered step-by-step in the HOWTO.
+
+**Learned.** The single genuine blocker to a one-command `pip install
+bing-ocean` remains the `ocpy` distribution problem from Task 1 — everything
+else is process/credentials. Documented the Trusted-Publishing path so future
+releases need no stored tokens.
