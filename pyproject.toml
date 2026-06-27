@@ -1,0 +1,105 @@
+# Build configuration and project metadata for the BING package.
+# This file is the single source of truth for packaging; setup.py is
+# retained only as a thin shim for legacy/editable installs.
+
+[build-system]
+# setuptools >= 61 understands the [project] table natively.
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# Distribution name on PyPI.  The import package stays `bing`, but the
+# bare name "bing" is taken on PyPI, so we distribute as "bing-ocean".
+name = "bing-ocean"
+description = "Bayesian INferences with Gordon coefficients (BING) for ocean color remote sensing"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+    { name = "J. Xavier Prochaska", email = "jxp@ucsc.edu" },
+    { name = "Robert Frouin" },
+    { name = "Allie James" },
+]
+requires-python = ">=3.11"
+keywords = [
+    "ocean color", "remote sensing", "bio-optics", "MCMC",
+    "Bayesian inference", "PACE", "Rrs", "IOP",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+# Runtime dependencies actually imported by the bing package.  The heavy
+# deps that used to live in setup.py (astropy, healpy, bokeh, umap-learn,
+# timm, boto3, xarray, scikit-*, ...) are NOT imported anywhere in bing/
+# and have been dropped.
+#
+# NOTE: `ocpy` (github.com/ocean-colour/ocpy) is a hard dependency but is
+# NOT on PyPI under this project.  (A different, unrelated "ocpy" exists on
+# PyPI -- do NOT depend on the bare name or pip will pull the wrong one.)
+# It is intentionally left out of this list so `pip install bing-ocean`
+# does not silently resolve to the wrong package.  Install it with:
+#     pip install git+https://github.com/ocean-colour/ocpy.git
+# See the Q&A note in prompts/pip.md.
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "pandas",
+    "seaborn",
+    "tqdm",
+    "emcee",
+    "corner",
+    "ipython",
+]
+
+# Version is read from bing/__init__.py:__version__ (single source).
+dynamic = ["version"]
+
+[project.optional-dependencies]
+# Test/development extras: `pip install bing-ocean[dev]`
+dev = ["pytest", "pytest-cov"]
+# Documentation build extras (mirrors docs/requirements.txt)
+docs = [
+    "sphinx>=4.5.0",
+    "sphinx-rtd-theme>=1.0.0",
+    "sphinx-autodoc-typehints>=1.12.0",
+    "sphinxcontrib-napoleon>=0.7",
+]
+
+[project.urls]
+Homepage = "https://github.com/ocean-colour/bing"
+Documentation = "https://oc-bing.readthedocs.io"
+Repository = "https://github.com/ocean-colour/bing"
+Issues = "https://github.com/ocean-colour/bing/issues"
+
+[project.scripts]
+# Replaces the legacy bin/bing_fit_Rrs script with a console entry point.
+bing_fit_Rrs = "bing.scripts.fit_Rrs:entry_point"
+
+[tool.setuptools.dynamic]
+version = { attr = "bing.__version__" }
+
+[tool.setuptools.packages.find]
+# Ship only the importable package; exclude papers/, dev/, nb/, docs/.
+include = ["bing*"]
+
+[tool.setuptools.package-data]
+# Reference data (water IOPs, Gordon coefficients, noise specs, etc.) is
+# loaded at runtime via importlib.resources.files('bing'), so it MUST be
+# bundled into the wheel.
+bing = [
+    "data/**/*.csv",
+    "data/**/*.mat",
+    "data/**/README",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["bing/tests"]

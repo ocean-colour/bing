@@ -1,0 +1,16 @@
+# Files to include in the source distribution (sdist).
+include LICENSE
+include README.md
+include pyproject.toml
+
+# Bundle the reference data loaded at runtime via importlib.resources.
+recursive-include bing/data *.csv *.mat README
+
+# Keep build/cache cruft out of the distribution.
+global-exclude *.py[cod]
+global-exclude __pycache__
+prune dev
+prune nb
+prune papers
+prune posters
+prune docs

@@ -1,9 +1,9 @@
 # BING - Bayesian INferences with Gordon coefficients
 
-[![Documentation Status](https://readthedocs.org/projects/bing/badge/?version=latest)](https://bing.readthedocs.io/en/latest/?badge=latest)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXX)
+[![Tests](https://github.com/ocean-colour/bing/actions/workflows/tests.yml/badge.svg)](https://github.com/ocean-colour/bing/actions/workflows/tests.yml)
+[![Documentation Status](https://readthedocs.org/projects/oc-bing/badge/?version=latest)](https://oc-bing.readthedocs.io/en/latest/?badge=latest)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 
 The **Bayesian INferences with Gordon coefficients (BING)** package is a comprehensive Python toolkit for ocean color remote sensing analysis, specializing in bio-optical parameter retrieval through Bayesian inference methods. BING implements Gordon's semi-analytical bio-optical models with advanced statistical fitting techniques, with particular emphasis on NASA's PACE (Plankton, Aerosol, Cloud, ocean Ecosystem) mission data.
 
@@ -44,10 +44,23 @@ The documentation includes:
 pip install bing-ocean
 
 # Or install from source
-git clone https://github.com/yourusername/bing.git
+git clone https://github.com/ocean-colour/bing.git
 cd bing
 pip install -e .
 ```
+
+> **Required companion package**: BING depends on
+> [`ocpy`](https://github.com/ocean-colour/ocpy) (satellite noise specs and
+> band definitions), which is not distributed on PyPI under this project.
+> Install it directly from GitHub:
+>
+> ```bash
+> pip install git+https://github.com/ocean-colour/ocpy.git
+> ```
+>
+> A few routines (e.g. `bing.fitting.l23` downwelling utilities) also use the
+> optional [`correct-atmosphere`](https://github.com/ocean-colour/correct-atmosphere)
+> package.
 
 ### Basic Usage
 
@@ -186,40 +199,44 @@ results = {
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+We welcome contributions! Please open an issue or pull request on
+[GitHub](https://github.com/ocean-colour/bing). New bio-optical models
+should ship with a matching test in `bing/tests/` (see `CLAUDE.md` for the
+model and testing conventions).
 
 ### Development Setup
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/bing.git
+git clone https://github.com/ocean-colour/bing.git
 cd bing
 
 # Create a development environment
-conda create -n bing-dev python=3.9
+conda create -n bing-dev python=3.11
 conda activate bing-dev
 
-# Install in development mode
+# Install the companion package and BING in development mode
+pip install git+https://github.com/ocean-colour/ocpy.git
 pip install -e .[dev]
 
 # Run tests
-pytest tests/
+pytest bing/tests/
 ```
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.
 
 ## 📖 Citation
 
 If you use BING in your research, please cite:
 
 ```bibtex
-@software{bing2024,
+@software{bing,
   title={BING: Bayesian INferences with Gordon coefficients},
-  author={Your Name},
-  year={2024},
-  url={https://github.com/yourusername/bing},
+  author={Prochaska, J. Xavier and Frouin, Robert and James, Allie},
+  year={2026},
+  url={https://github.com/ocean-colour/bing},
   note={Python package for ocean color remote sensing analysis}
 }
 ```
@@ -234,19 +251,19 @@ If you use BING in your research, please cite:
 
 ## 📧 Contact
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/bing/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/bing/discussions)
-- **Email**: bing-dev@example.com
+- **Issues**: [GitHub Issues](https://github.com/ocean-colour/bing/issues)
+- **Email**: jxp@ucsc.edu
 
 ## 🔗 Related Projects
 
-- [OCPY](https://github.com/oceancolor/ocpy) - Ocean Color Python tools
+- [ocpy](https://github.com/ocean-colour/ocpy) - Ocean Color Python tools (required companion)
+- [correct-atmosphere](https://github.com/ocean-colour/correct-atmosphere) - Downwelling / atmospheric correction utilities
 - [earthaccess](https://github.com/nsidc/earthaccess) - NASA Earthdata access
 - [emcee](https://github.com/dfm/emcee) - The MCMC Hammer
 
 ## 📈 Project Status
 
-BING is under active development. Current version: 2.0.0
+BING is under active development. Current version: 0.1.0 (first PyPI release)
 
 ### Recent Updates
 - Added support for PACE OCI hyperspectral data
