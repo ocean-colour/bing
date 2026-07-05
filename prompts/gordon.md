@@ -95,6 +95,45 @@ Here are guidelines for coding:
 - You may find it helpful to refactor the calc_gordon.py and plot_gordon.py modules to make the code more modular and easier to import methods into the Notebook.
 - Log your work and results below in the Logs section.  
 
+12. There was a poor merge which has led to conflicts in `calc_gordon.py`. Please review the situation and make a recommendation course of action to resolve them.  Place those in the Q&A section below.  Log your work.
+
+## Q&A
+
+### 2026-07-05 — Merge conflict in `dev/Gordon/calc_gordon.py` (Development item 12)
+
+**Situation.** A single conflict block spans lines 1377–1670 of [dev/Gordon/calc_gordon.py](dev/Gordon/calc_gordon.py). Repo state: branch `develop`, `MERGE_HEAD = 2faf4908` (origin/develop, PR #21 from `more_Gordon`). The `biomass` PR (#22) is already merged locally; that merge brought in the plot-refactor commits from the 2026-06-03 log entries. Origin/develop was based on an earlier snapshot of `more_Gordon` that predates the refactor, so pulling it back in reintroduces the old inline plotting code.
+
+- **HEAD side (16 lines).** Imports 10 plotting helpers from [dev/Gordon/plot_gordon.py](dev/Gordon/plot_gordon.py): `plot_g_coefficients`, `plot_rrms_vs_wavelength`, `plot_rrms_vs_wavelength_{3,4,5}case`, `plot_residual_vs_bbp`, `plot_residual_vs_bbp_{3,4,5}case`, `plot_rrs_vs_u`.
+- **MERGE_HEAD side (~277 lines).** Inlines 6 of those helpers: `plot_g_coefficients`, `plot_rrms_vs_wavelength`, `plot_rrms_vs_wavelength_3case`, `plot_residual_vs_bbp`, `plot_residual_vs_bbp_3case`, `plot_rrs_vs_u`. **Missing** the 4-case and 5-case variants entirely, and the `result_with_G0` overlay path in `plot_rrs_vs_u` has an older signature.
+
+**Verifications performed.**
+- `plot_gordon.py` on disk defines all 12 helpers (10 plots + `plot_rrs_vs_u_single` and `plot_residual_vs_bbp_single`).
+- `run_full_assessment` (line 1673+, below the conflict block) references `plot_rrms_vs_wavelength_4case`, `plot_residual_vs_bbp_4case`, `plot_rrms_vs_wavelength_5case`, `plot_residual_vs_bbp_5case` by name — these names **do not exist** on the MERGE_HEAD side, so accepting MERGE_HEAD alone would `NameError` on the next `python calc_gordon.py`.
+- No other file in the repo imports plotting helpers from `calc_gordon` directly (grep clean); the re-export block on HEAD is defensive but not currently load-bearing for external callers.
+
+**Recommendation — accept HEAD unchanged.** Concretely:
+
+```bash
+git checkout --ours dev/Gordon/calc_gordon.py   # keeps the plot_gordon import block
+git add dev/Gordon/calc_gordon.py
+```
+
+Then finish the merge (`git commit`) with a message noting that the MERGE_HEAD-side inline plotting is a stale pre-refactor snapshot already superseded by [dev/Gordon/plot_gordon.py](dev/Gordon/plot_gordon.py).
+
+**Why not "keep both" / manual splice.**
+- Concatenating both sides produces duplicate definitions of the six shared names. Python's last-definition-wins would silently shadow the imports with the *stale* inline versions — reintroducing a bug the 2026-06-03 refactor already fixed, and stripping the 4-case/5-case plots.
+- Moving MERGE_HEAD's unique content into `plot_gordon.py` is a no-op: `plot_gordon.py` already contains newer versions of every function present on the MERGE_HEAD side. Nothing worth salvaging.
+
+**Why not "accept theirs" (MERGE_HEAD).**
+- Immediately breaks `run_full_assessment` (missing 4-case / 5-case names).
+- Loses the module split that both prior logs (2026-06-03) established as the settled architecture and that [dev/Gordon/chk_gordon_tinker.ipynb](dev/Gordon/chk_gordon_tinker.ipynb) depends on via `plot_gordon.plot_rrs_vs_u_single` etc.
+
+**Post-merge sanity checks to run before pushing.**
+1. `python -c "import ast; ast.parse(open('dev/Gordon/calc_gordon.py').read())"` — parse cleanly.
+2. `cd dev/Gordon && python -c "from calc_gordon import run_full_assessment"` — import path resolves.
+3. `pytest bing/tests/ -x` — the Gordon-mode tests in `test_l23_fitting.py` are the canonical guard against a bad Gordon merge; they should stay at the last logged **80 passed, 2 skipped, 0 failed**.
+4. If practical, re-execute `dev/Gordon/calc_gordon.ipynb` and `chk_gordon_tinker.ipynb` and confirm figures regenerate.
+
 ## I/O
 
 ### Modify the Notebook calc_gordon.ipynb in bing/dev/Gordon to write the output to a CSV file instead of a Numpy save file.  Update the Notebook and also the code in calc_gordon.py.  If you need to run Python, use the "ocean13" environment in conda
@@ -771,3 +810,19 @@ These are deliberately model-agnostic — the notebook computes `rrs_pred` / `re
 2. **Compare-on-one-panel mode.** Right now the rrs-vs-u panel shows standard + one fit. A `fit_types=('quad', 'const', '2stage')` list-mode would overlay several fits at once — useful for "which one fits best at 555 nm?" comparisons.
 3. **Save state.** Add a final cell that appends `(wv, fit_type, params, rRMS)` to a small CSV log every time the notebook is run. Builds up an audit trail of what was tinkered with.
 4. **A note in CLAUDE.md.** The tinker notebook is the natural entry point for ad-hoc Gordon investigations now. Adding a one-line pointer in CLAUDE.md keeps future contributors from rediscovering it.
+
+### 2026-07-05 (Audit the calc_gordon.py merge conflict; write recommendation to Q&A)
+
+**Trigger.** Repo left in a mid-merge state: on branch `develop`, `MERGE_HEAD = 2faf49084359d0ade3f72e9eebb4004ef55788e7` (origin/develop, PR #21 from `more_Gordon`), one conflict file — `dev/Gordon/calc_gordon.py`. The user asked (Development item 12) for a review + recommended course of action rather than a resolution.
+
+**Findings.**
+
+- **Structure.** One conflict block at lines 1377–1670. HEAD side is a 16-line re-export from [dev/Gordon/plot_gordon.py](dev/Gordon/plot_gordon.py) (10 plotting helpers). MERGE_HEAD side is a ~277-line block with 6 inline plotting functions.
+- **The two sides trace to a divergence between `more_Gordon` snapshots.** The `biomass` PR (#22, already merged into HEAD) picked up the 2026-06-03 plot refactor that moved plotting to `plot_gordon.py`. The `MERGE_HEAD` commit on origin/develop merged a pre-refactor snapshot of `more_Gordon` (PR #21). Pulling origin/develop back into local develop reintroduces the older code path.
+- **Coverage check.** `plot_gordon.py` on disk defines all 12 helpers (10 plots + 2 single-panel helpers). Every function on the MERGE_HEAD side is a **strict subset** of what's in `plot_gordon.py` — nothing salvageable.
+- **Load-bearing check.** `run_full_assessment` (below the conflict block) calls `plot_rrms_vs_wavelength_4case`, `plot_residual_vs_bbp_4case`, `plot_rrms_vs_wavelength_5case`, `plot_residual_vs_bbp_5case` — names that exist only in the HEAD re-export path / `plot_gordon.py`. Accepting MERGE_HEAD alone would `NameError` on the next module load. Concatenating both sides would produce duplicate defs and Python's last-def-wins would silently shadow the newer plotters with the stale ones, stripping the 4-case/5-case functionality already in production.
+
+**Recommendation (written to the Q&A section).** `git checkout --ours dev/Gordon/calc_gordon.py`; the MERGE_HEAD-side inline plotting is a stale pre-refactor snapshot that `plot_gordon.py` already supersedes. Full rationale, verification commands, and post-merge sanity checks are captured in the new Q&A entry above.
+
+**Files touched.**
+- [prompts/gordon.md](prompts/gordon.md) — new Q&A entry (recommendation + rationale) and this log entry. No source code changed; the conflict is left in place per the user's ask.
