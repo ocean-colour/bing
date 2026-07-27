@@ -20,6 +20,8 @@ Available Models
 - **Lee**: Power-law with exponent from Lee et al. (2002) formula
 - **GSM**: Power-law with fixed exponent (Maritorena et al. 2002)
 - **Every**: Fully flexible (one parameter per wavelength)
+- **Pow2**: Two-component mineral + organic power laws (turbid water)
+- **Pow2Flat**: As Pow2 with a spectrally flat mineral term (3 params)
 
 Parameter Conventions
 ---------------------
@@ -73,9 +75,10 @@ def init_model(model_name:str, wave:np.ndarray, prior_dicts:list=None):
     Returns:
         bbNWModel: The model
     """
-    model_dict = {'Cst': bbNWCst, 'Pow': bbNWPow, 
+    model_dict = {'Cst': bbNWCst, 'Pow': bbNWPow,
                   'Lee': bbNWLee, 'GSM': bbNWGSM,
-                  'Every': bbNWEvery} 
+                  'Every': bbNWEvery,
+                  'Pow2': bbNWPow2, 'Pow2Flat': bbNWPow2Flat}
 
     if model_name not in model_dict.keys():
         raise ValueError(f"Unknown model: {model_name}")
@@ -197,6 +200,19 @@ class bbNWModel:
     Whether the model uses basis parameters
     """
 
+    log_params:list = None
+    """
+    Which parameters are log10 amplitudes (True) vs linear (False)
+
+    ``None`` means "all log10", which is the historical default and is
+    what display code assumes for any model that does not declare this.
+
+    This is consumed by **display** code (see bing.plotting) to decide
+    which values to exponentiate and which labels to wrap in
+    log10(...).  It is deliberately *not* used by the p0 conversion in
+    the fitters, which keys on the prior flavor instead.
+    """
+
     def __init__(self, wave:np.ndarray, prior_dicts:list):
         self.wave = wave
         self.internals = {}
@@ -213,6 +229,31 @@ class bbNWModel:
 
         # Checks
         assert len(self.pnames) == self.nparam
+        self.check_priors()
+
+    def check_priors(self):
+        """
+        Confirm the attached priors match the model's parameter count.
+
+        Nothing else in BING validates this, and a mismatch is worse
+        than a crash: the chi-squared path (bing.fitting.l23) walks the
+        prior list with its own counter to decide which p0 slots are
+        log10 amplitudes, so a wrong-length list silently converts the
+        wrong parameters.  Fail loudly instead.
+
+        Called on construction and by
+        bing.priors.priors.set_standard_priors, which attaches priors
+        after the model is built.
+
+        Raises:
+            ValueError: If the number of priors differs from nparam.
+        """
+        if self.priors is None:
+            return
+        if self.priors.nparam != self.nparam:
+            raise ValueError(
+                f"{self.name}: got {self.priors.nparam} priors for "
+                f"{self.nparam} parameters ({self.pnames})")
 
     def init_bbw(self):
         """
@@ -249,6 +290,15 @@ class bbNWModel:
                 params[1] = beta
             Cst:
                 params[0] = log10(Bnw)
+            Pow2:
+                params[0] = log10(Bmin)   # mineral, pivot 700 nm
+                params[1] = eta_min
+                params[2] = log10(Borg)   # organic, pivot 600 nm
+                params[3] = eta_org
+            Pow2Flat:
+                params[0] = log10(Bmin)   # mineral, spectrally flat
+                params[1] = log10(Borg)   # organic, pivot 600 nm
+                params[2] = eta_org
 
             wave (np.ndarray, optional): Wavelengths for evaluation
 
@@ -261,16 +311,55 @@ class bbNWModel:
 
         if self.name == 'Pow':
             return functions.powerlaw(wave, params, pivot=self.pivot)
+        elif self.name == 'Pow2':
+            # Mineral (near-flat, red-pivoted) + organic (steep) power
+            # laws.  Slicing params[..., 0:2] / [..., 2:4] preserves
+            # functions.powerlaw's (nsample, nwave) contract for 1-D
+            # and 2-D (chain-shaped) input alike.
+            return (functions.powerlaw(wave, params[..., 0:2],
+                                       pivot=self.pivot_min) +
+                    functions.powerlaw(wave, params[..., 2:4],
+                                       pivot=self.pivot))
+        elif self.name == 'Pow2Flat':
+            # As Pow2 with eta_min fixed at 0, i.e. a constant mineral
+            # term (its pivot is then irrelevant) + an organic power law.
+            return (functions.constant(wave, params[..., 0:1]) +
+                    functions.powerlaw(wave, params[..., 1:3],
+                                       pivot=self.pivot))
         elif self.name == 'Every':
-            return 10**params
+            return self.eval_channels(params, wave=wave)
         elif self.name == 'Cst':
             return functions.constant(wave, params)
-        elif self.name == 'Lee':
-            return functions.gen_basis(params[...,-1:], [self.basis_func])
-        elif self.name == 'GSM':
-            return functions.gen_basis(params[...,-1:], [self.basis_func])
+        elif self.name in ['Lee', 'GSM']:
+            # Evaluate the basis on the REQUESTED grid.  self.basis_func
+            # is cached on self.wave, so using it here silently mixed
+            # grids whenever wave was the Raman excitation grid.
+            return functions.gen_basis(params[...,-1:],
+                                       [self.eval_basis_func(wave)])
         else:
             raise ValueError(f"Unknown model: {self.name}")
+
+    def eval_basis_func(self, wave:np.ndarray=None):
+        """
+        Evaluate the model's spectral basis function on a wavelength grid.
+
+        Basis-function models (Lee, GSM) cache their shape on
+        ``self.wave`` in ``self.basis_func``.  This method recomputes it
+        for an arbitrary grid, which is what makes ``eval_bb_ex`` (the
+        Raman excitation wavelengths) correct.
+
+        Parameters:
+            wave (np.ndarray, optional): Wavelengths for evaluation.
+                Defaults to the model wavelengths.
+
+        Returns:
+            np.ndarray: The basis function on wave
+
+        Raises:
+            NotImplementedError: If the model has no basis function.
+        """
+        raise NotImplementedError(
+            f"{self.name} has no basis function")
 
     def eval_bb(self, params:np.ndarray):
         """
@@ -353,6 +442,7 @@ class bbNWCst(bbNWModel):
     name = 'Cst'
     nparam = 1
     pnames = ['Bnw']
+    log_params = [True]
 
     def __init__(self, wave:np.ndarray, prior_dicts:list):
         bbNWModel.__init__(self, wave, prior_dicts)
@@ -388,9 +478,39 @@ class bbNWEvery(bbNWModel):
         # Set nparam
         self.nparam = wave.size
         self.pnames = [f'Bnw_{wave[i]}' for i in range(wave.size)]
+        self.log_params = [True]*wave.size
 
         bbNWModel.__init__(self, wave, prior_dicts)
 
+    def eval_channels(self, params:np.ndarray, wave:np.ndarray=None):
+        """
+        Evaluate the per-channel amplitudes, interpolating if needed.
+
+        The parameters *are* bb_nw, one per model wavelength, so any
+        other grid (e.g. the Raman excitation wavelengths) requires an
+        interpolation choice.  We interpolate linearly in log10(bb_nw)
+        vs log10(wave) -- i.e. locally power-law, the behaviour every
+        other model here assumes -- and allow extrapolation, since the
+        excitation grid extends blueward of the model grid.
+
+        Parameters:
+            params (np.ndarray): log10(bb_nw), one per model wavelength
+            wave (np.ndarray, optional): Wavelengths for evaluation.
+                Defaults to the model wavelengths.
+
+        Returns:
+            np.ndarray: bb_nw with shape (nsample, wave.size)
+        """
+        vals = 10**np.atleast_2d(params)
+        if wave is None:
+            return vals
+        wave = np.atleast_1d(wave)
+        if wave.size == self.wave.size and np.allclose(wave, self.wave):
+            return vals
+        # Power-law-like interpolation in log-log space
+        f = interp1d(np.log10(self.wave), np.log10(vals), axis=-1,
+                     kind='linear', fill_value='extrapolate')
+        return 10**f(np.log10(wave))
 
     def init_guess(self, bb_nw:np.ndarray):
         """
@@ -449,6 +569,8 @@ class bbNWPow(bbNWModel):
     name = 'Pow'
     nparam = 2
     pnames = ['Bnw', 'beta']
+    # beta is a linear exponent, not a log10 amplitude
+    log_params = [True, False]
     pivot = 600.
 
     def __init__(self, wave:np.ndarray, prior_dicts:list):
@@ -470,6 +592,179 @@ class bbNWPow(bbNWModel):
 
         # Return
         return p0_bb 
+
+class bbNWPow2(bbNWModel):
+    """
+    Two-component (mineral + organic) particulate backscattering.
+
+    Turbid, mineral-dominated water needs particulate backscatter that
+    is both larger in magnitude and flatter -- sometimes rising -- with
+    wavelength than a single decreasing power law can supply.  This
+    model splits bb_nw into a near-flat mineral term and a steeper
+    organic term, so the red can be lifted without wrecking the blue.
+
+    Model equation:
+        bb_nw(λ) = Bmin × (700/λ)^eta_min + Borg × (600/λ)^eta_org
+
+    The mineral term is pivoted at 700 nm so that Bmin *is* the mineral
+    backscatter in the red, where turbid reflectance constrains it; the
+    organic term keeps BING's 600 nm convention.
+
+    Parameters (in fitting space)
+    -----------------------------
+    Bmin : float (log10)
+        Mineral backscattering amplitude at 700 nm [m^-1]
+    eta_min : float (linear)
+        Mineral spectral exponent, ~0 (flat/"white").  Negative values
+        make bb_nw rise toward the red.
+    Borg : float (log10)
+        Organic backscattering amplitude at 600 nm [m^-1]
+    eta_org : float (linear)
+        Organic spectral exponent, the open-ocean 0.5-2 range.
+
+    Attributes
+    ----------
+    name : str
+        'Pow2'
+    nparam : int
+        4 (Bmin, eta_min, Borg, eta_org)
+    pnames : list
+        ['Bmin', 'eta_min', 'Borg', 'eta_org']
+    log_params : list of bool
+        Which parameters are log10 amplitudes
+    pivot : float
+        Organic/reference wavelength = 600 nm.  Kept a scalar because
+        external analysis scripts read models[1].pivot.
+    pivot_min : float
+        Mineral pivot wavelength = 700 nm
+
+    Notes
+    -----
+    Keep the eta_min and eta_org priors on *disjoint* ranges (e.g.
+    [-0.5, 0.5] and [0.5, 2]).  The two terms are otherwise
+    exchangeable, and a symmetric prior gives the posterior a
+    label-switching degeneracy.
+
+    References
+    ----------
+    - Snyder, W. A. et al. (2008). "Optical scattering and backscattering
+      by organic and inorganic particulates in U.S. coastal waters,"
+      Appl. Opt. 47, 666-677.
+    - Twardowski, M. S. et al. (2001). "A model for estimating bulk
+      refractive index from the optical backscattering ratio,"
+      J. Geophys. Res. 106, 14129-14142.
+    - Doxaran, D. et al. (2009). "Spectral variations of light scattering
+      by marine particles in coastal waters," Limnol. Oceanogr. 54,
+      1257-1271.
+    - Neukermans, G. et al. (2012). "In situ variability of mass-specific
+      beam attenuation and backscattering of marine particles,"
+      Limnol. Oceanogr. 57, 124-144.
+
+    Examples
+    --------
+    >>> model = bbnw.init_model('Pow2', wave)
+    >>> params = np.array([-1.0, 0.0, -2.0, 1.0])
+    >>> bb_nw = model.eval_bbnw(params)
+    """
+    name = 'Pow2'
+    nparam = 4
+    pnames = ['Bmin', 'eta_min', 'Borg', 'eta_org']
+    # Which slots are log10 amplitudes (the rest are linear exponents)
+    log_params = [True, False, True, False]
+    pivot = 600.
+    pivot_min = 700.
+
+    def __init__(self, wave:np.ndarray, prior_dicts:list=None):
+        bbNWModel.__init__(self, wave, prior_dicts)
+
+    def init_guess(self, bb_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Splits the observed bb_nw between the two components, each
+        evaluated at its own pivot.
+
+        Parameters:
+            bb_nw (np.ndarray): The non-water backscattering coefficient
+
+        Returns:
+            np.ndarray: Initial guess, amplitudes in LINEAR space (the
+                caller log10s the log-flavored slots)
+        """
+        i700 = np.argmin(np.abs(self.wave-self.pivot_min))
+        i600 = np.argmin(np.abs(self.wave-self.pivot))
+        # eta_min is seeded slightly OFF zero on purpose: the MCMC
+        # walker perturbation in bing.fitting.inference is
+        # multiplicative (p0 += p0*U(-1e-2,1e-2)), so a parameter seeded
+        # at exactly 0 gets zero spread across walkers and that
+        # dimension never moves for the whole run.
+        p0_bb = np.array([max(bb_nw[i700]/2., 1e-5), 0.05,
+                          max(bb_nw[i600]/2., 1e-5), 1.])
+        assert p0_bb.size == self.nparam
+
+        # Return
+        return p0_bb
+
+class bbNWPow2Flat(bbNWPow2):
+    """
+    Two-component backscattering with a spectrally FLAT mineral term.
+
+    :class:`bbNWPow2` with eta_min fixed at 0, i.e. a constant mineral
+    term plus an organic power law:
+
+        bb_nw(λ) = Bmin + Borg × (600/λ)^eta_org
+
+    Dropping the mineral exponent removes one parameter and most of the
+    amplitude/slope degeneracy between the two terms, at the cost of not
+    being able to represent a *rising* mineral contribution.  Use it as
+    the identifiability-safe arm when comparing against Pow2.
+
+    Parameters (in fitting space)
+    -----------------------------
+    Bmin : float (log10)
+        Mineral backscattering amplitude [m^-1], wavelength independent
+    Borg : float (log10)
+        Organic backscattering amplitude at 600 nm [m^-1]
+    eta_org : float (linear)
+        Organic spectral exponent, the open-ocean 0.5-2 range
+
+    Attributes
+    ----------
+    name : str
+        'Pow2Flat'
+    nparam : int
+        3 (Bmin, Borg, eta_org)
+    pnames : list
+        ['Bmin', 'Borg', 'eta_org']
+
+    References
+    ----------
+    See :class:`bbNWPow2`.
+    """
+    name = 'Pow2Flat'
+    nparam = 3
+    pnames = ['Bmin', 'Borg', 'eta_org']
+    log_params = [True, True, False]
+
+    def init_guess(self, bb_nw:np.ndarray):
+        """
+        Initialize the model with a guess
+
+        Parameters:
+            bb_nw (np.ndarray): The non-water backscattering coefficient
+
+        Returns:
+            np.ndarray: Initial guess, amplitudes in LINEAR space (the
+                caller log10s the log-flavored slots)
+        """
+        i700 = np.argmin(np.abs(self.wave-self.pivot_min))
+        i600 = np.argmin(np.abs(self.wave-self.pivot))
+        p0_bb = np.array([max(bb_nw[i700]/2., 1e-5),
+                          max(bb_nw[i600]/2., 1e-5), 1.])
+        assert p0_bb.size == self.nparam
+
+        # Return
+        return p0_bb
 
 class bbNWGSM(bbNWModel):
     """
@@ -510,6 +805,7 @@ class bbNWGSM(bbNWModel):
     name = 'GSM'
     nparam = 1
     pnames = ['Bnw']
+    log_params = [True]
     pivot = 443.
 
     def __init__(self, wave:np.ndarray, prior_dicts:list):
@@ -520,7 +816,23 @@ class bbNWGSM(bbNWModel):
         self.set_basis_func()
 
     def set_basis_func(self):
-        self.basis_func = (self.pivot/self.wave)**self.eta
+        """Cache the basis function on the model wavelengths."""
+        self.basis_func = self.eval_basis_func()
+
+    def eval_basis_func(self, wave:np.ndarray=None):
+        """
+        Evaluate (pivot/wave)**eta on an arbitrary wavelength grid.
+
+        Parameters:
+            wave (np.ndarray, optional): Wavelengths for evaluation.
+                Defaults to the model wavelengths.
+
+        Returns:
+            np.ndarray: The GSM spectral shape on wave
+        """
+        if wave is None:
+            wave = self.wave
+        return (self.pivot/wave)**self.eta
 
     def init_guess(self, bb_nw:np.ndarray):
         """
@@ -597,6 +909,7 @@ class bbNWLee(bbNWModel):
     name = 'Lee'
     nparam = 1
     pnames = ['Bnw']
+    log_params = [True]
     pivot = 600.
     uses_basis_params = True
 
@@ -618,8 +931,32 @@ class bbNWLee(bbNWModel):
         self.set_basis_func(Y)
 
     def set_basis_func(self, Y:float):
+        """Set the spectral exponent and cache the basis function."""
         self.Y = Y
-        self.basis_func = (self.pivot/self.wave)**self.Y
+        self.basis_func = self.eval_basis_func()
+
+    def eval_basis_func(self, wave:np.ndarray=None):
+        """
+        Evaluate (pivot/wave)**Y on an arbitrary wavelength grid.
+
+        Parameters:
+            wave (np.ndarray, optional): Wavelengths for evaluation.
+                Defaults to the model wavelengths.
+
+        Returns:
+            np.ndarray: The Lee spectral shape on wave
+
+        Raises:
+            ValueError: If Y has not been set yet (call compute_Y or
+                set_basis_func first).
+        """
+        if self.Y is None:
+            raise ValueError(
+                "Lee: Y is not set -- call compute_Y() or "
+                "set_basis_func(Y) before evaluating")
+        if wave is None:
+            wave = self.wave
+        return (self.pivot/wave)**self.Y
 
     def init_guess(self, bb_nw:np.ndarray):
         """
