@@ -798,6 +798,13 @@ Two consequences worth knowing while designing the models here:
    (MCMC vs inflated noise vs `Pow2Flat`'s fixed `eta_min`). Per **Q10**,
    bump `nwalkers` to 32–64 **locally in the benchmark**, not in
    `init_mcmc`. Log your work.
+   ✔ **Done 2026-07-28** — `dev/turbid_bbp/` + 4 figures.
+   **Recommendation: `Pow2Flat` + MCMC** (χ² is degenerate, cond ~1e7;
+   the inflated floor makes recovery *worse*, 5.7σ bias). **But** a single
+   power law is statistically adequate against a two-component truth
+   unless the noise is 4–11× tighter than GLORIA's — so `Pow2` probably
+   won't fix GLORIA. `maxfev` is **required** (default budget: `Pow2` 5/8
+   on clear L23; with maxfev 8/8). No L23 regression. See the log.
 10. Re-read this doc. Do the **Docs** pass, including the CLAUDE.md and
     skill corrections. Log your work.
 11. Re-read this doc. *Only if I approve it:* refactor `eval_bbnw` to
@@ -894,6 +901,127 @@ format:
 ...
 
 ## Logs
+
+### 2026-07-28 (Prompt 9: benchmark + identifiability recommendation)
+
+Built `dev/turbid_bbp/turbid_bbp.py` (four figures alongside it). No
+package code changed. **The benchmark returns one clear recommendation
+and one uncomfortable negative result — please read the second one.**
+
+#### RECOMMENDATION (identifiability)
+
+**Use `Pow2Flat` (3 parameters, `eta_min` fixed at 0) with MCMC.** Not
+χ², and *not* the inflated noise floor. Evidence, one turbid spectrum,
+48 walkers per Q10:
+
+| strategy | σ(Bmin) | σ(eta_min) | σ(Borg) | σ(eta_org) | worst bias |
+|---|---|---|---|---|---|
+| χ², tight noise | 0.91 | **1.98** | 0.94 | 2.01 | — (unconstrained) |
+| MCMC, tight noise | 0.15 | 0.24 | 0.70 | 0.21 | 1.1σ |
+| MCMC, inflated 5% floor | 0.18 | 0.20 | **1.50** | 0.39 | **5.7σ** |
+| **MCMC, `Pow2Flat`** | **0.16** | fixed | **0.15** | **0.19** | **0.3σ** |
+
+- **χ² on the 4-parameter model is degenerate**, not merely imprecise:
+  `Bmin`–`Borg` correlation **−1.00**, `Bmin`–`eta_min` +0.98,
+  correlation-matrix condition number **1.1e7**, and `eta_org` pinned on
+  its prior bound. The covariance is meaningless there.
+- **MCMC tames it** (condition number never enters, correlations drop to
+  −0.74) but `Borg` stays poor and `eta_min` lands ~1σ off truth.
+- **The inflated noise floor makes recovery *worse*, not better** — it is
+  the one result I did not expect. `Adg` comes back −0.59 against a truth
+  of −0.30 and `Bmin` is **5.7σ** off. Loosening σ widens the likelihood
+  and lets the fit wander along the degenerate direction. Keep the floor
+  strictly for making χ²_ν *interpretable* (as the IOPtics side already
+  labels it) and never as a way to constrain a degenerate model.
+- **`Pow2Flat` + MCMC recovers every parameter within 0.3σ** with the
+  tightest errors of any strategy. Fixing `eta_min` removes the
+  degenerate direction outright.
+
+#### THE NEGATIVE RESULT: this synthetic evidence does not justify Pow2
+
+At GLORIA-like noise, **a single power law is statistically adequate
+against a two-component truth**. Sweeping `eta_min` across its whole
+prior range, with the amplitudes balanced (the *most* two-component case
+— either extreme reduces to a single power law):
+
+| eta_min | Pow χ²_ν | Pow2 χ²_ν | σ_crit | vs measured σ |
+|---|---|---|---|---|
+| −0.50 | 1.05 | 1.03 | 3.9e-5 | 3.9× tighter |
+| −0.25 | 0.95 | 0.96 | 3.1e-5 | 4.8× |
+| 0.00 | 1.05 | 1.00 | 2.4e-5 | 6.1× |
+| +0.25 | 0.97 | 0.99 | 1.8e-5 | 8.2× |
+| +0.50 | 1.00 | 0.99 | 1.3e-5 | 11.4× |
+
+`σ_crit` is the noise level at which `Pow` *would* start to be rejected
+(rms of its structural residual against the noiseless truth; for a wrong
+model E[χ²_ν] ≈ 1 + mean(r²)/σ²). **The measurement error would have to
+be 4–11× tighter than GLORIA's ~1.5e-4 sr⁻¹.**
+
+Why this matters for the original goal: `Pow`'s structural misfit against
+a `Pow2` truth is ~**2e-3** relative, while real turbid GLORIA spectra
+are missed by ~**48%** — *250× larger*. **So `Pow2` is very unlikely to
+be what fixes GLORIA.** A related realisation while reading these
+numbers: the report framed the problem partly as backscatter *magnitude*
+(required 0.2–0.4 m⁻¹ vs fitted 0.013), but `Pow`'s amplitude prior is
+`log_uniform(-6, 5)` — it can reach 0.4 m⁻¹ trivially, and in this
+benchmark it does (the synthetic truth runs 0.26 → 0.12 m⁻¹ and `Pow`
+tracks it). What a single power law cannot produce is a *shape* far from
+a power law — and no mineral+organic sum in the plausible range is far
+enough to matter at real noise.
+
+**Suggested next step (not done — your call):** fit real turbid GLORIA
+with `Pow2Flat`+MCMC and see whether the 48% misfit actually drops. If it
+does not, the remaining suspects are the ones currently deferred — the
+fixed Gordon coefficients at these backscatter levels (Q5) and the
+absorption side — not the `bb_nw` parameterisation. That is an IOPtics
+task, since GLORIA loading lives there.
+
+#### maxfev turns out to be required, not optional
+
+A second, cleaner win for Prompt 5's work. On the 8 clear L23 spectra,
+with **scipy's default budget**: `Pow` 8/8, `PowFlex` 8/8, **`Pow2Flat`
+6/8, `Pow2` 5/8**. With `maxfev=40000`: **8/8 for all four.** The
+two-component models simply cannot be run through χ² at the default
+budget. (`fit_with_LM` still does not expose `maxfev`, so the benchmark
+reimplements its ~10 lines to pass it — the one-line addition I flagged
+as not-done in Prompt 5 now has a concrete customer.)
+
+#### No regression on open ocean
+
+Paired on all 8 L23 spectra (compared only where *every* model
+converged — otherwise the medians describe different samples):
+
+| model | converged | median χ²_ν | median \|Δa_nw\|/a | median \|Δbb\|/bb |
+|---|---|---|---|---|
+| `Pow` | 8/8 | 0.0079 | 0.116 | 0.023 |
+| `PowFlex` | 8/8 | 0.0079 | 0.116 | 0.023 |
+| `Pow2Flat` | 8/8 | 0.0081 | 0.116 | 0.023 |
+| `Pow2` | 8/8 | 0.0082 | 0.116 | 0.023 |
+
+Identical IOP accuracy, χ²_ν differing only by the degrees-of-freedom
+divisor. The figure shows the four curves lying on top of each other
+across all 8 spectra.
+
+#### Two mistakes of my own worth recording
+
+1. **My first L23 comparison was invalid.** With a broad `except
+   Exception` and no `maxfev`, `Pow2` "converged" on 4/8 and posted a
+   *better* median χ²_ν than `Pow` — a pure selection effect, since only
+   the easy spectra survived. Fixed by narrowing the catch, raising the
+   budget, and comparing on the common subset.
+2. **Narrowing the catch immediately exposed a bug in my own index
+   list:** `L23_IDX` included 3500, but L23 has 3320 spectra, so that
+   entry had been silently swallowed for every model. Now 3200.
+
+#### Files
+
+`dev/turbid_bbp/turbid_bbp.py` plus `turbid_bbnw_recovery.png`,
+`turbid_rrs_panels.png`, `turbid_identifiability.png`,
+`turbid_l23_regression.png`. Per **Q10** the MCMC runs use
+`nwalkers=48` **locally**; `init_mcmc`'s default (16 for 7 parameters) is
+untouched. Runtime ~7 min. The Prompt-8 notebooks show the *noiseless*
+demonstration; this benchmark adds the noise, identifiability and
+convergence layers that change the conclusion.
 
 ### 2026-07-28 (Prompt 8: end-to-end L23 test + visualization notebooks)
 
