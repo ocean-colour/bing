@@ -388,7 +388,8 @@ def report_identifiability(res):
         bits = []
         for a, b in pairs:
             if a in pn and b in pn:
-                bits.append(f'{a}-{b} {r["corr"][pn.index(a), pn.index(b)]:+.2f}')
+                cc = r['corr'][pn.index(a), pn.index(b)]
+                bits.append(f'{a}-{b} {cc:+.2f}')
         print(f'     {key:15s} ' + '   '.join(bits))
 
     print(f'\n   chi-squared correlation-matrix condition number: '
