@@ -832,6 +832,14 @@ Two consequences worth knowing while designing the models here:
     models; 16 new tests; suite 178 passed, 2 skipped. `CLAUDE.md`, the
     skill and the code map updated (they documented the old mechanism).
 12. Please generate the hooks to run the tests as CI on GitHub.  I will then turn them on on GitHub.  Log your work.
+    ✔ **Done 2026-07-29** — `.github/workflows/tests.yml` (tests matrix
+    3.11–3.13 + docs build) and `bing/tests/conftest.py`, which turns the
+    missing-L23-dataset failure into skips so CI is green with honest
+    skips (70 passed / 110 skipped without data; 178 passed / 2 skipped
+    with). Validated in a clean venv. **⚠ Found an upstream ocpy bug:
+    `ocpy/hydrolight/` lacks `__init__.py`, so a pip-installed ocpy has no
+    `ocpy.hydrolight`** — CI works around it with an editable clone; the
+    one-line upstream fix is noted in the workflow. See the log.
 
 ## Open Questions
 
@@ -924,6 +932,122 @@ format:
 ...
 
 ## Logs
+
+### 2026-07-29 (Prompt 12: GitHub Actions CI hooks)
+
+Added `.github/workflows/tests.yml` (there was no `.github/` in bing) and
+`bing/tests/conftest.py`. **Ready for you to enable on GitHub.** Every
+step was validated in a *clean virtualenv*, not just written — which is
+how the one real blocker surfaced (see below).
+
+**Style follows your existing repos**, not something invented here:
+`ocpy/.github/workflows/tests.yml` (lightweight curated deps,
+`pip install -e . --no-deps`, an explicitly limited scope with the reason
+in a comment) and `correct-atmosphere/.github/workflows/ci.yml`
+(`concurrency` cancel-in-progress, pip caching, a matrix).
+
+#### The central problem: the suite needs a dataset CI cannot have
+
+Not a minor subset. `bbNWModel.init_bbw` loads `Hydrolight400.nc` for
+pure-water backscattering, so **constructing any backscattering model
+requires the L23 data**, which ocpy locates via `$OS_COLOR`. Measured
+with `env -u OS_COLOR`: **74 failed, 31 errors**, 70 passed.
+
+Rather than decorate ~105 tests with a marker that future tests would
+forget, `bing/tests/conftest.py`:
+
+- converts *that one specific failure* — an `OSError` whose message names
+  `Hydrolight` — into a **skip**, in fixtures or test bodies alike, via a
+  narrow `pytest_runtest_makereport` wrapper. Everything else still fails
+  normally, so a real error stays a real error;
+- drops from collection the three modules that cannot even be *imported*
+  without `correct_atmosphere` (`test_evaluate`, `test_io`,
+  `test_l23_fitting`) — an ImportError can't be turned into a skip;
+- exports `needs_l23` for tests that would rather declare it explicitly;
+- documents all of the above at the top, including where the data comes
+  from (Dryad doi:10.6076/D1630T, ~17 MB per file).
+
+Verified in all three states:
+
+| condition | result |
+|---|---|
+| ocean14, data present (unchanged baseline) | **178 passed, 2 skipped** |
+| ocean14, `env -u OS_COLOR` | **70 passed, 110 skipped, 0 failed** |
+| clean venv, no data, no `correct_atmosphere` | **62 passed, 80 skipped** in 17 s |
+
+(62+80 < 70+110 because the venv lacks `correct_atmosphere`, so
+`collect_ignore` drops those three modules' 38 tests entirely.)
+
+#### ⚠ The blocker: `ocpy.hydrolight` is missing from a pip-installed ocpy
+
+I built a throwaway venv to test the dependency list rather than trust
+the YAML, and the first run failed at collection:
+
+```
+ocpy/water/scattering.py:4: from ocpy.hydrolight import loisel23
+E   ModuleNotFoundError: No module named 'ocpy.hydrolight'
+```
+
+**Root cause: `ocpy/hydrolight/` has no `__init__.py`**, so setuptools'
+`find_packages()` omits it and `pip install git+.../ocpy.git` yields an
+ocpy without that subpackage. It is on `origin/main` and imports fine on
+your machine *only* because an editable install leaves the source tree on
+`sys.path`, where Python treats it as a namespace package. This affects
+anyone pip-installing ocpy, not just CI.
+
+The workflow works around it by cloning ocpy and installing it
+**editable** (`git clone --depth 1 … && pip install --no-deps -e ../ocpy`),
+verified to make `ocpy.hydrolight` importable. **The proper fix is one
+line upstream** — add `ocpy/ocpy/hydrolight/__init__.py` and commit —
+after which CI can revert to the one-liner `pip install --no-deps
+git+https://github.com/ocean-colour/ocpy.git`. There is a comment in the
+workflow saying exactly that, so it does not become mystery scaffolding.
+
+#### The workflow
+
+- **`tests`** job, matrix Python **3.11 / 3.12 / 3.13** (setup.py requires
+  ≥3.11 and the code uses `X | Y` annotations), ubuntu-latest.
+  Installs a curated stack **derived from the package's actual imports**
+  (I enumerated them: numpy, scipy, pandas, matplotlib, xarray,
+  h5netcdf/h5py, emcee, corner, tqdm, ipython, plus scikit-learn for
+  ocpy) then `pip install -e . --no-deps`. The `--no-deps` matters:
+  bing's `install_requires` pulls healpy, umap-learn, llvmlite, boto3 and
+  `timm==0.3.2`, none of which the tests need and which will not resolve
+  cleanly on current Pythons. Runs `pytest bing/tests -v -ra` with
+  `MPLBACKEND=Agg`.
+- **`docs`** job: builds the Sphinx HTML and uploads it as an artifact.
+  It also installs bing and ocpy, because `docs/api/io_api.rst` uses
+  `autofunction` and would otherwise silently lose those pages.
+- A **commented-out `full-tests` job** at the bottom with the recipe for
+  running the skipped tests: cache `Hydrolight400.nc` and point
+  `$OS_COLOR` at its parent. Left commented because there is no stable
+  direct-download URL for the Dryad file — dropping a copy in a bucket
+  you control would make it live.
+- `concurrency` with cancel-in-progress, and `cache: pip`.
+
+Everything above was run verbatim in the clean venv: the dependency
+install, both `python -c` diagnostic lines (the backslash-continued one
+included — it is easy to get an IndentationError there), the pytest
+invocation, and the Sphinx build.
+
+#### Deliberate choices, and two things for you to decide
+
+- **No `-W` on the Sphinx build.** The docs carry ~57 pre-existing
+  warnings (missing `api/*.rst` stubs, the malformed table in
+  `save_load.rst`, `raman.rst` title levels). Turning `-W` on now would
+  make CI red immediately; the comment says to enable it once those are
+  cleaned up so regressions start failing.
+- **No lint / mypy / coverage jobs.** `correct-atmosphere` has them, but
+  bing has no `pyproject.toml`, no type annotations to speak of, and
+  those jobs there are all `|| true` — i.e. decorative. Say the word and
+  I will add real ones.
+- **Triggers are `main`/`master`/`develop` + pull requests**, so pushes to
+  `turbid_bbp` will *not* fire; you would see CI on a PR. Want the
+  feature branch added?
+- The matrix is ubuntu-only, unlike `correct-atmosphere`'s three-OS
+  matrix. bing's dependency stack (h5netcdf, healpy-adjacent ocpy) is
+  fiddlier on Windows and the tests are pure numerics — happy to add
+  macOS if you want the coverage.
 
 ### 2026-07-29 (Prompt 11: polymorphic `eval_bbnw` dispatch — approved)
 
