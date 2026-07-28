@@ -807,6 +807,13 @@ Two consequences worth knowing while designing the models here:
    on clear L23; with maxfev 8/8). No L23 regression. See the log.
 10. Re-read this doc. Do the **Docs** pass, including the CLAUDE.md and
     skill corrections. Log your work.
+    ✔ **Done 2026-07-28** — `models.rst` (bb + a model lists corrected,
+    turbid section, `log_params`, 17 DOI'd references), `parameters.rst`,
+    `fitting.rst` (`maxfev` + walker init; least-squares API was wrong),
+    `CLAUDE.md`, the skill. **sphinx installed into `ocean14` at your
+    request** (9.1.0 + rtd-theme 3.1.0 + docutils 0.22.4) and added to
+    `docs/requirements.txt` + a `[docs]` extra in `setup.py`;
+    `sphinx-build` succeeds with **0 warnings in the edited files**.
 11. Re-read this doc. *Only if I approve it:* refactor `eval_bbnw` to
     polymorphic per-subclass dispatch (optional item 5). Log your work.
 
@@ -901,6 +908,146 @@ format:
 ...
 
 ## Logs
+
+### 2026-07-28 (Prompt 10: docs pass + sphinx installed and building)
+
+Documentation only — no package code changed. **`sphinx-build` succeeds
+with zero warnings in every file I touched.** Suite still 162 passed,
+2 skipped.
+
+**Sphinx installed, per your instruction.** Neither `sphinx` nor
+`docutils` was present in `ocean14`, so I could not validate RST at first;
+you asked me to add them. Installed into `ocean14`: **sphinx 9.1.0**,
+**sphinx-rtd-theme 3.1.0**, **docutils 0.22.4**. `docs/requirements.txt`
+already listed sphinx and the theme (ReadTheDocs installs from it), so the
+gap was purely local. It now also lists `docutils>=0.18`, records the
+verified versions, and **documents two entries that were listed but are
+not actually used** rather than deleting them silently:
+`sphinxcontrib-napoleon` (superseded — `conf.py` uses the built-in
+`sphinx.ext.napoleon`, and the standalone package is unmaintained) and
+`sphinx-autodoc-typehints` (absent from `conf.py`'s `extensions`). Also
+added `extras_require={'docs': [...]}` to `setup.py` so
+`pip install -e ".[docs]"` works locally, with a note to keep it in sync.
+
+**Build result:** `build succeeded, 57 warnings` — **none of them in
+`models.rst`, `parameters.rst` or `fitting.rst`**. I verified the new
+content actually renders (the `log-params` anchor, the math blocks, the
+DOI list, the new sections) rather than trusting the absence of warnings.
+
+#### `docs/models.rst`
+
+- **Backscattering section rewritten and corrected.** It documented
+  models that do not exist under names the code does not accept
+  (`PowerLaw`, `Constant`) and omitted `Every`. Now all seven — `Pow`,
+  `Lee`, `GSM`, `Cst`, `Every`, `Pow2`, `Pow2Flat` — with the real
+  `init_model` names, real `pnames`, equations, and the note that
+  positive `beta` means a *decreasing* `bb_nw`.
+- `Pow2` and `Pow2Flat` get their equations, parameters, default priors,
+  and the reason the two exponent ranges are disjoint.
+- New **"Turbid water: why two components"** section: the physical
+  argument with citations, plus the three practical findings from the
+  Prompt-9 benchmark — prefer `Pow2Flat` + MCMC, an inflated noise floor
+  does *not* help identifiability, and raise `maxfev`.
+- New **"Which parameters are log10"** section (anchored `log-params`)
+  documenting the `log_params` convention, that display code reads it and
+  the fitters do not, and that the two conventions must be kept
+  consistent.
+- **Absorption section also corrected** while I was there: it listed a
+  nonexistent `QAA` model and wrong parameter names (`A_ph`, `E_ph`,
+  `a_dg_443`). Now the real set with real `pnames`, including the
+  `Chase2017` caveat about sitting outside the prior-flavour convention.
+- **References**: 5 bare one-line entries → 17 full citations with
+  **DOIs**, split into "absorption and reflectance models" and
+  "backscattering in turbid and mineral-dominated water" (the latter
+  being the evidence base for `Pow2`).
+
+#### `docs/parameters.rst`
+
+- New **"Turbid-Water Configurations"** section for `expb_pow2`,
+  `expb_pow2flat` and `expb_powflex`, including *why* `Pow2Flat` is the
+  recommended starting point and the warning to always pass `bpriors`
+  explicitly rather than relying on `set_standard_priors`' blanket
+  `log_uniform(-6, 5)`.
+- Fixed two errors: `standard.gsm_gsm(...)` (no such function — it is
+  `standard.gsm`, and it takes no `beta`) and
+  `model_names == ['ExpBricaud', 'PowerLaw']` → `['ExpBricaud', 'Pow']`.
+
+#### `docs/fitting.rst`
+
+- **The least-squares section documented an API that does not exist**, so
+  I could not add `maxfev` to it honestly. It showed
+  `fit(models, wavelengths, Rrs, Rrs_err, p0=..., method='trf',
+  bounds=[(lo, hi), ...], max_nfev=1000)` returning a dict with
+  `'x'`/`'chisq'`/`'rchisq'`, plus a `chisq_fit.calc_chisq` that does not
+  exist. The real signature is
+  `fit(items, models, rt_dict, bounds=None, maxfev=None) -> (ans, cov,
+  idx)` with `items = (Rrs, varRrs, p0, idx)` and bounds as
+  `(low_array, high_array)`. Rewritten to that, with a worked example
+  that computes χ²_ν from the returned parameters.
+- **`maxfev` documented** with both caveats that matter: it changes
+  *whether* the fit returns rather than how well the model fits, and
+  parameter-rich models need it (the 5/8 and 6/8 → 8/8 convergence
+  numbers from the benchmark). Plus the note that one spelling covers
+  both scipy back ends.
+- New **"Walker initialization"** subsection for `init_walkers` /
+  `prior_bounds` / `perturb_frac` / `perturb_floor`, with a `.. warning::`
+  explaining the frozen-dimension failure mode and the note that the
+  legacy global RNG is deliberate so `batch_fit(seed=...)` stays
+  reproducible.
+
+#### `CLAUDE.md`
+
+- `bbNWPow2` and `bbNWPow2Flat` added to the backscattering table, plus a
+  turbid-water guidance paragraph (prefer `Pow2Flat` + MCMC; χ² is
+  degenerate; raise `maxfev`) linking the benchmark and notebooks.
+- The three new combos added to "Standard Model Combinations".
+- New "Which parameters are log10 (`log_params`)" subsection.
+- **"New Backscattering Model Template" rewritten.** The old one could not
+  work: `super().__init__(wave)` (the base takes `(wave, prior_dicts)`)
+  and a subclass-level `eval_bbnw` (evaluation is dispatched by a string
+  `if/elif` in the *base* class). Now shows the real pattern — class
+  attributes including `log_params`, `prior_dicts=None`, the base-class
+  branch using the `wave` **argument**, the `init_model` entry, and the
+  `standard.<combo>()` factory — with the p0-is-linear and
+  never-seed-zero rules stated where they apply.
+
+#### `.claude/skills/add-bbnw-model/SKILL.md`
+
+Same corrections, plus what the skill was missing entirely:
+
+- New **"Three contracts that bite"** section: base-class dispatch;
+  p0-is-linear-and-log10'd-by-prior-flavour (with both silent failure
+  directions spelled out); bounds-from-`pmin`/`pmax` (so no `gaussian` or
+  `ratio` priors on bb parameters, and why).
+- The Lee-style scaffold fixed, now with `eval_basis_func(wave)` and an
+  explicit ⚠ not to evaluate the cached `basis_func` in the branch —
+  which is exactly the bug fixed in Prompt 4.
+- "Add a default combo to standard.py (optional)" → **not optional**,
+  with the `set_standard_priors` fallback explained.
+- The test section now points at `bing/tests/test_bbnw.py`, which exists,
+  and at the reusable helpers in it.
+- **Pitfalls rewritten and ordered by how much time they cost**, covering
+  every trap this stage actually hit: ignoring `wave`, flavour/`log_params`
+  disagreement, zero seeds, gaussian priors, wrong-length `bpriors`,
+  `gen_bounds()`, `super().__init__(wave)`.
+- Verification checklist extended with the Raman-grid check, the
+  `log_params`-vs-flavours check, the prior-length check, and a
+  default-`maxfev` convergence check.
+
+#### Pre-existing doc problems I did NOT fix (flagging, not fixing)
+
+The build's 57 warnings are all in files outside this stage's scope:
+`docs/api/*.rst` referenced by the api toctree do not exist (7 warnings);
+`index.rst` references missing `examples`, `contributing`, `changelog`
+and `references` documents (4 — the last being the `references.rst` I
+flagged back in Prompt 1); `save_load.rst:38` has a **malformed table**;
+`raman.rst` has 9 "inconsistent title style" errors and duplicate
+citations with `chlorophyll_fluorescence.rst`; `radiative_transfer.rst`
+has two undefined `|G2|` substitutions; and the MCMC half of
+`fitting.rst` still documents `init_mcmc`/`set_standard_priors`
+signatures that do not match the code (I corrected only the least-squares
+half and the walker-init part, i.e. the surfaces this stage changed).
+Say the word if you want a separate docs-accuracy pass.
 
 ### 2026-07-28 (Prompt 9: benchmark + identifiability recommendation)
 
