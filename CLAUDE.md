@@ -329,15 +329,17 @@ Two things differ from the absorption side, and both bite:
 1. The base `bbNWModel.__init__` takes `(wave, prior_dicts)` and builds
    the priors itself — do **not** call `super().__init__(wave)` and do
    not rebuild `bb_w`.
-2. Evaluation is dispatched by a string `if/elif` on `self.name` inside
-   the **base class** `eval_bbnw` (`bbnw.py`), not by overriding it in
-   the subclass. You must add a branch there *and* an entry in
-   `init_model`'s `model_dict`.
+2. Implement **`_eval_bbnw(params, wave)`**, not `eval_bbnw`. The public
+   `eval_bbnw(params, wave=None)` lives on the base class, resolves
+   `wave=None` to `self.wave`, and delegates — so your method always
+   receives a real grid and must use it (`eval_bb_ex` passes the Raman
+   *excitation* wavelengths). The base `_eval_bbnw` raises
+   `NotImplementedError`, so a model that forgets fails loudly.
 
 ```python
 class bbNWYourModel(bbNWModel):
     """One-line description: bb_nw(λ) = <equation>."""
-    name = 'YourModel'          # must match the eval_bbnw branch
+    name = 'YourModel'          # the init_model key
     nparam = 2
     pnames = ['Bnw', 'exponent']
     log_params = [True, False]  # which slots are log10 amplitudes
@@ -347,6 +349,15 @@ class bbNWYourModel(bbNWModel):
     # prior_dicts defaults to None so tests can construct directly
     def __init__(self, wave, prior_dicts=None):
         bbNWModel.__init__(self, wave, prior_dicts)
+
+    def _eval_bbnw(self, params, wave):
+        """bb_nw on the GIVEN grid, shape (nsample, nwave).
+
+        Use `wave`, never self.wave: eval_bb_ex passes the Raman
+        excitation wavelengths.  functions.powerlaw/constant/gen_basis
+        already return (nsample, nwave) for 1-D and chain-shaped params.
+        """
+        return functions.powerlaw(wave, params, pivot=self.pivot)
 
     def init_guess(self, bb_nw):
         """Starting parameters, amplitudes in LINEAR space.
@@ -360,16 +371,7 @@ class bbNWYourModel(bbNWModel):
         return np.array([max(bb_nw[i_piv], 1e-5), 1.])
 ```
 
-Then in `bbNWModel.eval_bbnw`, add a branch that uses the **`wave`
-argument**, not `self.wave` — `eval_bb_ex` calls it with the Raman
-excitation grid:
-
-```python
-        elif self.name == 'YourModel':
-            return functions.powerlaw(wave, params, pivot=self.pivot)
-```
-
-and register the class:
+Then register the class:
 
 ```python
     model_dict = {..., 'YourModel': bbNWYourModel}

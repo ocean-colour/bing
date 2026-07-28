@@ -15,7 +15,7 @@ description: Scaffold a new non-water backscattering (bb_nw) model class in bing
 The base class is `bbNWModel` in [bing/models/bbnw.py](../../../bing/models/bbnw.py). All subclasses MUST:
 
 1. Set class attributes: `name` (str), `nparam` (int), `pnames` (list of str), `log_params` (list of bool), and `uses_basis_params` (bool).
-2. Add an `eval_bbnw` **branch in the base class** (see below) returning shape `(nsample, nwave)`, and honour the `wave` argument.
+2. Implement `_eval_bbnw(params, wave)` returning shape `(nsample, nwave)`, and evaluate on the `wave` you are given.
 3. Amplitude parameters are in log10 space. Exponents stay linear.
 4. Use `self.wave`, `self.bb_w` (set by base `__init__`). Don't recompute water backscattering.
 5. If the spectral shape depends on an externally-supplied basis (e.g., Lee's Y from band ratios), set `uses_basis_params = True` and implement `set_basis_func(Y)` plus `eval_basis_func(wave)`.
@@ -25,8 +25,8 @@ The pivot reference wavelength convention in BING is **600 nm** for the Power-la
 
 ## Three contracts that bite
 
-**1. Evaluation is dispatched on `self.name` in the base class, not overridden.**
-`bbNWModel.eval_bbnw` is a string `if/elif`. Adding a model means adding a branch there *and* an `init_model` entry. (A subclass-level `eval_bbnw` would be ignored.)
+**1. Implement `_eval_bbnw`, not `eval_bbnw`.**
+The public `eval_bbnw(params, wave=None)` lives on the base class: it resolves `wave=None` to `self.wave` and delegates to your `_eval_bbnw(params, wave)`. So `wave` is never None in your method — and you must use it rather than `self.wave`, because `eval_bb_ex` passes the Raman *excitation* grid. The base `_eval_bbnw` raises `NotImplementedError`, so forgetting it fails loudly rather than silently.
 
 **2. `init_guess` returns LINEAR amplitudes; the caller log10s by prior flavor.**
 Both `bing.fitting.l23` and `ioptics.run` convert exactly the slots whose prior `flavor` starts with `log`. So `pnames` order must match the prior-dict order, each amplitude needs a `log_*` prior and each exponent a linear one. Both failure directions are silent: an exponent given a `log_uniform` prior starts at `log10(0)`, and an amplitude given a `uniform` prior is never converted yet `eval_bbnw` still applies `10**`.
@@ -62,18 +62,18 @@ class bbNWYourName(bbNWModel):
     def __init__(self, wave, prior_dicts=None):
         bbNWModel.__init__(self, wave, prior_dicts)
 
+    def _eval_bbnw(self, params, wave):
+        """bb_nw on the GIVEN grid; shape (nsample, nwave).
+
+        Use `wave`, not self.wave -- eval_bb_ex passes the Raman
+        excitation wavelengths.
+        """
+        return functions.powerlaw(wave, params, pivot=self.pivot)
+
     def init_guess(self, bbnw_observed):
         """Linear-space starting guess; caller log10s the log slots."""
         i600 = np.argmin(np.abs(self.wave - self.pivot))
         return np.array([max(bbnw_observed[i600], 1e-4), 1.0])
-```
-
-and a branch in `bbNWModel.eval_bbnw` — note it uses the **`wave`
-argument**, because `eval_bb_ex` calls it with the Raman excitation grid:
-
-```python
-        elif self.name == 'YourName':
-            return functions.powerlaw(wave, params, pivot=self.pivot)
 ```
 
 `functions.powerlaw`/`constant`/`gen_basis` already return
@@ -82,16 +82,18 @@ they work on a *slice* of a wider parameter array — which is how the
 two-component models sum two terms:
 
 ```python
-        elif self.name == 'Pow2':
-            return (functions.powerlaw(wave, params[..., 0:2],
-                                       pivot=self.pivot_min) +
-                    functions.powerlaw(wave, params[..., 2:4],
-                                       pivot=self.pivot))
+    def _eval_bbnw(self, params, wave):      # bbNWPow2
+        return (functions.powerlaw(wave, params[..., 0:2],
+                                   pivot=self.pivot_min) +
+                functions.powerlaw(wave, params[..., 2:4],
+                                   pivot=self.pivot))
 ```
 
 ## Register in the factory
 
-Add to `model_dict` in `init_model` in [bing/models/bbnw.py](../../../bing/models/bbnw.py):
+The `init_model` entry is now the *only* place the base class needs to
+know about your model (evaluation is polymorphic). Add to `model_dict` in
+[bing/models/bbnw.py](../../../bing/models/bbnw.py):
 
 ```python
 model_dict = {
@@ -130,15 +132,15 @@ class bbNWYourLee(bbNWModel):
         return (self.pivot / wave)**self.Y
 ```
 
-and the base-class branch:
+and the evaluation, which for a single-basis model is already provided by
+the base class as `_eval_basis_bbnw` (this is what `Lee` and `GSM` do):
 
 ```python
-        elif self.name == 'YourLee':
-            return functions.gen_basis(params[..., -1:],
-                                       [self.eval_basis_func(wave)])
+    def _eval_bbnw(self, params, wave):
+        return self._eval_basis_bbnw(params, wave)
 ```
 
-⚠ Do **not** evaluate the cached `self.basis_func` in the branch. It is
+⚠ Do **not** evaluate the cached `self.basis_func` there. It is
 built on `self.wave`, so `eval_bb_ex` would then add pure-water
 backscattering on the *excitation* grid to particle backscattering on the
 *emission* grid — silently, because the two grids have equal length.
@@ -208,9 +210,11 @@ pytest bing/tests/test_bbnw.py -v
 
 Ordered by how much time they cost when they happen.
 
-- **Ignoring the `wave` argument** in the `eval_bbnw` branch → Raman
-  fits silently mix the emission and excitation grids. Never use
-  `self.wave` there.
+- **Ignoring the `wave` argument** in `_eval_bbnw` → Raman fits silently
+  mix the emission and excitation grids. Never use `self.wave` there.
+- **Overriding `eval_bbnw` instead of `_eval_bbnw`** → you lose the
+  base class's grid resolution (and any future shared checks). Override
+  the private one.
 - **Prior flavor disagreeing with `log_params`** → p0 starts in the wrong
   space, silently. An exponent with a `log_uniform` prior starts at
   `log10(0)`; an amplitude with a `uniform` prior is never converted
@@ -233,6 +237,7 @@ Ordered by how much time they cost when they happen.
 
 ## Verification checklist
 
+- [ ] `_eval_bbnw` is defined on your class (the base one raises)
 - [ ] `init_model('YourName', wave)` succeeds, and with no `prior_dicts`
 - [ ] Shape contract holds for 1D and 2D params
 - [ ] `eval_bbnw(p, wave=model.wave_ex)` differs from `eval_bbnw(p)`, and

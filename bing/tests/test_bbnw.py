@@ -645,6 +645,70 @@ def test_l23_two_comp_no_worse_than_pow(combo, l23_lm_fits):
 
 
 # ---------------------------------------------------------------------
+# Polymorphic dispatch: each model implements its own _eval_bbnw
+# ---------------------------------------------------------------------
+
+ALL_MODELS = ['Cst', 'Pow', 'Lee', 'GSM', 'Every', 'Pow2', 'Pow2Flat']
+
+
+@pytest.mark.parametrize("name", ALL_MODELS)
+def test_every_model_implements_eval(name):
+    # The base class no longer dispatches on self.name, so a model that
+    # forgets _eval_bbnw is broken.  Assert each registered model
+    # overrides it rather than inheriting the base's raise.
+    cls = type(bing_bbnw.init_model(name, wave))
+    assert '_eval_bbnw' in vars(cls), \
+        f'{cls.__name__} does not implement _eval_bbnw'
+    assert cls._eval_bbnw is not bing_bbnw.bbNWModel._eval_bbnw
+
+
+def test_base_class_refuses_to_evaluate():
+    # A subclass that neglects _eval_bbnw must fail loudly, not silently
+    class bbNWNoEval(bing_bbnw.bbNWModel):
+        name = 'NoEval'
+        nparam = 1
+        pnames = ['Bnw']
+
+        def __init__(self, wv, prior_dicts=None):
+            bing_bbnw.bbNWModel.__init__(self, wv, prior_dicts)
+
+    model = bbNWNoEval(wave)
+    with pytest.raises(NotImplementedError):
+        model.eval_bbnw(np.array([-2.0]))
+
+
+def test_basis_models_share_one_implementation():
+    # Lee and GSM differ only in their basis function, so they delegate
+    # to the same helper on the base class
+    lee = bing_bbnw.init_model('Lee', wave)
+    gsm = bing_bbnw.init_model('GSM', wave)
+    assert type(lee)._eval_bbnw is not type(gsm)._eval_bbnw
+    for model in (lee, gsm):
+        assert hasattr(model, '_eval_basis_bbnw')
+
+    # ... and the helper honours the requested grid
+    lee.set_basis_func(1.0)
+    params = np.array([-2.0])
+    assert np.allclose(
+        lee._eval_basis_bbnw(params, lee.wave_ex),
+        lee.eval_bbnw(params, wave=lee.wave_ex))
+
+
+@pytest.mark.parametrize("name", ALL_MODELS)
+def test_public_eval_resolves_the_grid(name):
+    # The public method resolves wave=None once, so subclasses always
+    # receive a real grid.  This is what keeps eval_bb_ex honest.
+    model, params = build_with_params(name)
+    explicit = model.eval_bbnw(params, wave=model.wave)
+    default = model.eval_bbnw(params)
+    assert np.allclose(explicit, default)
+
+    # _eval_bbnw is never handed None
+    direct = model._eval_bbnw(np.asarray(params), model.wave)
+    assert np.allclose(direct, default)
+
+
+# ---------------------------------------------------------------------
 # Every model must honour the wave kwarg (Raman excitation grid)
 # ---------------------------------------------------------------------
 

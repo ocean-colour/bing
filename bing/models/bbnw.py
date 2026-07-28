@@ -282,14 +282,15 @@ class bbNWModel:
         """
         Evaluate the non-water backscattering coefficients
 
-        Parameters:
-            params (np.ndarray): The parameters for the model
+        Resolves the wavelength grid and delegates to the model's own
+        :meth:`_eval_bbnw`.  See the subclasses for their parameters,
+        e.g.:
 
+            Cst:
+                params[0] = log10(Bnw)
             Pow:
                 params[0] = log10(Bnw)
                 params[1] = beta
-            Cst:
-                params[0] = log10(Bnw)
             Pow2:
                 params[0] = log10(Bmin)   # mineral, pivot 700 nm
                 params[1] = eta_min
@@ -300,44 +301,69 @@ class bbNWModel:
                 params[1] = log10(Borg)   # organic, pivot 600 nm
                 params[2] = eta_org
 
-            wave (np.ndarray, optional): Wavelengths for evaluation
+        Parameters:
+            params (np.ndarray): The parameters for the model, either 1-D
+                or (nsample, nparam) for chains
+            wave (np.ndarray, optional): Wavelengths for evaluation.
+                Defaults to the model wavelengths.
 
         Returns:
-            np.ndarray: The non-water backscattering coefficient
+            np.ndarray: The non-water backscattering coefficient, shape
+                (nsample, nwave)
         """
         # Wavelengths for evaluation
         if wave is None:
             wave = self.wave  # Model values
 
-        if self.name == 'Pow':
-            return functions.powerlaw(wave, params, pivot=self.pivot)
-        elif self.name == 'Pow2':
-            # Mineral (near-flat, red-pivoted) + organic (steep) power
-            # laws.  Slicing params[..., 0:2] / [..., 2:4] preserves
-            # functions.powerlaw's (nsample, nwave) contract for 1-D
-            # and 2-D (chain-shaped) input alike.
-            return (functions.powerlaw(wave, params[..., 0:2],
-                                       pivot=self.pivot_min) +
-                    functions.powerlaw(wave, params[..., 2:4],
-                                       pivot=self.pivot))
-        elif self.name == 'Pow2Flat':
-            # As Pow2 with eta_min fixed at 0, i.e. a constant mineral
-            # term (its pivot is then irrelevant) + an organic power law.
-            return (functions.constant(wave, params[..., 0:1]) +
-                    functions.powerlaw(wave, params[..., 1:3],
-                                       pivot=self.pivot))
-        elif self.name == 'Every':
-            return self.eval_channels(params, wave=wave)
-        elif self.name == 'Cst':
-            return functions.constant(wave, params)
-        elif self.name in ['Lee', 'GSM']:
-            # Evaluate the basis on the REQUESTED grid.  self.basis_func
-            # is cached on self.wave, so using it here silently mixed
-            # grids whenever wave was the Raman excitation grid.
-            return functions.gen_basis(params[...,-1:],
-                                       [self.eval_basis_func(wave)])
-        else:
-            raise ValueError(f"Unknown model: {self.name}")
+        return self._eval_bbnw(np.asarray(params), wave)
+
+    def _eval_bbnw(self, params:np.ndarray, wave:np.ndarray):
+        """
+        Model-specific evaluation, on an explicit wavelength grid.
+
+        Each subclass implements this; :meth:`eval_bbnw` is the public
+        entry point and resolves the default grid, so ``wave`` here is
+        never None.
+
+        Keeping the grid resolution in the base class is deliberate. The
+        grid a caller asks for is not always ``self.wave`` --
+        :meth:`eval_bb_ex` asks for the Raman *excitation* wavelengths --
+        and a model that quietly evaluated on ``self.wave`` regardless
+        used to make ``eval_bb_ex`` add pure-water backscattering on one
+        grid to particle backscattering on another. Receiving ``wave``
+        already resolved removes that whole failure mode.
+
+        Parameters:
+            params (np.ndarray): The parameters for the model
+            wave (np.ndarray): Wavelengths for evaluation
+
+        Returns:
+            np.ndarray: bb_nw with shape (nsample, nwave)
+
+        Raises:
+            NotImplementedError: If the subclass does not implement it.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement _eval_bbnw")
+
+    def _eval_basis_bbnw(self, params:np.ndarray, wave:np.ndarray):
+        """
+        Evaluation for models whose shape is a single basis function.
+
+        Shared by the basis-function models (Lee, GSM), whose only free
+        parameter is the amplitude scaling
+        :meth:`eval_basis_func`.
+
+        Parameters:
+            params (np.ndarray): The parameters; the last is the log10
+                amplitude
+            wave (np.ndarray): Wavelengths for evaluation
+
+        Returns:
+            np.ndarray: bb_nw with shape (nsample, nwave)
+        """
+        return functions.gen_basis(params[..., -1:],
+                                   [self.eval_basis_func(wave)])
 
     def eval_basis_func(self, wave:np.ndarray=None):
         """
@@ -447,6 +473,10 @@ class bbNWCst(bbNWModel):
     def __init__(self, wave:np.ndarray, prior_dicts:list):
         bbNWModel.__init__(self, wave, prior_dicts)
 
+    def _eval_bbnw(self, params:np.ndarray, wave:np.ndarray):
+        """Spectrally flat: bb_nw = 10**Bnw on any grid."""
+        return functions.constant(wave, params)
+
     def init_guess(self, bb_nw:np.ndarray):
         """
         Initialize the model with a guess
@@ -481,6 +511,10 @@ class bbNWEvery(bbNWModel):
         self.log_params = [True]*wave.size
 
         bbNWModel.__init__(self, wave, prior_dicts)
+
+    def _eval_bbnw(self, params:np.ndarray, wave:np.ndarray):
+        """One amplitude per channel; interpolated onto other grids."""
+        return self.eval_channels(params, wave=wave)
 
     def eval_channels(self, params:np.ndarray, wave:np.ndarray=None):
         """
@@ -575,6 +609,10 @@ class bbNWPow(bbNWModel):
 
     def __init__(self, wave:np.ndarray, prior_dicts:list):
         bbNWModel.__init__(self, wave, prior_dicts)
+
+    def _eval_bbnw(self, params:np.ndarray, wave:np.ndarray):
+        """bb_nw = 10**Bnw * (600/wave)**beta."""
+        return functions.powerlaw(wave, params, pivot=self.pivot)
 
     def init_guess(self, bb_nw:np.ndarray):
         """
@@ -677,6 +715,18 @@ class bbNWPow2(bbNWModel):
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
         bbNWModel.__init__(self, wave, prior_dicts)
 
+    def _eval_bbnw(self, params:np.ndarray, wave:np.ndarray):
+        """Mineral (near-flat, red-pivoted) + organic (steep) power laws.
+
+        Slicing params[..., 0:2] / [..., 2:4] preserves
+        functions.powerlaw's (nsample, nwave) contract for 1-D and 2-D
+        (chain-shaped) input alike.
+        """
+        return (functions.powerlaw(wave, params[..., 0:2],
+                                   pivot=self.pivot_min) +
+                functions.powerlaw(wave, params[..., 2:4],
+                                   pivot=self.pivot))
+
     def init_guess(self, bb_nw:np.ndarray):
         """
         Initialize the model with a guess
@@ -746,6 +796,16 @@ class bbNWPow2Flat(bbNWPow2):
     pnames = ['Bmin', 'Borg', 'eta_org']
     log_params = [True, True, False]
 
+    def _eval_bbnw(self, params:np.ndarray, wave:np.ndarray):
+        """Constant mineral term (eta_min fixed at 0) + organic power law.
+
+        With a flat mineral term its pivot is irrelevant, which is why
+        this model carries one fewer parameter than Pow2.
+        """
+        return (functions.constant(wave, params[..., 0:1]) +
+                functions.powerlaw(wave, params[..., 1:3],
+                                   pivot=self.pivot))
+
     def init_guess(self, bb_nw:np.ndarray):
         """
         Initialize the model with a guess
@@ -814,6 +874,10 @@ class bbNWGSM(bbNWModel):
         # Manitorena+2002
         self.eta = 1.0337
         self.set_basis_func()
+
+    def _eval_bbnw(self, params:np.ndarray, wave:np.ndarray):
+        """Amplitude times the fixed (443/wave)**eta shape."""
+        return self._eval_basis_bbnw(params, wave)
 
     def set_basis_func(self):
         """Cache the basis function on the model wavelengths."""
@@ -918,6 +982,10 @@ class bbNWLee(bbNWModel):
 
         # Lee+2002
         self.Y = None
+
+    def _eval_bbnw(self, params:np.ndarray, wave:np.ndarray):
+        """Amplitude times the (600/wave)**Y shape, Y from Lee+2002."""
+        return self._eval_basis_bbnw(params, wave)
 
     def compute_Y(self, rrs_440:float, rrs_555:float):
         """ Compute Y from Lee+2002 given rrs           

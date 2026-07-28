@@ -167,9 +167,12 @@ corrections from the first draft are marked ✎.
     `bbNWPow(wave)` raises `TypeError`. **Give the new classes
     `prior_dicts:list=None`** so they match `anw.py` and can be
     constructed directly in tests.
-  - `bbNWModel.eval_bbnw(params, wave=None)` (`bbnw.py:240`) — the
-    string dispatch on `self.name` (`:262-273`, `else: raise
-    ValueError`). **Note the `wave` kwarg**: `eval_bb_ex` (`bbnw.py:288`)
+  - `bbNWModel.eval_bbnw(params, wave=None)` — ✎ **superseded by
+    Prompt 11**: this was a string dispatch on `self.name`; it is now a
+    template method that resolves the grid and delegates to each model's
+    own `_eval_bbnw(params, wave)` (base raises `NotImplementedError`).
+    Adding a model means writing that method plus an `init_model` entry.
+    **Note the `wave` kwarg**: `eval_bb_ex` (`bbnw.py:288`)
     calls `eval_bbnw(params, wave=self.wave_ex)` (`:300`) to get
     backscatter at Raman *excitation* wavelengths. `Pow` and `Cst`
     honour it; **`Lee`, `GSM` *and* `Every` ignore it** — ✎ `Every` was
@@ -561,6 +564,13 @@ and the base raises `NotImplementedError`. This touches all five
 existing models, so treat it as a **separate, opt-in** step after
 `Pow2` works and the tests are green — not bundled in.
 
+✔ **Done 2026-07-29 (approved).** Implemented as a *template method*
+rather than a plain override: the public `eval_bbnw(params, wave=None)`
+stays on the base class and resolves the grid, then delegates to each
+model's `_eval_bbnw(params, wave)`. Rationale in the log — having each
+subclass re-resolve `wave` itself would recreate the exact bug fixed in
+Prompt 4. Verified **bit-identical** output for all seven models.
+
 ## Tests
 
 Create `bing/tests/test_bbnw.py` (confirmed: the module does **not**
@@ -816,6 +826,11 @@ Two consequences worth knowing while designing the models here:
     `sphinx-build` succeeds with **0 warnings in the edited files**.
 11. Re-read this doc. *Only if I approve it:* refactor `eval_bbnw` to
     polymorphic per-subclass dispatch (optional item 5). Log your work.
+    ✔ **Done 2026-07-29 (you approved)** — the `if/elif` is gone; each
+    model implements `_eval_bbnw(params, wave)` and the base resolves the
+    grid + raises `NotImplementedError`. Bit-identical output for all 7
+    models; 16 new tests; suite 178 passed, 2 skipped. `CLAUDE.md`, the
+    skill and the code map updated (they documented the old mechanism).
 
 ## Open Questions
 
@@ -908,6 +923,87 @@ format:
 ...
 
 ## Logs
+
+### 2026-07-29 (Prompt 11: polymorphic `eval_bbnw` dispatch — approved)
+
+Refactored the string `if/elif` out of `bbNWModel.eval_bbnw`. One source
+file plus tests and the three docs that described the old mechanism.
+**16 new tests; full suite 178 passed, 2 skipped.** Output verified
+**bit-identical** for every model.
+
+**One design decision I made differently from the sketch, deliberately.**
+The plan said "each subclass overrides `eval_bbnw(params, wave=None)` and
+the base raises `NotImplementedError`". Implemented that way, each of the
+seven models would have to repeat `wave = self.wave if wave is None else
+wave` — which is *precisely* the line whose absence caused the Prompt-4
+bug, where `Lee`/`GSM`/`Every` quietly evaluated on `self.wave` and made
+`eval_bb_ex` mix the Raman emission and excitation grids. Recreating that
+opportunity seven times over seemed like the wrong trade for a refactor
+whose whole point is safety.
+
+So it is a **template method** instead:
+
+- the public `eval_bbnw(params, wave=None)` stays on the base class,
+  resolves `wave=None → self.wave`, and delegates;
+- each model implements **`_eval_bbnw(params, wave)`**, where `wave` is
+  guaranteed non-None;
+- the base `_eval_bbnw` raises `NotImplementedError` naming the class.
+
+The public signature and behaviour are unchanged, the `if/elif` is gone,
+and adding a model is now "write a method on your class + one
+`init_model` entry" — the goal of the item. Grid resolution lives in
+exactly one place and cannot be forgotten. Say the word if you'd rather
+have the literal form.
+
+**What moved where.** `Cst` → `functions.constant`; `Pow` →
+`functions.powerlaw`; `Pow2` → the two-pivot sum; `Pow2Flat` → constant +
+power law; `Every` → delegates to its existing `eval_channels`;
+`Lee`/`GSM` → a one-line delegation to a new base-class helper
+`_eval_basis_bbnw`, since their bodies were identical (amplitude ×
+`eval_basis_func(wave)`) and only the basis differs. That keeps the
+class hierarchy flat — no new intermediate class — while having the
+shared logic written once.
+
+**Verification.** Before trusting the tests I checked equivalence
+directly: reimplemented the old dispatch verbatim in a scratch script and
+compared against the refactored code for all **7 models × 2 grids
+(native and Raman excitation) × 1-D and chain-shaped params** — 28
+comparisons, all `atol=0, rtol=0` **bit-identical**, with `eval_bb` and
+`eval_bb_ex` consistency asserted alongside. I also confirmed nothing
+outside `bbnw.py` subclasses these models or calls the private path:
+every caller in `bing/`, `papers/`, `dev/` and IOPtics uses the public
+`eval_bbnw`.
+
+**New tests** (16, in `test_bbnw.py`):
+- `test_every_model_implements_eval` — parameterised over all seven
+  models, asserts each *actually overrides* `_eval_bbnw` rather than
+  inheriting the base. This is the guard that matters now: with dispatch
+  gone, a model that forgets its method would previously have hit a
+  `ValueError: Unknown model`, and now must fail on the base's
+  `NotImplementedError` — so the test proves the safety net is wired.
+- `test_base_class_refuses_to_evaluate` — defines a throwaway subclass
+  with no `_eval_bbnw` and asserts `NotImplementedError`.
+- `test_basis_models_share_one_implementation` — `Lee`/`GSM` both expose
+  `_eval_basis_bbnw`, and it honours the requested grid.
+- `test_public_eval_resolves_the_grid` — for every model, `eval_bbnw(p)`,
+  `eval_bbnw(p, wave=self.wave)` and `_eval_bbnw(p, self.wave)` agree, so
+  the delegation is transparent.
+
+**Docs corrected** — the Prompt-10 pass had just documented the *old*
+mechanism, so leaving them would have been worse than not having written
+them:
+- `CLAUDE.md` — "New Backscattering Model Template": contract item 2 now
+  says implement `_eval_bbnw`, the template code carries the method, and
+  the "add a branch to `eval_bbnw`" block is gone.
+- `.claude/skills/add-bbnw-model/SKILL.md` — API contract item 2,
+  "contract 1" (rewritten from "evaluation is dispatched on `self.name`"
+  to "implement `_eval_bbnw`, not `eval_bbnw`"), the scaffold, the
+  two-component example, the Lee-style section (now pointing at
+  `_eval_basis_bbnw`), a new pitfall for overriding the *public* method
+  by mistake, and the checklist.
+- This doc's Code map entry, marked ✎ superseded.
+- `docs/models.rst` needed no change — it documents the models, never the
+  dispatch mechanism.
 
 ### 2026-07-28 (Prompt 10: docs pass + sphinx installed and building)
 
