@@ -831,6 +831,7 @@ Two consequences worth knowing while designing the models here:
     grid + raises `NotImplementedError`. Bit-identical output for all 7
     models; 16 new tests; suite 178 passed, 2 skipped. `CLAUDE.md`, the
     skill and the code map updated (they documented the old mechanism).
+12. Please generate the hooks to run the tests as CI on GitHub.  I will then turn them on on GitHub.  Log your work.
 
 ## Open Questions
 
