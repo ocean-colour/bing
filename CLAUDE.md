@@ -242,6 +242,16 @@ for chains, idx in zip(chains_list, indices):
 | `bbNWPow` | `Pow` | 2 | Bnw · (600/λ)^β — power-law particles (most common) |
 | `bbNWGSM` | `GSM` | 1 | Fixed spectral slope (1.0337 at 443 nm) |
 | `bbNWLee` | `Lee` | 1 | Bnw · (600/λ)^Y(Rrs) — Lee et al. 2002 dynamic slope (requires `set_basis_func(Y)`) |
+| `bbNWPow2` | `Pow2` | 4 | Bmin · (700/λ)^η_min + Borg · (600/λ)^η_org — two-component mineral + organic, for turbid water |
+| `bbNWPow2Flat` | `Pow2Flat` | 3 | Bmin + Borg · (600/λ)^η_org — as `Pow2` with η_min fixed at 0 |
+
+**Turbid water**: prefer `Pow2Flat` with MCMC. The 4-parameter `Pow2` is
+degenerate under chi-squared against realistic in-situ noise (Bmin/Borg
+anti-correlated at −1.00, condition number ~1e7), and an inflated noise
+floor makes recovery *worse*, not better. Raise `maxfev` for either — at
+scipy's default budget they fail to converge on many spectra. Benchmark:
+[dev/turbid_bbp/turbid_bbp.py](dev/turbid_bbp/turbid_bbp.py); notebooks in
+[nb/TurbidWaters/](nb/TurbidWaters/).
 
 ### Standard Model Combinations (bing/parameters/standard.py)
 
@@ -253,7 +263,26 @@ params = standard.expb_pow(satellite='PACE')  # ExpBricaud + Power-law
 params = standard.giop()      # GIOP + Lee
 params = standard.gsm()       # GSM + GSM
 params = standard.k2b()       # Bricaud + Constant
+
+# Turbid / mineral-dominated water
+params = standard.expb_pow2()      # ExpBricaud + Pow2 (4 bb params)
+params = standard.expb_pow2flat()  # ExpBricaud + Pow2Flat (3 bb params)
+params = standard.expb_powflex()   # ExpBricaud + Pow, beta free to go
+                                   # negative: the control experiment
 ```
+
+### Which parameters are log10 (`log_params`)
+
+Amplitudes are held in log10, exponents/slopes in linear space. Models
+declare this as a `log_params` list of booleans (e.g. `[True, False,
+True, False]` for `Pow2`); `None` means all-log10, the historical
+default. **Display code** reads it via `bing.plotting.log_param_mask` so
+figures only exponentiate and log-label the parameters that really are
+log10. It is deliberately *not* used by the p0 conversion in the
+fitters, which keys on the prior flavor (`log_uniform` vs `uniform`) —
+so keep the two consistent when adding a model. (`Chase2017` is the
+documented exception: all its parameters are log10 but its priors are
+`uniform` over log10 bounds.)
 
 ## Adding New Models
 
@@ -294,29 +323,63 @@ class aNWYourModel(aNWModel):
 ```
 
 ### New Backscattering Model Template
+
+Two things differ from the absorption side, and both bite:
+
+1. The base `bbNWModel.__init__` takes `(wave, prior_dicts)` and builds
+   the priors itself — do **not** call `super().__init__(wave)` and do
+   not rebuild `bb_w`.
+2. Evaluation is dispatched by a string `if/elif` on `self.name` inside
+   the **base class** `eval_bbnw` (`bbnw.py`), not by overriding it in
+   the subclass. You must add a branch there *and* an entry in
+   `init_model`'s `model_dict`.
+
 ```python
 class bbNWYourModel(bbNWModel):
+    """One-line description: bb_nw(λ) = <equation>."""
+    name = 'YourModel'          # must match the eval_bbnw branch
+    nparam = 2
+    pnames = ['Bnw', 'exponent']
+    log_params = [True, False]  # which slots are log10 amplitudes
+    pivot = 600.
+    uses_basis_params = False   # True if it needs set_basis_func(...)
+
+    # prior_dicts defaults to None so tests can construct directly
     def __init__(self, wave, prior_dicts=None):
-        super().__init__(wave)
-        self.nparam = 2
-        self.pnames = ['Bnw', 'exponent']
-        self.uses_basis_params = False  # Set True if needs dynamic parameters
+        bbNWModel.__init__(self, wave, prior_dicts)
 
-        if prior_dicts is not None:
-            self.priors = Priors(prior_dicts)
+    def init_guess(self, bb_nw):
+        """Starting parameters, amplitudes in LINEAR space.
 
-    def eval_bbnw(self, params):
-        """Evaluate non-water backscattering."""
-        params = np.atleast_2d(params)
-
-        # Your implementation
-        amplitude = 10**params[:, 0:1]
-        exponent = params[:, 1:2]
-
-        bb_nw = amplitude * (600.0 / self.wave)**exponent
-
-        return bb_nw
+        The caller (bing.fitting.l23, ioptics.run) log10s the slots
+        whose prior flavor starts with 'log'.  Never seed a parameter at
+        exactly 0: the MCMC walker ball would have zero spread there and
+        that dimension would never move.
+        """
+        i_piv = np.argmin(np.abs(self.wave - self.pivot))
+        return np.array([max(bb_nw[i_piv], 1e-5), 1.])
 ```
+
+Then in `bbNWModel.eval_bbnw`, add a branch that uses the **`wave`
+argument**, not `self.wave` — `eval_bb_ex` calls it with the Raman
+excitation grid:
+
+```python
+        elif self.name == 'YourModel':
+            return functions.powerlaw(wave, params, pivot=self.pivot)
+```
+
+and register the class:
+
+```python
+    model_dict = {..., 'YourModel': bbNWYourModel}
+```
+
+Finally add a `standard.<combo>()` factory that passes `bpriors`
+explicitly (one dict per parameter, `log_uniform` for amplitudes and
+`uniform` for linear exponents). The base class asserts
+`len(pnames) == nparam` and, via `check_priors()`, that the attached
+priors match `nparam` — a mismatch otherwise corrupts p0 silently.
 
 ## Data Sources and External Dependencies
 

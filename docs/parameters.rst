@@ -38,8 +38,42 @@ Most commonly used combination:
         nburn=1000          # Burn-in period
     )
     
-    print(params.model_names)  # ['ExpBricaud', 'PowerLaw']
+    print(params.model_names)  # ['ExpBricaud', 'Pow']
     print(params.wv_min, params.wv_max)  # 400.0 700.0
+
+Turbid-Water Configurations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For turbid, mineral-dominated water, where a single decreasing power law
+cannot represent the backscattering spectrum (see :doc:`models`):
+
+.. code-block:: python
+
+    # Two-component backscattering: mineral (flat, 700 nm pivot) plus
+    # organic (steeper, 600 nm pivot).  4 bb parameters.
+    params = standard.expb_pow2(satellite='PACE')
+    print(params.model_names)   # ['ExpBricaud', 'Pow2']
+
+    # Same, with the mineral exponent fixed at 0 (constant mineral
+    # term).  3 bb parameters, and the recommended starting point:
+    # the 4-parameter version is degenerate under chi-squared.
+    params = standard.expb_pow2flat(satellite='PACE')
+    print(params.model_names)   # ['ExpBricaud', 'Pow2Flat']
+
+    # Control experiment: the ordinary Pow model, but with beta free to
+    # go negative (uniform(-1, 2)) so bb_nw may flatten or rise.  Use it
+    # to separate "the prior range was too narrow" from "the functional
+    # form is wrong".
+    params = standard.expb_powflex(satellite='PACE')
+    print(params.model_names)   # ['ExpBricaud', 'Pow']
+
+The exponent priors in ``expb_pow2`` are kept on disjoint ranges
+(``eta_min`` in ``[-0.5, 0.5]``, ``eta_org`` in ``[0.5, 2]``) so the two
+components cannot swap roles. Always pass ``bpriors`` explicitly for
+these models rather than relying on
+:func:`bing.priors.priors.set_standard_priors`, whose fallback would
+give every parameter a ``log_uniform(-6, 5)`` prior -- wrong for the
+linear exponents.
 
 GIOP Configuration
 ~~~~~~~~~~~~~~~~~~
@@ -61,9 +95,8 @@ Empirical model for Case 1 waters:
 
 .. code-block:: python
 
-    params = standard.gsm_gsm(
-        satellite='MODIS',
-        beta=1.0             # Backscattering slope constraint
+    params = standard.gsm(
+        satellite='MODIS'
     )
 
 Custom Parameter Sets

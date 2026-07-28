@@ -28,6 +28,12 @@ setup_keywords['install_requires'] = [
     'importlib-metadata', 'timm==0.3.2', 'IPython',
     'scikit-learn', 'scikit-image', 'tqdm',
     'pysolar','pytest']
+setup_keywords['extras_require'] = {
+    # Docs build: pip install -e ".[docs]"
+    #   keep in sync with docs/requirements.txt (used by ReadTheDocs)
+    'docs': ['sphinx>=4.5.0', 'sphinx-rtd-theme>=1.0.0',
+             'docutils>=0.18'],
+}
 setup_keywords['zip_safe'] = False
 setup_keywords['use_2to3'] = False
 setup_keywords['packages'] = find_packages()
