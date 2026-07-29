@@ -105,6 +105,7 @@ As above, the names are the strings :func:`bing.models.anw.init_model`
 accepts and the parameters are the model's ``pnames``.
 
 .. py:class:: bing.models.anw
+   :no-index:
 
     **ExpBricaud**
         Exponential CDOM/detrital term plus Bricaud et al. (1995)
@@ -161,6 +162,7 @@ model's ``pnames``. Amplitudes are fitted in log10 space; spectral
 exponents are linear (see :ref:`log-params`).
 
 .. py:class:: bing.models.bbnw
+   :no-index:
 
     **Pow**
         Power law, the most common choice (2 parameters)

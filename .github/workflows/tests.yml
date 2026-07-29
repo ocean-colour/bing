@@ -119,12 +119,10 @@ jobs:
           pip install -e . --no-deps
 
       - name: Build HTML docs
-        # No -W: the docs currently carry ~57 pre-existing warnings
-        # (missing api/*.rst stubs, a malformed table in save_load.rst,
-        # title-level errors in raman.rst).  Turn on -W once those are
-        # cleaned up so regressions start failing the build.
+        # -W: the docs build clean, so any new warning fails CI.  Keep it
+        # that way -- it is what stops the warning count creeping back up.
         run: |
-          python -m sphinx -b html docs docs/_build/html
+          python -m sphinx -W -b html docs docs/_build/html
 
       - name: Upload built docs
         uses: actions/upload-artifact@v4

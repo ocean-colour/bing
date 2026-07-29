@@ -399,6 +399,7 @@ def run_emcee(models:list, Rrs, varRrs, rt_dict,
     2. Production: nsteps steps, chains are retained
 
     Walker initialization (see init_walkers):
+
     - p0 is replicated nwalkers times
     - Each walker is perturbed by ±1% of ``abs(p0)``, with an absolute
       floor so parameters at or near zero still get real spread
