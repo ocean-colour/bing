@@ -275,7 +275,7 @@ def init_walkers(p0:np.ndarray, nwalkers:int, models:list=None,
     Build the initial ball of walker positions for emcee.
 
     Each walker is ``p0`` plus a uniform perturbation whose half-width
-    is ``max(|p0_k| * frac, floor)``, per parameter, after which the
+    is ``max(abs(p0_k) * frac, floor)``, per parameter, after which
     walkers are clipped into the prior bounds.
 
     The floor is the important part. The perturbation used to be purely
@@ -305,8 +305,8 @@ def init_walkers(p0:np.ndarray, nwalkers:int, models:list=None,
         Relative half-width of the perturbation. Default 1e-2, matching
         the historical 1% ball for well-scaled parameters.
     floor : float, optional
-        Absolute floor on the half-width, used wherever |p0|*frac falls
-        below it. Default 1e-3.
+        Absolute floor on the half-width, used wherever ``abs(p0)*frac``
+        falls below it. Default 1e-3.
     rng : optional
         Anything providing ``uniform(low, high, size)``. Defaults to the
         legacy ``np.random`` module, so ``np.random.seed`` still governs
@@ -400,8 +400,8 @@ def run_emcee(models:list, Rrs, varRrs, rt_dict,
 
     Walker initialization (see init_walkers):
     - p0 is replicated nwalkers times
-    - Each walker is perturbed by ±1% of |p0|, with an absolute floor so
-      that parameters at or near zero still get real spread
+    - Each walker is perturbed by ±1% of ``abs(p0)``, with an absolute
+      floor so parameters at or near zero still get real spread
     - Walkers are clipped into the prior bounds, so all start with a
       finite log-probability
 
