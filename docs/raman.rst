@@ -305,6 +305,7 @@ get_emission_spectrum
 ^^^^^^^^^^^^^^^^^^^^^
 
 .. function:: get_emission_spectrum(wavelength_excitation, wavelength_emission_range=None, n_points=100)
+   :no-index:
 
    Get the Raman emission spectrum for a given excitation wavelength.
 
@@ -329,6 +330,7 @@ summary_at_wavelength
 ^^^^^^^^^^^^^^^^^^^^^
 
 .. function:: summary_at_wavelength(wavelength, units='energy')
+   :no-index:
 
    Get a dictionary of all Raman parameters at a given excitation wavelength.
 
@@ -364,7 +366,7 @@ These functions calculate the contribution of Raman scattering to remote sensing
 reflectance (Rrs), implementing the Sathyendranath & Platt (1998) formulation.
 
 calc_Rrs_with_raman
-^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~
 
 .. function:: calc_Rrs_with_raman(a_em, bb_em, a_ex, bb_ex, bb_R, Ed_ratio=1.0, in_G1=None, in_G2=None, mu_d=0.9, mu_u=0.4, mu_R=0.5, include_second_order=True)
 
@@ -413,7 +415,7 @@ calc_Rrs_with_raman
 
 
 calc_R_raman_first_order
-^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. function:: calc_R_raman_first_order(a_em, bb_em, a_ex, bb_ex, bb_R, Ed_ratio=1.0, mu_d=0.9, mu_R=0.5)
 
@@ -449,7 +451,7 @@ calc_R_raman_first_order
 
 
 calc_R_raman_RE
-^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~
 
 .. function:: calc_R_raman_RE(a_em, bb_em, a_ex, bb_ex, bb_R, Ed_ratio=1.0, s_E=1.0, mu_d=0.9, mu_R=0.5)
 
@@ -484,7 +486,7 @@ calc_R_raman_RE
 
 
 calc_R_raman_ER
-^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~
 
 .. function:: calc_R_raman_ER(a_em, bb_em, a_ex, bb_ex, bb_R, Ed_ratio=1.0, s_E=1.0, mu_d=0.9, mu_u=0.4, mu_R=0.5)
 
@@ -521,7 +523,7 @@ calc_R_raman_ER
 
 
 calc_R_raman_total
-^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~
 
 .. function:: calc_R_raman_total(a_em, bb_em, a_ex, bb_ex, bb_R, Ed_ratio=1.0, s_E=1.0, mu_d=0.9, mu_u=0.4, mu_R=0.5, include_second_order=True)
 
@@ -563,7 +565,7 @@ calc_R_raman_total
 
 
 calc_R_total_with_raman
-^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~
 
 .. function:: calc_R_total_with_raman(a_em, bb_em, a_ex, bb_ex, bb_R, Ed_ratio=1.0, s_E=1.0, mu_d=0.9, mu_u=0.4, mu_R=0.5, include_second_order=True)
 
@@ -599,9 +601,10 @@ calc_R_total_with_raman
 
 
 calc_raman_correction_factor
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. function:: calc_raman_correction_factor(a_em, bb_em, a_ex, bb_ex, bb_R, Ed_ratio=1.0, s_E=1.0, mu_d=0.9, mu_u=0.4, mu_R=0.5, include_second_order=True)
+   :no-index:
 
    Calculate the multiplicative correction factor for Raman scattering.
 
@@ -645,7 +648,7 @@ calc_raman_correction_factor
 
 
 calc_R_elastic
-^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~
 
 .. function:: calc_R_elastic(a, bb, s=1.0, mu_d=0.9, mu_u=0.4)
 
@@ -675,7 +678,7 @@ calc_R_elastic
 
 
 calc_attenuation_coeffs
-^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~
 
 .. function:: calc_attenuation_coeffs(a, bb, mu_d=0.9, mu_u=0.4, mu_R=0.5)
 
@@ -1011,30 +1014,30 @@ Limitations and Notes
 References
 ==========
 
-.. [SathyendranathPlatt1998] Sathyendranath, S. and Platt, T. (1998).
-   "Ocean-colour model incorporating transspectral processes," *Appl. Opt.* 37,
-   2216-2227.
+* Sathyendranath, S. and Platt, T. (1998).
+  "Ocean-colour model incorporating transspectral processes," *Appl. Opt.* 37,
+  2216-2227.
 
-.. [Bartlett1998] Bartlett, J.S., Voss, K.J., Sathyendranath, S., and Vodacek, A.
-   (1998). "Raman scattering by pure water and seawater," *Appl. Opt.* 37,
-   3324-3332.
+* Bartlett, J.S., Voss, K.J., Sathyendranath, S., and Vodacek, A.
+  (1998). "Raman scattering by pure water and seawater," *Appl. Opt.* 37,
+  3324-3332.
 
-.. [Desiderio2000] Desiderio, R.A. (2000). "Application of the Raman scattering 
-   coefficient of water to calculations in marine optics," *Appl. Opt.* 39, 
-   1893-1894.
+* Desiderio, R.A. (2000). "Application of the Raman scattering 
+  coefficient of water to calculations in marine optics," *Appl. Opt.* 39,
+  1893-1894.
 
-.. [Ge1993] Ge, Y., Gordon, H.R., and Voss, K.J. (1993). "Simulation of 
-   inelastic-scattering contributions to the irradiance field in the ocean: 
-   variation in Fraunhofer line depths," *Appl. Opt.* 32, 4028-4036.
+* Ge, Y., Gordon, H.R., and Voss, K.J. (1993). "Simulation of 
+  inelastic-scattering contributions to the irradiance field in the ocean:
+  variation in Fraunhofer line depths," *Appl. Opt.* 32, 4028-4036.
 
-.. [Mobley1994] Mobley, C.D. (1994). *Light and Water: Radiative Transfer in 
-   Natural Waters*. Academic Press.
+* Mobley, C.D. (1994). *Light and Water: Radiative Transfer in 
+  Natural Waters*. Academic Press.
 
-.. [Walrafen1967] Walrafen, G.E. (1967). "Raman spectral studies of the effects 
-   of temperature on water structure," *J. Chem. Phys.* 47, 114-126.
+* Walrafen, G.E. (1967). "Raman spectral studies of the effects 
+  of temperature on water structure," *J. Chem. Phys.* 47, 114-126.
 
-.. [Artlett2017] Artlett, C.P. and Pask, H.M. (2017). "Optical remote sensing 
-   of water temperature using Raman spectroscopy," *Opt. Express* 25, 2840-2851.
+* Artlett, C.P. and Pask, H.M. (2017). "Optical remote sensing 
+  of water temperature using Raman spectroscopy," *Opt. Express* 25, 2840-2851.
 
-.. [OOWB] Ocean Optics Web Book: 
-   https://www.oceanopticsbook.info/view/scattering/level-2/raman-scattering
+* Ocean Optics Web Book: 
+  https://www.oceanopticsbook.info/view/scattering/level-2/raman-scattering

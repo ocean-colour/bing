@@ -840,6 +840,7 @@ Two consequences worth knowing while designing the models here:
     `ocpy/hydrolight/` lacks `__init__.py`, so a pip-installed ocpy has no
     `ocpy.hydrolight`** — CI works around it with an editable clone; the
     one-line upstream fix is noted in the workflow. See the log.
+13. **docs** Can you clean up the doc warnings, i.e. make changes to remove them all.  Log your work.
 
 ## Open Questions
 

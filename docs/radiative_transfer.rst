@@ -459,6 +459,7 @@ Core Functions
                       a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
 
 .. py:function:: calc_Rrs_fluorescence(wavelength, a_em, bb_em, a_ex, bb_ex, aph_ex, wavelength_ex, Ed_ex, Ed_em, mu_d=None, mu_f=None, phi_C=0.02, double_gaussian=True)
+   :no-index:
 
    Calculate the Rrs contribution from chlorophyll fluorescence, integrating
    over excitation wavelengths.
@@ -769,8 +770,8 @@ Physical Constraints
 Gordon coefficients must satisfy physical constraints:
 
 - G1 > 0 (always positive)
-- |G2| < 1 (bounded, can be negative)
-- G1 >> |G2| at short wavelengths
+- ``|G2|`` < 1 (bounded, can be negative)
+- G1 >> ``|G2|`` at short wavelengths
 - Rrs >= 0 for physical solutions
 
 .. code-block:: python
