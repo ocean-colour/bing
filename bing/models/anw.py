@@ -214,6 +214,16 @@ class aNWModel:
     The names of the parameters
     """
 
+    log_params:list = None
+    """
+    Which parameters are log10 amplitudes (True) vs linear (False)
+
+    ``None`` means "all log10", the historical default and what display
+    code assumes for any model that does not declare this.  Read by
+    **display** code (bing.plotting); deliberately not used by the p0
+    conversion in the fitters, which keys on the prior flavor.
+    """
+
     uses_Chl:bool = False
     """
     Does the model use chlorophyll (for absorption)?
@@ -596,6 +606,7 @@ class aNWExp(aNWModel):
     name = 'Exp'
     nparam = 2
     pnames = ['Anw', 'Snw']  # log10, linear
+    log_params = [True, False]
     pivot = 400.
 
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
@@ -679,11 +690,13 @@ class aNWBricaud(aNWModel):
         """
         Set the phytoplankton absorption spectrum using Bricaud (1995) parameterization.
 
-        Computes normalized phytoplankton absorption a*_ph(λ) such that:
+        Computes normalized phytoplankton absorption a*_ph(λ) such that::
+
             a_ph(λ) = Aph × a*_ph(λ)
 
         where a*_ph is normalized to have value 1.0 at 440 nm. The shape varies
-        with chlorophyll concentration following Bricaud et al. (1995):
+        with chlorophyll concentration following Bricaud et al. (1995)::
+
             a_ph(λ) = A(λ) × Chl^E(λ)
 
         Parameters
@@ -829,6 +842,7 @@ class aNWExpBricaud(aNWBricaud):
     name = 'ExpBricaud'
     nparam = 3
     pnames = ['Adg', 'Sdg', 'Aph']
+    log_params = [True, False, True]
     pivot = 400.
     uses_Chl = True
     fix_Chl = False
@@ -868,6 +882,7 @@ class aNWExpBricaudFix(aNWExpBricaud):
     name = 'ExpBricaudFix'
     nparam = 3
     pnames = ['Adg', 'Sdg', 'Aph']
+    log_params = [True, False, True]
     pivot = 400.
     uses_Chl = True
     fix_Chl = True
@@ -889,6 +904,7 @@ class aNWExpBricaudFree(aNWExpBricaud):
     name = 'ExpBricaudFree'
     nparam = 4
     pnames = ['Adg', 'Sdg', 'Chl', 'Aph'] # Keep Aph last
+    log_params = [True, False, True, True]
     pivot = 400.
     uses_Chl = True
     fix_Chl = False
@@ -927,9 +943,9 @@ class aNWExpBricaudFree(aNWExpBricaud):
         self.a_ph : numpy.ndarray
             The phytoplankton absorption coefficient calculated using the Bricaud model.
             If `Chla` is a single value, `self.a_ph` is a 1D array normalized at 440 nm.
-            If `Chla` is an array, `self.a_ph` is a 2D array where each row corresponds to
-                the absorption spectrum for a specific chlorophyll-a concentration.
-                It too is normalized at 440 nm.
+            If `Chla` is an array, `self.a_ph` is a 2D array where each row
+            corresponds to the absorption spectrum for a specific
+            chlorophyll-a concentration. It too is normalized at 440 nm.
 
         Raises:
         -------
@@ -1071,6 +1087,7 @@ class aNWExpNMF(aNWModel):
     name = 'ExpNMF'
     nparam = 4
     pnames = ['Aexp', 'Sdg', 'H1', 'H2']
+    log_params = [True, False, True, True]
     pivot = 400.
 
     def __init__(self, wave:np.ndarray, prior_dicts:list=None):
@@ -1117,11 +1134,13 @@ class aNWExpNMF(aNWModel):
 class aNWGSM(aNWModel):
     """
     GSM (Manitorena+2002)
-    Exponential model with Sdg fixed + Bricaud aph for non-water absorption
-        adg = Adg * exp(-Sdg*(wave-400))
-            Sdg = 0.0206
-        aph = Chl * a_ph*
-            with a_ph* an interpolation of Maritorena+2002 values
+
+    Exponential model with Sdg fixed + Bricaud aph for non-water
+    absorption::
+
+        adg = Adg * exp(-Sdg*(wave-400))    # Sdg = 0.0206
+        aph = Chl * a_ph*                   # a_ph* interpolated from
+                                            # Maritorena+2002 values
 
     Attributes:
 

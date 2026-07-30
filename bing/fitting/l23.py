@@ -521,8 +521,16 @@ def fit_one(p:namedtuple, idx:int,
         # Corner plot
         # Labels
         clbls = models[0].pnames + models[1].pnames
-        # Add log 10
-        clbls = [r'$\log_{10}('+f'{clbl}'+r'$)' for clbl in clbls]
+        # Add log 10, but only for the parameters held in log10 (slopes
+        # and exponents are linear).  Mirrors bing.plotting.corner_plot;
+        # kept inline so this module needn't import matplotlib.
+        is_log = []
+        for model in models:
+            declared = getattr(model, 'log_params', None)
+            is_log += ([True]*model.nparam if declared is None
+                       else list(declared))
+        clbls = [r'$\log_{10}('+f'{clbl}'+r')$' if kk_log else clbl
+                 for clbl, kk_log in zip(clbls, is_log)]
         fig = corner.corner(
             coeff, labels=clbls,
             label_kwargs={'fontsize':17},

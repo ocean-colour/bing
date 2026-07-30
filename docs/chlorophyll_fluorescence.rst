@@ -530,29 +530,29 @@ Limitations and Notes
 References
 ==========
 
-.. [Gordon1979] Gordon, H.R. (1979). "Diffuse reflectance of the ocean: the
-   theory of its augmentation by chlorophyll a fluorescence at 685 nm,"
-   *Appl. Opt.* 18, 1161-1166.
+* Gordon, H.R. (1979). "Diffuse reflectance of the ocean: the
+  theory of its augmentation by chlorophyll a fluorescence at 685 nm,"
+  *Appl. Opt.* 18, 1161-1166.
 
-.. [Bricaud1995] Bricaud, A., Babin, M., Morel, A., and Claustre, H. (1995).
-   "Variability in the chlorophyll-specific absorption coefficients of natural
-   phytoplankton: Analysis and parameterization," *J. Geophys. Res.* 100,
-   13321-13332.
+* Bricaud, A., Babin, M., Morel, A., and Claustre, H. (1995).
+  "Variability in the chlorophyll-specific absorption coefficients of natural
+  phytoplankton: Analysis and parameterization," *J. Geophys. Res.* 100,
+  13321-13332.
 
-.. [Maritorena2000] Maritorena, S., Morel, A., and Gentili, B. (2000).
-   "Determination of the fluorescence quantum yield by oceanic phytoplankton
-   in their natural habitat," *Appl. Opt.* 39, 6725-6737.
+* Maritorena, S., Morel, A., and Gentili, B. (2000).
+  "Determination of the fluorescence quantum yield by oceanic phytoplankton
+  in their natural habitat," *Appl. Opt.* 39, 6725-6737.
 
-.. [SathyendranathPlatt1998] Sathyendranath, S. and Platt, T. (1998).
-   "Ocean-colour model incorporating transspectral processes," *Appl. Opt.*
-   37, 2216-2227.
+* Sathyendranath, S. and Platt, T. (1998).
+  "Ocean-colour model incorporating transspectral processes," *Appl. Opt.*
+  37, 2216-2227.
 
-.. [Behrenfeld2009] Behrenfeld, M.J. et al. (2009). "Satellite-detected
-   fluorescence reveals global physiology of ocean phytoplankton,"
-   *Biogeosciences* 6, 779-794.
+* Behrenfeld, M.J. et al. (2009). "Satellite-detected
+  fluorescence reveals global physiology of ocean phytoplankton,"
+  *Biogeosciences* 6, 779-794.
 
-.. [OOWB] Ocean Optics Web Book:
-   https://www.oceanopticsbook.info/view/scattering/level-2/chlorophyll-fluorescence
+* Ocean Optics Web Book:
+  https://www.oceanopticsbook.info/view/scattering/level-2/chlorophyll-fluorescence
 
 
 See Also

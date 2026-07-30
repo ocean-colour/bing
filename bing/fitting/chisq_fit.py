@@ -28,6 +28,10 @@ Examples
 >>> items = (Rrs, varRrs, p0, idx)
 >>> bounds = (lower_bounds, upper_bounds)
 >>> ans, cov, idx = chisq_fit.fit(items, models, rt_dict, bounds=bounds)
+>>>
+>>> # Give the optimizer a larger evaluation budget (turbid spectra)
+>>> ans, cov, idx = chisq_fit.fit(items, models, rt_dict, bounds=bounds,
+...                               maxfev=40000)
 """
 import numpy as np
 
@@ -39,7 +43,8 @@ from bing import evaluate as bing_eval
 
 from IPython import embed
 
-def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None):
+def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None,
+        maxfev:int=None):
     """
     Fit Rrs data using Levenberg-Marquardt least-squares optimization.
 
@@ -65,6 +70,15 @@ def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None):
     bounds : tuple, optional
         Parameter bounds as (lower_bounds, upper_bounds) where each is
         a 1D array matching the parameter vector. Default is (-inf, inf).
+    maxfev : int, optional
+        Maximum number of forward-model evaluations the optimizer may
+        spend. Default None, i.e. leave scipy's own default in place.
+        Raising it helps only spectra where the optimizer runs out of
+        budget before converging -- it changes *whether* the fit
+        returns, not how well the model can fit (on turbid GLORIA
+        spectra a ~40x bump moved the convergence rate from 12.5% to
+        37.5% with no change in misfit). When the budget is exhausted
+        curve_fit raises RuntimeError.
 
     Returns
     -------
@@ -81,6 +95,11 @@ def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None):
     The covariance matrix assumes the model is correct and residuals are
     Gaussian. For more robust uncertainty estimates, use MCMC inference.
 
+    ``maxfev`` is the correct spelling for both of curve_fit's back ends:
+    with finite ``bounds`` it uses least_squares ('trf') and renames the
+    keyword to ``max_nfev`` internally, while the unbounded case passes
+    it to leastsq ('lm').
+
     See Also
     --------
     bing.fitting.inference.fit_one : MCMC-based fitting
@@ -91,10 +110,13 @@ def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None):
     # Unpack
     Rrs, varRrs, params, idx = items
 
+    # Only pass maxfev when asked, so scipy's default is untouched
+    kwargs = {} if maxfev is None else dict(maxfev=maxfev)
+
     partial_func = partial(fit_func, models=models, rt_dict=rt_dict)
-    ans, cov =  curve_fit(partial_func, None, 
+    ans, cov =  curve_fit(partial_func, None,
                           Rrs, p0=params, sigma=np.sqrt(varRrs),
-                          full_output=False, bounds=bounds)
+                          full_output=False, bounds=bounds, **kwargs)
     # Return
     return ans, cov, idx
 

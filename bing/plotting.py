@@ -54,6 +54,39 @@ from bing import evaluate
 from IPython import embed
 
 # ############################################################
+def log_param_mask(models:list):
+    """
+    Which fitted parameters are log10 amplitudes, for display purposes.
+
+    Models declare this as a ``log_params`` list of booleans; anything
+    that does not (or that sets it to None) is treated as all-log10,
+    which is the historical behaviour of this module.  Use it to decide
+    which values to exponentiate before printing and which axis labels
+    to wrap in log10(...).
+
+    Parameters
+    ----------
+    models : list
+        One or more model objects, in parameter order (typically
+        [a_model, bb_model]).  A bare model is also accepted.
+
+    Returns
+    -------
+    list of bool
+        One entry per parameter, concatenated across the models.
+    """
+    if not isinstance(models, (list, tuple)):
+        models = [models]
+    mask = []
+    for model in models:
+        declared = getattr(model, 'log_params', None)
+        if declared is None:
+            mask += [True]*model.nparam
+        else:
+            mask += list(declared)
+    return mask
+
+
 def show_fits(models:list, inputs:np.ndarray, rt_dict:dict,
              ex_a_params:np.ndarray, ex_bb_params:np.ndarray,
              outfile:str=None,
@@ -257,9 +290,16 @@ def show_fits(models:list, inputs:np.ndarray, rt_dict:dict,
     if show_params:
         ypos = 0.05
         ip = 0
+        # Only exponentiate the log10 amplitudes; slopes/exponents are
+        # already linear and printing 10**beta is simply wrong.
+        is_log = log_param_mask(models)
         for model in models:
             for ss in range(model.nparam):
-                ax_R.text(0.05, ypos, f'{model.pnames[ss]} = {10**params[ip]:.2f}',
+                if is_log[ip]:
+                    val = f'{10**params[ip]:.2f}'
+                else:
+                    val = f'{params[ip]:.3f}'
+                ax_R.text(0.05, ypos, f'{model.pnames[ss]} = {val}',
                     transform=ax_R.transAxes, fontsize=13.)
                 ypos += 0.07
                 ip += 1
@@ -444,16 +484,29 @@ def corner_plot(chains, models:list=None,
     burn = 7000
     thin = 1
     coeff = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
+
+    # Which columns are log10 amplitudes?  Slopes/exponents are linear,
+    # so they must be neither exponentiated nor log10-labelled.
+    if models is not None:
+        is_log = log_param_mask(models)
+    else:
+        is_log = [True]*coeff.shape[-1]
+
     if not show_log:
-        coeff = 10**coeff
+        coeff = coeff.copy()
+        for kk, kk_log in enumerate(is_log[:coeff.shape[-1]]):
+            if kk_log:
+                coeff[:, kk] = 10**coeff[:, kk]
 
     truths = None
 
     # Labels
     if models is not None:
         clbls = models[0].pnames + models[1].pnames
-        # Add log 10
-        clbls = [r'$\log_{10}('+f'{clbl}'+r'$)' for clbl in clbls]
+        # Add log 10, but only for the parameters that are in log10
+        clbls = [r'$\log_{10}('+f'{clbl}'+r')$' if (kk_log and show_log)
+                 else clbl
+                 for clbl, kk_log in zip(clbls, is_log)]
     else:
         clbls = None
 

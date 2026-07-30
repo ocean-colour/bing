@@ -25,47 +25,74 @@ Basic Usage
 
 .. code-block:: python
 
+    import numpy as np
+
     from bing.fitting import chisq_fit
     from bing.models import utils as model_utils
-    import numpy as np
-    
-    # Initialize models
+    from bing.parameters import standard
+    from bing.rt import defs as rt_defs
+
+    # Configuration and models
     wavelengths = np.arange(400, 701, 5)
-    models = model_utils.init(['ExpBricaud', 'PowerLaw'], wavelengths)
-    
-    # Prepare data
-    Rrs_measured = np.array([...])  # Your measured Rrs
-    Rrs_uncertainty = np.array([...])  # Uncertainties
-    
-    # Perform fit
-    result = chisq_fit.fit(
-        models, 
-        wavelengths, 
-        Rrs_measured, 
-        Rrs_uncertainty,
-        bounds=[(1e-4, 10)] * 4  # Parameter bounds
-    )
-    
-    print(f"Best-fit parameters: {result['x']}")
-    print(f"Chi-squared: {result['chisq']}")
-    print(f"Reduced chi-squared: {result['rchisq']}")
+    p = standard.expb_pow(wv_min=400., wv_max=700.)
+    models = model_utils.init(p.model_names, wavelengths,
+                              (p.apriors, p.bpriors))
+    rt_dict = rt_defs.rt_dict_from_p(p)
+
+    # Data, initial guess and parameter bounds.  Bounds come from the
+    # priors, as (lower_array, upper_array) -- not a list of pairs.
+    items = (Rrs_measured, varRrs, p0, idx)
+    low = np.array([d['pmin'] for d in p.apriors] +
+                   [d['pmin'] for d in p.bpriors])
+    high = np.array([d['pmax'] for d in p.apriors] +
+                    [d['pmax'] for d in p.bpriors])
+
+    ans, cov, idx = chisq_fit.fit(items, models, rt_dict,
+                                  bounds=(low, high))
+
+    # ans holds the best-fit parameters in fitting space (log10 for
+    # amplitudes); sqrt(diag(cov)) gives 1-sigma uncertainties.
+    pred = chisq_fit.fit_func(wavelengths, *ans, models=models,
+                              rt_dict=rt_dict)
+    chi2 = np.sum((pred - Rrs_measured)**2/varRrs)
+    print(f"Reduced chi-squared: {chi2/(Rrs_measured.size - ans.size)}")
+
+``items`` is the tuple ``(Rrs, varRrs, p0, idx)``, where ``idx`` is
+echoed back in the return so batch callers can reassemble results.
 
 Advanced Options
 ~~~~~~~~~~~~~~~~
 
+The evaluation budget
+^^^^^^^^^^^^^^^^^^^^^
+
+``maxfev`` caps the number of forward-model evaluations the optimizer may
+spend. The default (``None``) leaves scipy's own default in place.
+
 .. code-block:: python
 
-    # Custom initial guess
-    p0 = [0.01, 0.65, 0.015, 0.001]
-    
-    # Fit with constraints
-    result = chisq_fit.fit(
-        models, wavelengths, Rrs_measured, Rrs_uncertainty,
-        p0=p0,
-        method='trf',  # Trust Region Reflective algorithm
-        bounds=[(1e-6, 1), (0.3, 1.0), (0.01, 0.02), (1e-4, 0.1)],
-        max_nfev=1000  # Maximum function evaluations
-    )
+    ans, cov, idx = chisq_fit.fit(items, models, rt_dict,
+                                  bounds=(low, high),
+                                  maxfev=40000)
+
+Two things to know about it:
+
+* **It changes whether the fit returns, not how well the model can fit.**
+  When the budget is exhausted, ``curve_fit`` raises ``RuntimeError``;
+  raising the budget converts those failures into converged fits but does
+  not improve the misfit of the ones that already converged. On turbid
+  in-situ spectra a roughly 40x increase moved the convergence rate from
+  12.5% to 37.5% with no change in the residuals.
+* **Parameter-rich models need it.** Fitting the two-component
+  backscattering models (``Pow2``, ``Pow2Flat``; see :doc:`models`)
+  through least squares at scipy's default budget fails on a substantial
+  fraction of spectra -- 5 of 8 and 6 of 8 respectively on a clear L23
+  sample, versus 8 of 8 with ``maxfev=40000``.
+
+``maxfev`` is the correct spelling for both of ``curve_fit``'s back ends:
+with finite bounds it uses ``least_squares`` ('trf') and renames the
+keyword to ``max_nfev`` internally, while the unbounded case passes it to
+``leastsq`` ('lm').
 
 MCMC Fitting
 ------------
@@ -92,6 +119,39 @@ Initialization
     # Set priors
     priors = bing_priors.set_standard_priors(models)
     pdict['priors'] = priors
+
+Walker initialization
+~~~~~~~~~~~~~~~~~~~~~
+
+Walkers start as a ball around ``p0``, built by
+:func:`bing.fitting.inference.init_walkers`: each walker is
+
+.. math::
+
+    p_0 + U(-1, 1) \cdot \max(|p_0| \cdot \mathrm{frac},\ \mathrm{floor})
+
+per parameter, then clipped into the prior bounds (from
+:func:`bing.fitting.inference.prior_bounds`) so every walker starts with
+a finite log-probability.
+
+Both knobs are exposed on ``run_emcee`` as ``perturb_frac`` (default
+1e-2, the relative half-width) and ``perturb_floor`` (default 1e-3, an
+absolute floor). Widen them for badly degenerate models.
+
+.. warning::
+
+    The floor matters. A purely *multiplicative* perturbation gives a
+    parameter seeded at exactly 0 no spread at all, and because emcee's
+    stretch move proposes along walker-to-walker vectors, such a
+    dimension never moves for the entire run -- silently, with a healthy
+    acceptance fraction and a zero-width credible interval. Linear
+    parameters legitimately sit at zero (a flat backscattering exponent,
+    for instance), so this is not a corner case.
+
+Reproducibility: ``init_walkers`` draws from the legacy global
+``np.random`` by default, so ``np.random.seed`` -- as used by
+:func:`bing.fitting.l23.batch_fit` -- still governs the initialization.
+Pass ``rng=`` to inject a ``Generator`` instead.
 
 Running MCMC
 ~~~~~~~~~~~~
