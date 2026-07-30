@@ -63,7 +63,6 @@ html_theme_options = {
     'sticky_navigation': True,
     'includehidden': True,
     'titles_only': False,
-    'display_version': True,
     'prev_next_buttons_location': 'bottom',
 }
 
@@ -148,7 +147,11 @@ napoleon_include_special_with_doc = True
 napoleon_use_admonition_for_examples = False
 napoleon_use_admonition_for_notes = False
 napoleon_use_admonition_for_references = False
-napoleon_use_ivar = False
+# True: render Attributes sections as :ivar: fields.  With False,
+# napoleon emits py:attribute directives that collide with the
+# attribute docstrings autodoc already picks up (52 duplicate-object
+# warnings from bing.models.anw / bbnw).
+napoleon_use_ivar = True
 napoleon_use_param = True
 napoleon_use_rtype = True
 

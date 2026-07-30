@@ -1,0 +1,165 @@
+name: Tests
+
+# Continuous integration for BING.
+#
+# What runs here: the whole test suite, but the tests that need the
+# Loisel et al. (2023) Hydrolight dataset skip automatically. That is not
+# a small subset -- constructing *any* backscattering model calls
+# bbNWModel.init_bbw, which reads Hydrolight400.nc -- so on CI roughly
+# 110 of ~180 tests skip and ~70 run. bing/tests/conftest.py handles the
+# conversion and prints the reason under `-ra`.
+#
+# Why not fetch the data: the files live on Dryad
+# (doi:10.6076/D1630T), ~17 MB each, with no stable direct-download URL,
+# and ocpy locates them via $OS_COLOR. If you later want the full suite
+# in CI, the cheapest route is to cache Hydrolight400.nc as a workflow
+# artifact and point $OS_COLOR at it -- see the commented job at the
+# bottom of this file.
+#
+# Why --no-deps: bing's setup.py install_requires pulls a heavy stack
+# (healpy, umap-learn, llvmlite, boto3, timm==0.3.2, ...) that the tests
+# do not need and that does not resolve cleanly on current Pythons. The
+# curated list below is derived from the package's actual imports. ocpy
+# gets the same treatment for the same reason.
+#
+# Why ocpy is cloned and installed editable rather than
+# `pip install git+...`: ocpy/hydrolight/ has no __init__.py, so
+# setuptools' find_packages() omits it and a regular install produces an
+# ocpy without ocpy.hydrolight -- which bing needs, since
+# bbNWModel.init_bbw imports loisel23. An editable install keeps the
+# source tree importable, so the namespace package resolves. Once ocpy
+# gains ocpy/hydrolight/__init__.py this can go back to the one-liner
+#   pip install --no-deps git+https://github.com/ocean-colour/ocpy.git
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # setup.py requires >= 3.11; bing also uses `X | Y` annotations
+        python-version: ['3.11', '3.12', '3.13']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          # Scientific stack actually imported by bing and by the parts
+          # of ocpy that bing touches.  h5netcdf/h5py are the backend
+          # xarray uses for the Hydrolight files.
+          pip install numpy scipy pandas matplotlib xarray \
+                      h5netcdf h5py emcee corner tqdm ipython \
+                      scikit-learn "pytest>=8"
+          # Sibling package, public repo.  --no-deps keeps cartopy,
+          # healpy and friends out of the job.  Editable, so the
+          # __init__.py-less ocpy.hydrolight subpackage still imports
+          # (see the note at the top of this file).
+          git clone --depth 1 https://github.com/ocean-colour/ocpy.git ../ocpy
+          pip install --no-deps -e ../ocpy
+          # Register bing itself without its heavy install_requires
+          pip install -e . --no-deps
+
+      - name: Show environment
+        run: |
+          python -c "import numpy, scipy, xarray, emcee; \
+            print('numpy', numpy.__version__); print('scipy', scipy.__version__); \
+            print('xarray', xarray.__version__); print('emcee', emcee.__version__)"
+          python -c "import ocpy; print('ocpy ok')"
+          python -c "import bing; print('bing ok')"
+
+      - name: Run tests
+        # -ra prints the skip reasons, so it is visible in the log which
+        # tests were skipped for want of the reference dataset.
+        run: |
+          python -m pytest bing/tests -v -ra
+        env:
+          MPLBACKEND: Agg
+
+  docs:
+    name: Docs build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install doc dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r docs/requirements.txt
+          # docs/api/io_api.rst uses autofunction, so bing (and the
+          # modules it imports) must be importable.
+          pip install numpy scipy pandas matplotlib xarray h5netcdf h5py \
+                      emcee corner tqdm ipython scikit-learn
+          git clone --depth 1 https://github.com/ocean-colour/ocpy.git ../ocpy
+          pip install --no-deps -e ../ocpy
+          pip install -e . --no-deps
+
+      - name: Build HTML docs
+        # -W: the docs build clean, so any new warning fails CI.  Keep it
+        # that way -- it is what stops the warning count creeping back up.
+        run: |
+          python -m sphinx -W -b html docs docs/_build/html
+
+      - name: Upload built docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-html
+          path: docs/_build/html/
+
+# ---------------------------------------------------------------------
+# Optional: the full suite, with data.
+#
+# The tests that skip above all need Hydrolight400.nc.  To run them,
+# make the file available and point $OS_COLOR at its parent, e.g.
+#
+#   full-tests:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-python@v5
+#         with: {python-version: '3.12', cache: pip}
+#       - name: Restore L23 cache
+#         uses: actions/cache@v4
+#         with:
+#           path: l23data/Loisel2023
+#           key: l23-hydrolight400-v1
+#       - name: Fetch Hydrolight400.nc if not cached
+#         run: |
+#           test -f l23data/Loisel2023/Hydrolight400.nc || {
+#             mkdir -p l23data/Loisel2023
+#             curl -L -o l23data/Loisel2023/Hydrolight400.nc "<URL>"
+#           }
+#       - ... install as above ...
+#       - run: python -m pytest bing/tests -v -ra
+#         env:
+#           OS_COLOR: ${{ github.workspace }}/l23data
+#           MPLBACKEND: Agg
+#
+# Substituting <URL> requires a stable link to the Dryad file (or a copy
+# in a bucket you control).  Until then the data-dependent tests are
+# covered locally, where $OS_COLOR is set.
+# ---------------------------------------------------------------------

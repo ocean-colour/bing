@@ -388,6 +388,12 @@ def set_standard_priors(models, p):
                                 mean=p.Sdg, sigma=p.sSdg)
         # Finish
         models[jj].priors = Priors(prior_dicts)
+        # Validate the count where the model knows how (bb models).
+        # Priors are attached here, after construction, so the model's
+        # own constructor check never sees this path.  Extra priors
+        # (othera_priors) are appended by the caller afterwards.
+        if hasattr(models[jj], 'check_priors'):
+            models[jj].check_priors()
 
 
 def priors_from_models(models):

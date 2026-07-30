@@ -9,6 +9,9 @@ __pycache__/
 # Figures
 *.png
 
+# Silly Mac files
+.DS_Store
+
 # Data
 *.npz
 *.npy

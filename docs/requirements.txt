@@ -1,5 +1,17 @@
-# Documentation dependencies for ReadTheDocs
+# Documentation dependencies for ReadTheDocs and local builds.
+#
+# Build the docs with:
+#   pip install -r docs/requirements.txt     (or: pip install -e ".[docs]")
+#   python -m sphinx -b html docs docs/_build
+#
+# Verified against sphinx 9.1.0 / sphinx-rtd-theme 3.1.0 / docutils 0.22.4
 sphinx>=4.5.0
 sphinx-rtd-theme>=1.0.0
-sphinx-autodoc-typehints>=1.12.0
-sphinxcontrib-napoleon>=0.7
+docutils>=0.18
+
+# Deliberately NOT required by docs/conf.py -- noted so they are not
+# re-added by mistake:
+#   sphinxcontrib-napoleon    superseded; conf.py uses the built-in
+#                             sphinx.ext.napoleon and the standalone
+#                             package is unmaintained
+#   sphinx-autodoc-typehints  not listed in conf.py's extensions

@@ -238,11 +238,108 @@ def fit_one(items:list, models:list=None, pdict:dict=None,
     else:
         return sampler, idx
 
+def prior_bounds(models:list):
+    """
+    Lower/upper parameter bounds taken from the models' priors.
+
+    Parameters without usable bounds -- a model with no priors attached,
+    or a prior flavor that has no pmin/pmax (e.g. gaussian) -- come back
+    as -inf/+inf so they are simply left alone by any clipping.
+
+    Parameters
+    ----------
+    models : list
+        Model objects in parameter order, typically [a_model, bb_model].
+
+    Returns
+    -------
+    tuple of np.ndarray
+        (lower, upper), each of length sum(model.nparam).
+    """
+    lows, highs = [], []
+    for model in models:
+        priors = getattr(model, 'priors', None)
+        for kk in range(model.nparam):
+            pmin = pmax = None
+            if priors is not None and kk < len(priors.priors):
+                pmin = getattr(priors.priors[kk], 'pmin', None)
+                pmax = getattr(priors.priors[kk], 'pmax', None)
+            lows.append(-np.inf if pmin is None else float(pmin))
+            highs.append(np.inf if pmax is None else float(pmax))
+    return np.array(lows), np.array(highs)
+
+
+def init_walkers(p0:np.ndarray, nwalkers:int, models:list=None,
+                 frac:float=1e-2, floor:float=1e-3, rng=None):
+    """
+    Build the initial ball of walker positions for emcee.
+
+    Each walker is ``p0`` plus a uniform perturbation whose half-width
+    is ``max(abs(p0_k) * frac, floor)``, per parameter, after which
+    walkers are clipped into the prior bounds.
+
+    The floor is the important part. The perturbation used to be purely
+    *multiplicative* (``p0 += p0*U(-frac, frac)``), so any parameter
+    seeded at exactly 0 received **zero** spread across walkers. Because
+    emcee's stretch move proposes along walker-to-walker vectors, a
+    dimension with no inter-walker spread never moves for the entire
+    run -- silently, with a healthy acceptance fraction and a zero-width
+    credible interval. Linear parameters legitimately sit at 0 (a flat
+    backscattering exponent, for instance), so this was not a corner
+    case. Small-but-nonzero values were nearly as bad: a slope of 0.015
+    got a half-width of 1.5e-4.
+
+    Clipping to the priors also guarantees every walker starts with a
+    finite log-probability, which the multiplicative version did not.
+
+    Parameters
+    ----------
+    p0 : np.ndarray
+        Starting parameter vector (1D, in fitting space).
+    nwalkers : int
+        Number of walkers.
+    models : list, optional
+        Models whose priors supply the clip bounds. If None, no clipping
+        is applied.
+    frac : float, optional
+        Relative half-width of the perturbation. Default 1e-2, matching
+        the historical 1% ball for well-scaled parameters.
+    floor : float, optional
+        Absolute floor on the half-width, used wherever ``abs(p0)*frac``
+        falls below it. Default 1e-3.
+    rng : optional
+        Anything providing ``uniform(low, high, size)``. Defaults to the
+        legacy ``np.random`` module, so ``np.random.seed`` still governs
+        reproducibility (see bing.fitting.l23.batch_fit).
+
+    Returns
+    -------
+    np.ndarray
+        Walker positions with shape (nwalkers, p0.size).
+    """
+    rng = np.random if rng is None else rng
+    p0 = np.asarray(p0, dtype=float).flatten()
+
+    # Per-parameter perturbation scale, floored so no dimension is dead
+    scale = np.maximum(np.abs(p0)*frac, floor)
+    walkers = np.tile(p0, (nwalkers, 1))
+    walkers = walkers + rng.uniform(-1., 1., size=walkers.shape)*scale
+
+    # Keep every walker inside the priors
+    if models is not None:
+        low, high = prior_bounds(models)
+        nclip = min(walkers.shape[1], low.size)
+        walkers[:, :nclip] = np.clip(walkers[:, :nclip],
+                                     low[:nclip], high[:nclip])
+    return walkers
+
+
 def run_emcee(models:list, Rrs, varRrs, rt_dict,
               nwalkers:int=32,
               nburn:int=1000,
               nsteps:int=20000, save_file:str=None,
-              p0=None, skip_check:bool=False, ndim:int=None):
+              p0=None, skip_check:bool=False, ndim:int=None,
+              perturb_frac:float=1e-2, perturb_floor:float=1e-3):
     """
     Run the emcee ensemble sampler for Bayesian inference.
 
@@ -271,12 +368,18 @@ def run_emcee(models:list, Rrs, varRrs, rt_dict,
         If None, chains are kept in memory only. Default is None.
     p0 : np.ndarray, optional
         Initial parameter guess (1D array). Walkers are initialized by
-        replicating p0 and adding small perturbations (±1%). Required.
+        replicating p0 and perturbing it (see init_walkers). Required.
     skip_check : bool, optional
         Skip emcee's initial state validation. Useful when starting from
         known good positions. Default is False.
     ndim : int, optional
         Number of parameters (inferred from p0 if not provided).
+    perturb_frac : float, optional
+        Relative half-width of the initial walker ball. Default 1e-2.
+    perturb_floor : float, optional
+        Absolute floor on that half-width, so parameters seeded at or
+        near zero still get real spread. Default 1e-3. Widen both for
+        badly degenerate models.
 
     Returns
     -------
@@ -295,10 +398,13 @@ def run_emcee(models:list, Rrs, varRrs, rt_dict,
     1. Burn-in: nburn steps, then sampler is reset
     2. Production: nsteps steps, chains are retained
 
-    Walker initialization:
+    Walker initialization (see init_walkers):
+
     - p0 is replicated nwalkers times
-    - Each walker is perturbed by ±1% random noise
-    - This "ball" initialization helps ensure walker diversity
+    - Each walker is perturbed by ±1% of ``abs(p0)``, with an absolute
+      floor so parameters at or near zero still get real spread
+    - Walkers are clipped into the prior bounds, so all start with a
+      finite log-probability
 
     Examples
     --------
@@ -315,15 +421,13 @@ def run_emcee(models:list, Rrs, varRrs, rt_dict,
         #ndim = priors.shape[0]
         #p0 = np.random.uniform(priors[:,0], priors[:,1], size=(nwalkers, ndim))
     else:
-        # Replicate for nwalkers
+        # Replicate for nwalkers and perturb into a ball.  The scale is
+        # floored and the result clipped into the priors -- see
+        # init_walkers for why a purely multiplicative perturbation
+        # silently freezes any parameter seeded at 0.
         ndim = len(p0)
-        p0 = np.tile(p0, (nwalkers, 1))
-        # Perturb 
-        p0 += p0*np.random.uniform(-1e-2, 1e-2, size=p0.shape)
-        #r = 10**np.random.uniform(-0.5, 0.5, size=p0.shape[0])
-        #for ii in range(p0.shape[0]):
-        #    p0[ii] *= r[ii]
-        #embed(header='108 of fgordon')
+        p0 = init_walkers(p0, nwalkers, models=models,
+                          frac=perturb_frac, floor=perturb_floor)
 
     # Set up the backend
     # Don't forget to clear it in case the file already exists

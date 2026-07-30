@@ -22,24 +22,24 @@ File layout
 ``<outroot>.npz``
 ~~~~~~~~~~~~~~~~~
 
-================== ========================================================
-Key                Contents
-================== ========================================================
-``wave``           Wavelengths used for the fit (``shape (nwave,)``).
-``Rrs``            Observed remote sensing reflectance.
-``varRrs``         Variance of the observed Rrs.
-``chains``         MCMC chains, shape ``(nsteps, nwalkers, nparam)``.
-``p0``             Initial guess seeded into emcee (post-LM if any).
-``p0_init``        *Optional.* Pre-LM seed, only present when supplied
-                   to :func:`bing.io.save_fit`.
-``a``, ``bb``      Median reconstructed total absorption and
-                   backscattering from
-                   :func:`bing.evaluate.reconstruct_from_chains`.
-``a_lo`` / ``a_hi`` Lower/upper percentile bounds for ``a``.
+===================== ========================================================
+Key                   Contents
+===================== ========================================================
+``wave``              Wavelengths used for the fit (``shape (nwave,)``).
+``Rrs``               Observed remote sensing reflectance.
+``varRrs``            Variance of the observed Rrs.
+``chains``            MCMC chains, shape ``(nsteps, nwalkers, nparam)``.
+``p0``                Initial guess seeded into emcee (post-LM if any).
+``p0_init``           *Optional.* Pre-LM seed, only present when supplied
+                      to :func:`bing.io.save_fit`.
+``a``, ``bb``         Median reconstructed total absorption and
+                      backscattering from
+                      :func:`bing.evaluate.reconstruct_from_chains`.
+``a_lo`` / ``a_hi``   Lower/upper percentile bounds for ``a``.
 ``bb_lo`` / ``bb_hi`` Lower/upper percentile bounds for ``bb``.
-``Rrs_recon``      Median model Rrs reconstructed from the chains.
-``sigRrs_recon``   Standard deviation of model Rrs across the chains.
-================== ========================================================
+``Rrs_recon``         Median model Rrs reconstructed from the chains.
+``sigRrs_recon``      Standard deviation of model Rrs across the chains.
+===================== ========================================================
 
 ``<outroot>.json``
 ~~~~~~~~~~~~~~~~~~

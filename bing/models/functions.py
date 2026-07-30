@@ -75,17 +75,16 @@ def powerlaw(wave:np.ndarray, params:np.ndarray, pivot:float=600.):
 
 def gen_basis(params: np.ndarray, basis_func_list: list):
     """
-    Generate a basis matrix by applying basis functions to the given parameters.
+    Generate a basis matrix by applying basis functions to the given
+    parameters.
 
     Parameters:
-    - params: numpy.ndarray
-        An array of parameters.
-    - basis_func_list: list
-        A list of basis functions.
+        params (np.ndarray): Array of log10 amplitudes, one per basis
+            function (indexed on the last axis).
+        basis_func_list (list): The basis functions to scale and sum.
 
     Returns:
-    - ans: numpy.ndarray
-        The generated basis matrix.
+        np.ndarray: The generated basis matrix, shape (nsample, nwave).
     """
     # Loop on the basis functions
     for ss, basis_func in enumerate(basis_func_list):
