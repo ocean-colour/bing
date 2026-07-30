@@ -841,6 +841,14 @@ Two consequences worth knowing while designing the models here:
     `ocpy.hydrolight`** — CI works around it with an editable clone; the
     one-line upstream fix is noted in the workflow. See the log.
 13. **docs** Can you clean up the doc warnings, i.e. make changes to remove them all.  Log your work.
+    ✔ **Done 2026-07-30** — 45 warnings + 12 errors → **zero**;
+    `sphinx -W` now succeeds in both `ocean14` and the clean CI docs env,
+    and `-W` is enabled in the workflow. Six autodoc API pages plus
+    `contributing`/`changelog`/`references`/`examples` written, three RST
+    structural bugs fixed, 14 pseudo-citations converted, and 8 docstring
+    bugs fixed (four of them mine). `tutorials/index.rst` was rewritten:
+    it had described a YouTube channel and APIs that do not exist. See the
+    log.
 
 ## Open Questions
 
@@ -933,6 +941,116 @@ format:
 ...
 
 ## Logs
+
+### 2026-07-30 (Prompt 13: docs warnings — 57 to zero, `-W` now enforced)
+
+`sphinx-build` was reporting **45 warnings + 12 errors**. It now builds
+clean, and **`sphinx -W` (warnings as errors) succeeds** — verified both
+in `ocean14` and in a clean venv matching the CI docs job. I enabled `-W`
+in the workflow, which is what stops the count creeping back up. Suite
+unchanged: 178 passed, 2 skipped.
+
+#### What was wrong, and what I did
+
+**Structural RST (12 errors).**
+- `raman.rst`: 9 × "Inconsistent title style: skip from level 3 to 5".
+  The nine function entries under *Raman Rrs Functions* (a level-2
+  heading) used the level-4 adornment, skipping level 3. Re-levelled
+  `^` → `~`.
+- `radiative_transfer.rst`: 2 × "Undefined substitution referenced: G2".
+  The text wrote `|G2| < 1` meaning absolute value; RST reads `|…|` as a
+  substitution. Now inline literals.
+- `save_load.rst`: "Malformed table". The `.npz` table's first column was
+  18 characters wide but two rows (``` ``a_lo`` / ``a_hi`` ```,
+  ``` ``bb_lo`` / ``bb_hi`` ```) needed 19 and 21, so they spilled across
+  the column boundary. Table rewritten at width 21.
+
+**Citations (14 warnings).** `chlorophyll_fluorescence.rst` and
+`raman.rst` each carried a `.. [Label]` bibliography, giving 12
+"not referenced" warnings plus 2 "duplicate citation" (both files defined
+`SathyendranathPlatt1998` and `OOWB`). I checked first: **no `[Label]_`
+reference exists anywhere in the docs**, so these are bibliographies
+written in citation syntax rather than actual citations. Converted to
+bullet lists — same text, no citation semantics.
+
+**Duplicate object descriptions (4).** `calc_Rrs_fluorescence`,
+`get_emission_spectrum`, `summary_at_wavelength` and
+`calc_raman_correction_factor` are each hand-documented on two pages;
+added `:no-index:` to the secondary copy.
+
+**Config (2).** `html_static_path` pointed at a non-existent `_static/`
+(created it with a `.gitkeep`), and `display_version` is not a valid
+option in sphinx-rtd-theme 3.x (removed).
+
+**Missing documents (25).** Three toctrees referenced 17 documents that
+were never written, which also produced 8 broken `:doc:` links. Handled
+case by case rather than uniformly:
+
+- **Six API pages created** (`models_api`, `fitting_api`,
+  `parameters_api`, `evaluation_api`, `visualization_api`,
+  `utilities_api`) using `automodule`, so they are generated from the real
+  docstrings rather than hand-maintained. `core` was dropped from the
+  toctree — it had no content distinct from the prose already on
+  `api/index.rst`. `bing.fitting.l23` is deliberately excluded, with a
+  note saying why: it imports `correct_atmosphere`, which the docs build
+  does not install. `bing.rt.*` and `bing.io` are also excluded because
+  they are hand-documented elsewhere and autodoc would duplicate them.
+- **Four top-level pages written**: `contributing` (environment, running
+  the tests, the data-skip behaviour, conventions), `changelog`
+  (organised by theme, since there are no releases yet, recording the
+  turbid-water work and the fitting corrections), `references`
+  (the papers BING implements and where each is used, with DOIs), and
+  `examples` (a map of `nb/`, `dev/` and `papers/`).
+- **`tutorials/index.rst` rewritten** — see the honesty note below.
+- `api/index.rst`'s "Module Structure" block listed files that do not
+  exist (`models/base.py`, `bing/utils.py`, `rt.py` as a module) and
+  omitted `rt/`, `io.py`, `noise.py`, `preproc.py`, `stats.py`. Corrected
+  against the actual tree.
+
+**Then autodoc introduced 62 new warnings**, which took two rounds:
+- 52 × "duplicate object description of `<Model>.name`, `.nparam`, …".
+  Cause: `anw.py`/`bbnw.py` document attributes twice — once via PEP-224
+  attribute docstrings that autodoc picks up, once via the class
+  docstring's `Attributes:` section that napoleon turns into
+  `py:attribute` directives. Dropping `:undoc-members:` was not enough;
+  the fix is `napoleon_use_ivar = True` in `conf.py`, which renders those
+  sections as `:ivar:` fields instead. One line, no source churn.
+- 2 × from `models.rst`'s `.. py:class:: bing.models.anw` blocks, which
+  are prose containers rather than real class docs → `:no-index:`.
+- 8 × genuine docstring bugs, and **four of them were mine** from earlier
+  prompts: `init_walkers` and `run_emcee` wrote `|p0|` for absolute value
+  (substitution reference again — the same trap as `|G2|`) and a bullet
+  list without a preceding blank line. Fixed those, plus four
+  pre-existing ones in `anw.py` (indented formulas after `:` instead of
+  `::`, and over-indented continuation lines in
+  `aNWExpBricaudFree.set_aph`) and `functions.py` (`gen_basis` mixed two
+  docstring styles).
+
+#### One honesty note
+
+`tutorials/index.rst` did not just reference six missing tutorials — much
+of its content described things that do not exist: a YouTube channel with
+"video walkthroughs", a `notebooks/` directory (it is `nb/`), a
+`github.com/yourusername/bing` clone URL, per-tutorial FAQ sections, and
+three code examples calling APIs with the wrong signatures
+(`models[0].eval(...)`, `chisq_fit.fit(models, wavelengths, …)`,
+`import fitting as m_fitting`). I **deleted** that rather than only
+silencing the warnings, and replaced it with a reading order through the
+pages that do exist, pointers to the executed notebooks, the real data
+sources, and an explicit "still to be written" section. Flagging it
+because it is a deletion of content, not a fix.
+
+#### Verification
+
+| build | result |
+|---|---|
+| `ocean14` | **build succeeded** — 0 warnings (was 45 + 12 errors) |
+| `ocean14`, `sphinx -W` | **build succeeded** |
+| clean venv (CI docs env, no `correct_atmosphere`), `sphinx -W` | **build succeeded** |
+| `pytest bing/tests` | 178 passed, 2 skipped (docstring-only source edits) |
+
+The workflow's docs job now runs `python -m sphinx -W -b html`, replacing
+the comment that said to turn `-W` on once the warnings were cleared.
 
 ### 2026-07-29 (Prompt 12: GitHub Actions CI hooks)
 
