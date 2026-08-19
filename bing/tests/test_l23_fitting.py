@@ -1036,8 +1036,9 @@ def test_Chl_fitting_MCMC():
     #_ = evaluate.reconstruct_from_chains(models_Chl, chains_Chl, rt_dict_Chl)
 
     # Plot
+    # show=False: see test_raman_fitting_LM
     _ = bing_plot.show_fits(models_Chl, chains_Chl, rt_dict_Chl, None, None,
-                figsize=(12,4), fontsize=13., show=True,
-                Rrs_true=dict(wave=models_Chl[0].wave, 
+                figsize=(12,4), fontsize=13., show=False,
+                Rrs_true=dict(wave=models_Chl[0].wave,
                     spec=prep_dict_Chl['model_Rrs'], var=prep_dict_Chl['model_varRrs']),
                 log_abb=True )

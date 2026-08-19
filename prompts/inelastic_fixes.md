@@ -96,11 +96,31 @@ set); pre-fix flat-Ed behavior remains available by not calling
   550–700 nm = **+1.2 %/−4.3 %** at zenith 30°/60° (−39 % at 0°, the
   known two-flow high-sun limitation, out of scope here).
 - Headless note: `test_l23_fitting.py::test_raman_fitting_LM` (and the
-  Chl LM test) call `plotting.show_fits` → `plt.show()`, which blocks
-  forever in a Tk mainloop when a DISPLAY is reachable but nobody closes
-  the window. Run the suite with `MPLBACKEND=Agg` in headless/automated
-  contexts. (Pre-existing behavior, discovered while validating; not
-  changed here.)
+  Raman/Chl MCMC plot tests) called `plotting.show_fits(..., show=True)`
+  → `plt.show()`, which blocks forever in a Tk mainloop when a DISPLAY
+  is reachable but nobody closes the window. (Pre-existing behavior,
+  discovered while validating.)
+
+### 2026-08-19 (Fix the GUI block in the test suite)
+
+Two-layer fix for the `plt.show()` hang above:
+
+- `bing/tests/conftest.py` now forces `matplotlib.use('Agg', force=True)`
+  at import time, before any test module imports pyplot — under Agg,
+  `plt.show()` is a no-op, so the whole suite is hang-proof regardless of
+  DISPLAY, and future plotting tests are covered automatically.
+- The three `show_fits(..., show=True)` calls in `test_l23_fitting.py`
+  (`test_raman_fitting_LM`, `test_raman_fitting_MCMC`,
+  `test_Chl_fitting_MCMC`) now pass `show=False` — a unit test must not
+  request a GUI window; the figure-construction code path is still fully
+  exercised. (The `plt.show()` calls in `test_raman.py` sit inside
+  `if False:` debug blocks and are inert.)
+
+Verification, with **no** `MPLBACKEND` override in the environment:
+`test_raman_fitting_LM` + all of `test_plotting.py`: **20 passed in
+3.9 s** (previously the LM test alone hung indefinitely);
+`test_raman_fitting_MCMC` + `test_Chl_fitting_MCMC`: **2 passed in
+62 s**.
 
 **What was *not* changed (by design).** The fixed-μ two-flow stream
 geometry (high-sun red-band Raman underestimate of ~25–45 %; residual
