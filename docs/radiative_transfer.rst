@@ -305,6 +305,18 @@ The fitting module automatically:
 3. Applies the Raman correction factor during forward modeling
 
 .. note::
+   The correction depends to first order on the solar-spectrum ratio
+   :math:`E_d(\lambda')/E_d(\lambda)`. Set it on the absorption model
+   with ``a_model.set_raman_Ed(wave_Ed, Ed)`` (the L23 fitting pipeline
+   does this automatically from ``correct_atmosphere``); the Ed grid
+   must extend ~50 nm blueward of the model grid to cover the Raman
+   excitation wavelengths. Without it, the correction falls back to a
+   flat spectrum (ratio = 1) and emits a ``RuntimeWarning`` — the flat
+   fallback distorts the spectral shape of the correction (validated
+   against the Loisel et al. 2023 database: ~+60 % increment error at
+   490 nm, −15 % and worse in the red).
+
+.. note::
    For detailed Raman scattering physics and additional functions, see
    :ref:`raman`.
 

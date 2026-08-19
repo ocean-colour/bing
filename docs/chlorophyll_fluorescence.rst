@@ -457,11 +457,11 @@ Reflectance Formulation
 
 The fluorescence contribution to subsurface reflectance follows the
 Gordon (1979) / Sathyendranath & Platt (1998) formulation, integrated
-over excitation wavelengths and shaped by the emission line:
+over excitation wavelengths:
 
 .. math::
 
-   R^F(\lambda) = h_C(\lambda) \int
+   R^F(\lambda) = \int
    \frac{E_d(\lambda')}{E_d(\lambda)}\,
    \frac{\lambda'}{\lambda}\,
    \frac{b_{bF}(\lambda')/\mu_d}{K(\lambda') + \kappa^F(\lambda)}\,
@@ -470,6 +470,32 @@ over excitation wavelengths and shaped by the emission line:
 with :math:`b_{bF}(\lambda') = 0.5\,\Phi_C\,a_{ph}(\lambda')`,
 :math:`K(\lambda') = (a(\lambda') + b_b(\lambda'))/\mu_d`,
 and :math:`\kappa^F(\lambda) = (a(\lambda) + b_b(\lambda))/\mu_f`.
+
+:math:`R^F` is a two-flow *irradiance* reflectance
+(:math:`E_u/E_d`). Because the emission is isotropic, the upwelling
+radiance field is uniform and :math:`L_u(0^-) = E_u(0^-)/\pi`, so the
+subsurface remote-sensing reflectance is
+
+.. math::
+
+   r_{rs}^F(\lambda) = R^F(\lambda)/\pi
+
+which is then shaped by the emission line :math:`h_C(\lambda)` and
+converted to above-surface reflectance with the standard
+:math:`A\,r_{rs}/(1 - B\,r_{rs})` relation.
+
+.. note::
+
+   The :math:`1/\pi` conversion was validated against the Loisel et
+   al. (2023) HydroLight database: the paired inelastic scenarios
+   (X4 − X2) isolate the fluorescence signal, and the median
+   model/truth ratio at 685 nm is 1.01/0.96/0.87 at solar zenith
+   0°/30°/60° with the factor, versus 3.18/3.00/2.73 without it.
+   Earlier BING versions omitted it, so any fluorescence-enabled
+   results computed before 2026-08 carry a ~3× overestimated
+   :math:`R_{rs}^{fl}` (equivalently, their effective
+   :math:`\Phi_C` was ~π times smaller than the nominal value).
+   See ``bing/tests/test_l23_inelastic.py`` for the regression test.
 
 The :math:`\kappa^F(\lambda)` and :math:`\lambda' / \lambda` factors carry
 explicit emission-wavelength dependence, which is important for the

@@ -312,6 +312,14 @@ def prep_one_l23(p, idx, chk:bool=False):
     if p.include_Raman:
         a_ex = odict['f_a'](models[0].wave_ex)
         bb_ex = odict['f_bb'](models[1].wave_ex)
+        # True solar-spectrum ratio Ed(lambda')/Ed(lambda) for the Raman
+        # correction (flat Ed distorts its spectral shape).  The Ed grid
+        # must cover wave_ex, which extends ~50 nm blueward of the model
+        # grid.
+        _wv_Ed = np.arange(np.floor(models[0].wave_ex.min()) - 5.,
+                           models[0].wave.max() + 5.1, 1.)
+        _Ed_full = downwelling.downwelling_irradiance(_wv_Ed, 0.)
+        models[0].set_raman_Ed(_wv_Ed, _Ed_full)
     else:
         a_ex = None
         bb_ex = None
@@ -340,13 +348,14 @@ def prep_one_l23(p, idx, chk:bool=False):
         in_Gb=_Gb,
         in_bbp=_in_bbp,
         a_ex = a_ex, bb_ex=bb_ex,
-        bb_R=models[1].bb_R)
+        bb_R=models[1].bb_R,
+        Ed_ratio=models[0].Ed_ratio_raman)
     
     ## Chl fluorescence
     if p.include_Chl_fl:
         Ed = downwelling.downwelling_irradiance(models[0].wave, 0.)
-        Ed_em = downwelling.downwelling_irradiance(chl_fl.LAMBDA_FL_PRIMARY, 0.)
-        models[0].init_Chl_fluorescence(Ed=Ed, Ed_em=Ed_em)
+        # Ed_em defaults to the full Ed vector (per-lambda_em normalization)
+        models[0].init_Chl_fluorescence(Ed=Ed)
         gordon_Rrs += bing_rt.calc_Rrs_fluorescence(
             models[0].wave, odict['a'], odict['bb'],
             odict['a'][models[0].i_Chl_ex],

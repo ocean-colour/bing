@@ -29,7 +29,17 @@ Requires pytest >= 8 for the ``wrapper=True`` hook style.
 """
 import os
 
+import matplotlib
 import pytest
+
+# Force a non-interactive backend for the whole suite. Several tests
+# exercise bing.plotting functions that end in ``plt.show()``; under an
+# interactive backend (e.g. TkAgg with a reachable DISPLAY) that call
+# blocks forever waiting for a human to close the window, which hangs
+# headless/automated runs. Under Agg, ``plt.show()`` is a no-op, so the
+# plotting code path is still fully exercised. Must run before any test
+# module imports pyplot.
+matplotlib.use('Agg', force=True)
 
 # Any dataset file whose absence should be reported as a skip. The
 # exception message from h5netcdf/xarray carries the filename.
