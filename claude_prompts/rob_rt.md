@@ -12,6 +12,8 @@ Interaface BING with the radiative transfer model from the retrieve-or-bust repo
 
 2. Read my answers to the Q&A/Design section below. Ask me more questions if needed. Use Fable if you can.  Log your work.
 
+3. Read my answers to the Q&A/Design section below. Ask me more questions if needed. Use Fable if you can.  Log your work.
+
 ### Coding Plan
 
 ### Report
@@ -131,6 +133,128 @@ under each.
 
     **Answer:** Yes, `bing` should add `retrieve-or-bust` as a real runtime dependency and call into `robust.rt.forward` from `evaluate.calc_Rrs_from_models`.
 
+#### Follow-up questions (round 2)
+
+Your answers mostly resolve the design, but three points needed grounding in
+the actual code before they can be turned into a coding plan. A follow-up
+investigation (Fable) checked each; findings and new questions below.
+
+11. **Re Q3 (geometry) — there is no existing per-pixel container to extend.**
+    Checked `bing/fitting/inference.py`, `l23.py`, and `bing/data/`: BING
+    currently threads observations through the fitters as bare tuples
+    `(Rrs, varRrs, params, idx)` (`inference.py:214-215, 480-486`), and the
+    only geometry-adjacent state anywhere is a hard-coded 30° solar zenith in
+    a test fixture (`bing/tests/files/gen_l23_inelastic_fixture.py:32,47`).
+    Satellite data directories (`bing/data/MODIS`, `PACE`, `SeaWiFS`) hold
+    only Rrs/error CSVs — no geometry columns are loaded anywhere today. So
+    "extend BING's data model" means building new plumbing, not editing an
+    existing field. Specifically:
+    - Do solar/viewing zenith and relative azimuth already exist per-pixel in
+      BING's upstream input data (e.g. L2 satellite file matchups, Argo
+      float matchups) and just aren't wired through yet — or does sourcing
+      them require new data-loading work first?
+    - Should geometry ride along as a new element in the existing
+      `(Rrs, varRrs, params, idx)` tuple (minimal change), or is this the
+      moment to introduce a proper per-observation dataclass that could also
+      carry other future per-pixel metadata?
+    - When per-pixel geometry is unavailable (e.g. older Argo matchups with
+      no recorded viewing geometry), should the fit fall back to a
+      nadir-only default for that pixel, or fail/skip it?
+
+    **Answer:**  (1) These geometry terms are new and not yet in BING. (2) Add them to params; (3) Always fall back to a nadir viewing when the geometry is not specified.
+
+12. **Re Q6 (wavelength grids) — the "hard error" premise doesn't fully hold.**
+    The investigation found `robust.rt`'s two modes are more grid-flexible
+    than assumed:
+    - `ztt` is purely analytic (no neural net) and is grid-agnostic — its
+      only wavelength dependence is a clamped `jnp.interp` lookup valid over
+      350–800 nm (`robust/rt/ztt.py:802-811`). It needs no retraining to run
+      at arbitrary satellite band centers.
+    - The `hybrid` emulator is deliberately pointwise in λ — "one shared
+      network maps the features at a wavelength to δ at that wavelength...
+      defined on any wavelength grid... with λ as an input it can interpolate
+      in" (`robust/rt/emulator.py:75-79`). So evaluating it at satellite band
+      centers *inside* 350–750 nm is ordinary interpolation, which is exactly
+      what it's designed to do well. Retraining would only be needed for
+      bands falling **outside** 350–750 nm (e.g. PACE's UV/NIR edges), or if
+      **band-averaged** (not band-center/monochromatic) Rrs is required,
+      since the emulator corrects a monochromatic `rrs`.
+    - No design doc in `robust/design/` or `docs/` discusses training
+      per-instrument emulator suites; the only retraining note found concerns
+      richer HydroLight geometry/phase-function runs, unrelated to
+      wavelength grids (`design/rt_elastic_model.md:215-217`).
+
+    Given that, three follow-ups:
+    - Do you still want a hard grid-match error, or should the policy instead
+      be: no restriction for `ztt`; for `hybrid`, error only when a requested
+      band falls outside [350, 750] nm (relying on native interpolation
+      within range)?
+    - Does any BING target instrument (PACE, MODIS, SeaWiFS, ...) actually
+      need **band-averaged** Rrs rather than band-center evaluation? That's
+      the one case that would genuinely require new emulator training.
+    - If per-instrument emulators are still wanted for some other reason
+      (not identified above), is training them in scope for this
+      integration, or a separate follow-on project?
+
+    **Answer:** (1) Right, only error when the band is outside the range. (2) Don't worry about band-averaged Rrs for now.  But, yes, MODIS and other multi-band instruments do need band-averaged Rrs. (3) Training is not in scope for this integration.
+
+13. **Re Q4 (performance) — confirming the dispatch mechanism.** To keep the
+    new JIT'd/vectorized path as "a separate function that uses as much of
+    the existing BING code as possible" (your answer to Q4) while also
+    making the RT backend "selectable by the user" (Q1/Q2), the natural
+    synthesis is: leave `evaluate.calc_Rrs_from_models` untouched for the
+    Gordon path, add a new function (e.g. `calc_Rrs_from_models_robust`) that
+    both `inference.log_prob` and `chisq_fit.fit_func` dispatch to when
+    `rt_dict["rt_backend"]` selects `robust`, with the backend value also
+    encoding which `robust.rt` mode (`ztt`/`hybrid`/`baselines`) to use. Is
+    that the structure you want, or did you have a different dispatch point
+    in mind?
+
+    **Answer:** Your suggestions sound right.
+
+#### Follow-up questions (round 3)
+
+Answers to 11 and 12 resolve most of it, but each contains one point worth
+checking/flagging before it goes into the Coding Plan.
+
+14. **Re Q11 — "add them to params" is ambiguous given what `params` actually
+    is.** Checked `bing/fitting/inference.py` directly: the `params` element
+    of the `(Rrs, varRrs, params, idx)` tuple is literally the MCMC
+    **initial-guess parameter vector**, `np.ndarray`, documented as such
+    (`inference.py:179-182, 215, 481-485`) — it's a different object from
+    `log_prob`'s own `params` argument, which is the live sample vector split
+    into `aparams`/`bparams` (`inference.py:93-94`). So "add geometry to
+    params" could mean either of two very different things:
+    - (a) Geometry becomes new **fittable MCMC parameters** — i.e. `theta_s`/
+      `theta_v`/`dphi` get appended into the parameter vector alongside the
+      a/bb model params (analogous to how `B_p` can be free per Q7), and
+      MCMC could in principle move them.
+    - (b) Geometry rides along as **fixed, non-fit per-pixel data** — bundled
+      into the same tuple/initial-guess package as a known, measured input
+      (like `Rrs`/`varRrs` are), never varied by the sampler.
+
+    Physically these are very different: geometry is normally a *known*
+    quantity from satellite/scene metadata, not something you'd want MCMC to
+    search over. Which did you mean?
+
+    **Answer:**
+
+15. **Re Q12 — apparent tension in the band-averaged Rrs answer.** You wrote
+    "don't worry about band-averaged Rrs for now" and then, in the same
+    answer, "yes, MODIS and other multi-band instruments do need
+    band-averaged Rrs." One resolution that keeps "training not in scope"
+    (per your (3)) intact: band-averaging doesn't actually require retraining
+    anything — it can be done as SRF-weighted numerical integration over
+    several point evaluations of `ztt`/`hybrid` at fine wavelength spacing
+    within each instrument band, since both modes already evaluate natively
+    at arbitrary wavelengths (per the round-2 finding). Is that the right
+    read — i.e. band-averaging via multi-point integration is in scope and
+    should be built now (just not new emulator training), or do you want
+    band-center approximation for this first integration with proper
+    band-averaging deferred to a later phase?
+
+    **Answer:**
+
 ### Coding Plan
 
 ### Report
@@ -204,3 +328,71 @@ BING's own `raman.py`/`chl_fl.py` should be deprecated in favor of
 the user's request, these were written directly into the `Q&A/Design`
 section above (rather than asked interactively) for the user to answer
 inline before a design document is written.
+
+### 2026-08-29 (Read Design answers, ran round-2 investigation, logged follow-up questions)
+
+Read all ten answers in `Q&A/Design`. Most resolve cleanly: selectable
+`rt_backend` (Q1), user-selectable `robust` fidelity mode (Q2), a JIT'd
+vectorized path implemented as a separate function reusing existing BING
+code (Q4), BING's own Raman/fluorescence modules kept but unused by default
+(Q5), free-or-fixed `B_p` (Q7), warn-and-continue for out-of-domain inputs
+(Q8), dropping `RT_correction` (Q9), and `bing` taking `retrieve-or-bust` as
+a real runtime dependency (Q10).
+
+Three answers (Q3 geometry, Q6 wavelength grids, Q4 dispatch mechanism)
+needed grounding in the actual code before they could become coding-plan
+items, so ran a second read-only survey agent (model: Fable) over both
+repos. Key findings, now logged as follow-up questions 11-13 in
+`Q&A/Design`:
+
+- **Geometry (Q3):** BING has no per-pixel metadata container today —
+  observations flow through the fitters as bare `(Rrs, varRrs, params, idx)`
+  tuples (`bing/fitting/inference.py:214-215, 480-486`), and no geometry
+  column is loaded anywhere in `bing/data/`. "Extending BING's data model"
+  is new plumbing, not an edit to an existing field, so asked where the
+  per-pixel angles would actually come from and how they should be threaded
+  through.
+- **Wavelength grids (Q6):** the premise behind "throw an error, may need a
+  suite of RoB models" doesn't fully hold. `robust.rt.ztt` is purely
+  analytic and grid-agnostic (`robust/rt/ztt.py:802-811`); the `hybrid`
+  emulator is explicitly pointwise-in-λ and designed to interpolate at any
+  wavelength inside its 350-750 nm training range
+  (`robust/rt/emulator.py:75-79`). Retraining would only be needed for bands
+  outside that range or for band-averaged (vs. band-center) Rrs — neither of
+  which is currently discussed anywhere in `robust/design/` or `docs/`. Asked
+  whether the grid policy should be relaxed accordingly, and whether any
+  target instrument actually needs band-averaged Rrs.
+- **Dispatch mechanism (Q4):** proposed a concrete synthesis (leave
+  `evaluate.calc_Rrs_from_models` untouched for Gordon; add
+  `calc_Rrs_from_models_robust`, dispatched from `log_prob`/`chisq_fit` via
+  `rt_dict["rt_backend"]`) and asked for confirmation before it goes into the
+  Coding Plan.
+
+Also incidentally confirmed `PhaseParams.B_p` in `robust/rt/types.py:239-244`
+broadcasts against either a scalar or a per-wavelength spectrum, so a scalar
+free MCMC parameter (per Q7's answer) is a valid, well-supported choice — no
+follow-up question needed there.
+
+### 2026-08-29 (Read round-2 answers, logged round-3 follow-ups)
+
+Read answers 11-13. Q13 (dispatch mechanism) was confirmed as-is, no
+follow-up. Two answers needed one more check each:
+
+- **Q11 (geometry → "add them to params"):** grepped
+  `bing/fitting/inference.py` directly (no subagent needed for a one-line
+  lookup) and found `params` in the `(Rrs, varRrs, params, idx)` tuple is
+  literally the MCMC **initial-guess parameter vector**
+  (`inference.py:179-182, 215, 481-485`), a different object from
+  `log_prob`'s own sample-vector argument (`aparams`/`bparams`,
+  `inference.py:93-94`). So "add geometry to params" is genuinely ambiguous
+  between "geometry becomes a new fittable MCMC parameter" and "geometry
+  rides along as fixed, non-fit per-pixel data" — physically very different,
+  since geometry is normally known/measured, not retrieved. Logged as
+  follow-up 14.
+- **Q12 (band-averaged Rrs):** the answer says both "don't worry about it for
+  now" and "yes, MODIS etc. need it," which reads as contradictory as
+  written. Logged follow-up 15 proposing a resolution that satisfies both:
+  band-averaging via SRF-weighted numerical integration over several `ztt`/
+  `hybrid` point evaluations needs no retraining (consistent with "training
+  not in scope"), so it may already be compatible with the stated
+  constraints — asked for confirmation.
