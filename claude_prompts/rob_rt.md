@@ -20,13 +20,99 @@ Interface BING with the radiative transfer model from the retrieve-or-bust repos
 
 ### Coding Plan
 
-1.
+1. You are going to create a coding plan based on the design document.  Name it `docs/coding_plan/rob_rt_coding_plan.md`.  Before doing so, ask me questions in the Q&A/Coding section below. Use Fable if you can.  Log your work.
+
+2. Read my answers to the Q&A/Coding section below. Ask me more questions if needed. Use Fable if you can.  Log your work.
 
 ### Report
 
 ### Docs
 
 ## Q&A
+
+### Coding
+
+Before writing `docs/coding_plan/rob_rt_coding_plan.md`, a few decisions from
+`docs/design/rob_rt_design.md` §7 ("Open items for the Coding Plan") need
+your input — a Fable investigation grounded each in current code first, so
+these are concrete, not open-ended.
+
+1. **Float precision at the JAX/NumPy boundary.** BING's `evaluate.py`/
+   `inference.py` are pure NumPy with no explicit dtype — everything is
+   implicit float64. `robust` never enables `jax_enable_x64` in its own
+   package code (only in tests/design scripts) and documents that its arrays
+   are "float32, or float64 when `jax_enable_x64` is on"
+   (`robust/rt/conventions.py:135`). Its own bit-for-bit BING cross-check
+   only holds at `rtol <= 1e-6` **under** that fixture
+   (`test_inelastic_bing_xcheck.py:10-13,64-83`); without it, `jnp.asarray`
+   on BING's float64 arrays **silently downcasts to float32** — no error, no
+   warning. `jax_enable_x64` is a **global, process-wide** JAX setting, not
+   something scoped per-call. Options:
+   - (a) Enable `jax_enable_x64` globally at import time of the new
+     robust-backend adapter module — every fit in the process (Gordon or
+     robust) then runs under it; simplest, matches robust's own tested
+     precision, but changes JAX's default dtype process-wide for anything
+     else sharing the interpreter (e.g. a notebook mixing this with other
+     JAX code).
+   - (b) Accept float32 for the robust backend (no global config change) and
+     document the precision tradeoff — simpler, no global side effect, but
+     never matches the 1e-6 cross-check regime in production use.
+   - (c) Something else / want a recommendation.
+
+   **Answer:** (b).  Document this and note that float32 is more than sufficient for our calculations.
+
+2. **Wiring BING's Ed spectrum into `Geometry.Ed`.** Found that BING's
+   `aNWModel.set_raman_Ed` (`bing/models/anw.py:480-511`) does **not** store
+   the raw Ed spectrum — it immediately collapses `(wave_Ed, Ed)` into a
+   dimensionless ratio, `Ed_ratio_raman` (anw.py:254-257, 504-506), which is
+   all BING's own Raman path (`rrs.calc_Rrs`'s `Ed_ratio` arg) needs.
+   `robust.rt.types.Geometry.Ed`, by contrast, wants the **raw spectrum
+   pair** `(wave_Ed, Ed)` on its own grid (`robust/rt/types.py:320-334`) and
+   builds the ratio internally (`robust/rt/ed.py:154-183`). The raw pair
+   exists transiently at the one production call site,
+   `fitting/l23.py:319-322`, generated via
+   `correct_atmosphere.downwelling.downwelling_irradiance` at **solar
+   zenith 0°** (not the per-pixel `theta_s` — sourcing that is out of scope
+   per the design doc's non-goals). Two sub-questions:
+   - Should `set_raman_Ed` be modified to *also* stash the raw pair (a small,
+     backward-compatible addition serving both backends), or should the
+     robust backend capture the pair independently at the `l23.py` call site
+     without touching the existing method?
+   - For now (since real per-pixel geometry sourcing is out of scope), is it
+     correct for the robust backend to just reuse BING's existing zenith-0°
+     Ed generation as-is, i.e. no new physics here, only re-routing an
+     already-computed spectrum?
+
+   **Answer:** (1) Yes, modify the code to store the raw pair. (2) Yes, the robust backend should just reuse BING's existing zenith-0° Ed generation as-is.
+
+3. **Test strategy for the new test module.** BING's own tests use no
+   `importorskip` anywhere; the symmetric pattern already lives on the
+   `robust` side (`test_inelastic_bing_xcheck.py` does
+   `pytest.importorskip("bing.rt.rrs")` since `bing` is not a runtime
+   dependency of `robust`). But per Q10 (resolved), `bing` is taking
+   `retrieve-or-bust` as a **real runtime dependency** — so should a new
+   `bing/bing/tests/test_evaluate_robust.py` assume `robust` is always
+   present (no `importorskip`, fails loudly if broken, consistent with
+   `bing`'s existing no-`importorskip` convention), or still skip gracefully
+   for contributors without it installed? Separately: since Ed-wiring tests
+   likely exercise `bing.fitting.l23`, should this new module follow the
+   existing `conftest.py` `collect_ignore` pattern that already drops
+   `test_evaluate.py` when `correct_atmosphere` is missing
+   (`bing/tests/conftest.py:84-87`)?
+
+   **Answer:** Yes, for tests assume `robust` is always present.
+
+4. **Default solar zenith when no geometry is supplied.** No package-level
+   convention exists in BING today, and the two precedents disagree:
+   production Ed generation always uses **0°** (`fitting/l23.py:321,356`),
+   while the one existing geometry-adjacent test fixture hard-codes **30°**
+   (`bing/tests/files/gen_l23_inelastic_fixture.py:32,47`). Which should
+   `ObsGeometry`'s / the nadir-fallback default be — `0°` (matches
+   production Ed generation), `30°` (matches the test fixture), or should
+   the code instead **require** an explicit `theta_s` and raise rather than
+   silently default?
+
+   **Answer:** Yes, require an explicit `theta_s` and raise rather than silently default.
 
 ### Design
 
@@ -266,9 +352,6 @@ checking/flagging before it goes into the Coding Plan.
 All 15 questions above are now answered with no open contradictions (see
 Logs entry below for the consistency check). Ready to move to Coding Plan.
 
-### Coding Plan
-
-### Report
 
 ### Docs
 
@@ -476,3 +559,47 @@ The doc explicitly restates non-goals (band-averaging, per-instrument
 emulator retraining, real geometry ingestion) and ends with a short "Open
 items for the Coding Plan" list rather than trying to fully plan the
 implementation — that's deferred to the Coding Plan prompt.
+
+### 2026-08-29 (Investigated design doc's open items; logged Q&A/Coding questions)
+
+Before drafting `docs/coding_plan/rob_rt_coding_plan.md`, ran a Fable
+investigation grounding four of the six items in `rob_rt_design.md` §7 in
+current code, then logged questions 1-4 in `Q&A/Coding` above.
+
+- **Float precision (§7.1):** confirmed BING is pure NumPy/implicit float64
+  throughout `evaluate.py`/`inference.py`, while `robust` never enables
+  `jax_enable_x64` in its own package code (only in tests/design scripts) and
+  documents itself as float32-unless-x64
+  (`robust/rt/conventions.py:135`). Its own cross-check test only hits
+  `rtol <= 1e-6` under that fixture. Without it, BING's float64 arrays
+  silently downcast to float32 crossing into JAX — no error. Since
+  `jax_enable_x64` is a global process setting, this is a real tradeoff
+  (global precision vs. a process-wide side effect), not a trivial default —
+  logged as question 1.
+- **Ed wiring (§7.4):** found BING's `set_raman_Ed`
+  (`bing/models/anw.py:480-511`) discards the raw Ed spectrum and keeps only
+  a ratio (`Ed_ratio_raman`), but `robust.rt.types.Geometry.Ed` wants the raw
+  `(wave_Ed, Ed)` pair — which exists transiently at `fitting/l23.py:319-322`
+  generated at solar zenith 0°. Logged question 2: modify `set_raman_Ed` to
+  also stash the raw pair, or capture it independently; and confirm reusing
+  the existing zenith-0° Ed generation as-is (no new physics) is correct
+  given real geometry sourcing is out of scope.
+- **Test plan (§7.5):** found BING's own tests use no `importorskip`
+  anywhere, while `robust`'s cross-check test does
+  (`pytest.importorskip("bing.rt.rrs")`, since `bing` isn't a runtime dep of
+  `robust`). Since `bing` *is* taking `robust` as a real runtime dependency
+  (Q10), logged question 3 asking whether the new test module should match
+  BING's no-`importorskip` convention, and whether it needs the same
+  `correct_atmosphere`-missing `collect_ignore` handling as
+  `test_evaluate.py` (`bing/tests/conftest.py:84-87`), since Ed-wiring tests
+  will likely touch `bing.fitting.l23`.
+- **Default `theta_s` (§7.2):** confirmed the two existing precedents
+  disagree — production Ed generation uses 0° (`fitting/l23.py:321,356`),
+  the one test fixture uses 30°
+  (`bing/tests/files/gen_l23_inelastic_fixture.py:32,47`) — logged as
+  question 4, including a third option (require explicit `theta_s`, no
+  silent default).
+
+§7.3 (`B_p` prior) and §7.6 (docs updates) didn't need further grounding —
+both are self-contained implementation choices the coding plan can specify
+directly once §7.1-.2/.4-.5 are answered.
