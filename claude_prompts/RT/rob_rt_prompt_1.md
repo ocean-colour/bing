@@ -1,0 +1,167 @@
+# RoB RT Backend Coding — Prompt 1 (M0: Dependency, config keys, `ObsGeometry`)
+
+## Goals
+
+Implement **Milestone M0** of the coding plan
+(`docs/coding_plan/rob_rt_coding_plan.md`): make `bing` depend on
+`retrieve-or-bust` (importable as `robust`), grow `rt_dict` with the three new
+backend-configuration keys plus a fit-setup validator, and add the
+`ObsGeometry` container for fixed per-pixel viewing/illumination geometry.
+Nothing in the fitters changes yet — the point is that all the new
+configuration surface exists, validates, and the existing suite stays green.
+
+## Claude
+
+### Skills
+
+Consider using the skills in `.claude/skills/` as helpful:
+`run-bing-fit` (how `rt_dict` is built and threaded today), plus the general
+`critical-partner` and `code-review` skills for review passes.
+
+### Working agreements (hold for every prompt, `rob_rt_prompt_1` … `_6`)
+
+- **Git is handled by JXP** (per `CLAUDE.md`). Work on branch
+  **`rob-rt-backend`** (the coding plan's suggested name; JXP creates/commits).
+  Each milestone is a reviewable commit/PR-sized unit. Do **not** run
+  state-changing git commands; read-only inspection is fine.
+- **Python only, in the `ocean14` conda env** (both repos already coexist
+  there). Tests live in `bing/tests/` and run as `pytest bing/tests/`.
+- **The four resolved Coding Q&A decisions are binding constraints**
+  (`claude_prompts/rob_rt.md`, Q&A/Coding 1–4):
+  - **CQ1 — float32 only at the JAX boundary.** `jax_enable_x64` is **never**
+    enabled, globally or locally. BING's float64 NumPy arrays downcast to
+    float32 crossing into `robust.rt`; the new forward function's docstring
+    states this is more than sufficient precision for these calculations.
+    All test tolerances are float32-honest (parity `rtol ≤ 1e-5`, inelastic
+    `rtol ≤ 5e-4`) — never the x64-only `1e-6` cross-check regime.
+  - **CQ2 — `set_raman_Ed` stashes the raw Ed pair.** `aNWModel.set_raman_Ed`
+    (bing/models/anw.py:480-511) additionally stores the incoming
+    `(wave_Ed, Ed)` verbatim, backward-compatibly; `Ed_ratio_raman` is
+    computed exactly as today. The robust backend reuses BING's existing
+    zenith-0° production Ed generation as-is (fitting/l23.py:319-322).
+  - **CQ3 — tests assume `robust` is always present.** No `importorskip` for
+    `robust`, ever — it is a real runtime dependency after M0 and a broken
+    install fails loudly, matching BING's existing convention.
+  - **CQ4 — `theta_s` is required, never defaulted.** A robust-backend fit
+    with no geometry supplied raises at fit setup. The nadir fallback covers
+    only missing *viewing* geometry (`theta_v = dphi = 0`).
+- **BING scope discipline** (per `bing/CLAUDE.md`): don't widen scope; don't
+  refactor the Gordon model, prior system, or `eval_*` shape contract
+  opportunistically; `papers/` is off-limits for opportunistic edits —
+  report hits there to JXP, never edit them. No `robust`/retrieve-or-bust
+  source is modified by this integration.
+- **Every milestone is `pytest`-gated.** The existing suite must stay green
+  at every milestone; the Gordon path and its numerics are untouched except
+  the one sanctioned deletion (`RT_correction`, M1).
+- Use Fable if you can. Log your work.
+
+## Context
+
+Read before coding:
+
+- **Coding plan** — `docs/coding_plan/rob_rt_coding_plan.md`: Ground rules,
+  Files touched, and the **M0** section.
+- **Design** — `docs/design/rob_rt_design.md` §3.1 (the `rt_backend`
+  selector), §3.2 (`ObsGeometry` and geometry threading), §3.3 (the
+  `fit_Bp`/`Bp_value` keys), §4 (the hybrid [350, 750] nm grid policy), §5
+  (dependency/packaging).
+- **Q&A record** — `claude_prompts/rob_rt.md`: Design Q1–Q3, Q10–Q14
+  (backend selection, geometry, dependency direction) and Coding Q&A 1–4.
+- **Current code** — `bing/rt/defs.py` (`rt_dict_from_p`, defs.py:5),
+  `bing/setup.py` (`install_requires`, setup.py:23-30), and
+  `robust/rt/types.py` (`Geometry`, types.py:302; `Geometry.nadir`,
+  types.py:337) in the retrieve-or-bust repo.
+
+## Prompts
+
+1. Read this doc. Execute the 1st task in the "M0" section below. If you have
+   any questions, ask me in the Q&A section below. Use Fable if you can. Log
+   your work.
+2. Read this doc. Execute the 2nd task. Check my answers in Q&A; if you have
+   additional questions, ask in Q&A. Use Fable if you can. Log your work.
+3. Read this doc. Execute the 3rd task. Use Fable if you can. Log your work.
+4. Read this doc. Execute the 4th task — the explainer notebook. Use Fable if
+   you can. Log your work.
+5. Read this doc. Execute the 5th task — update the next prompt doc,
+   `rob_rt_prompt_2.md`, with anything learned this milestone. Use Fable if
+   you can. Log your work.
+
+## M0
+
+### Tasks
+
+1. **Dependency.** Add `'retrieve-or-bust'` to `install_requires` in
+   `bing/setup.py` (setup.py:23-30). Distribution name `retrieve-or-bust`,
+   importable package `robust`; JAX/Flax arrive transitively (design §5).
+   No model files are added to BING — the trained emulator weights ship
+   inside `robust`. Verify `import robust.rt` succeeds in `ocean14`.
+
+2. **Config keys + validator.** In `bing/rt/defs.py`:
+   - Extend `rt_dict_from_p` (defs.py:5) with **`rt_backend`** (default
+     `"gordon"` when absent on `p`), **`fit_Bp`** (default `False`), and
+     **`Bp_value`** (default `0.01`) — defaults applied explicitly rather
+     than the key loop's `None`, so a legacy `p` object yields a fully valid
+     dict. Every consumer still tolerates missing keys via
+     `rt_dict.get("rt_backend", "gordon")` (design §3.1), so saved/legacy
+     rt_dicts keep working unmodified.
+   - New `validate_rt_dict(rt_dict, models=None, geom=None)` — the fit-setup
+     checks (fitters call it in M2): (i) `rt_backend` ∈ {`gordon`,
+     `robust_ztt`, `robust_hybrid`, `robust_baseline`}; (ii) `fit_Bp=True`
+     with `rt_backend="gordon"` raises (design §3.3); (iii) a robust backend
+     with `geom is None` raises — `theta_s` is required (CQ4); (iv)
+     `robust_hybrid` with any `models[0].wave` band outside **[350, 750] nm**
+     raises (design §4 — checked once here, never per forward call).
+
+3. **`ObsGeometry`.** New module `bing/rt/geometry.py`: frozen dataclass
+   `ObsGeometry(theta_s, theta_v=0.0, dphi=0.0, wind=None)` (degrees; design
+   §3.2 — `theta_s` positional/required, no default) with
+   `to_robust() -> robust.rt.types.Geometry` (types.py:302; same units).
+   `Ed` is a `to_robust(Ed=...)` pass-through keyword for M4, not a stored
+   field — the dataclass stays pure per-pixel metadata. Docstring: "Fixed
+   per-pixel viewing/illumination geometry. Never fit."
+
+4. **Notebook.** Create `nb/RT/` and add `nb/RT/rob_rt_coding_1.ipynb`
+   (executed, committed with outputs): what the integration is (one figure
+   or diagram of the backend dispatch is enough), the three new `rt_dict`
+   keys and why one combined selector, what `validate_rt_dict` rejects and
+   why, and `ObsGeometry` round-tripping into `robust.rt.types.Geometry`.
+   Keep it short — M0 is configuration, not physics.
+
+5. **Finally.** Update `rob_rt_prompt_2.md` (M1) with what M0 actually
+   established: any API surprises in `robust.rt`, install/versions notes,
+   and conventions the M1 work should inherit.
+
+### Gate
+
+First tests in the new `bing/tests/test_evaluate_robust.py` (no
+`importorskip`, per CQ3):
+
+- `import robust.rt` succeeds from bing's env.
+- `rt_dict_from_p` on a legacy-style `p` yields the three new keys with
+  their defaults.
+- `validate_rt_dict` raises on each illegal combination above and passes on
+  legal ones.
+- `ObsGeometry(theta_s=30.)` round-trips through `to_robust()` (values,
+  degrees); `ObsGeometry()` with no `theta_s` is a `TypeError`.
+- The existing suite stays green (`pytest bing/tests/`).
+
+## Q&A
+
+_(none yet — this prompt has not been executed)_
+
+## Next
+
+→ `rob_rt_prompt_2.md` (M1: the forward adapter `calc_Rrs_from_models_robust`
++ dropping `RT_correction`).
+
+## Logging
+
+Record work in the Logs section below, format:
+
+### <Date> (Short summary)
+
+<Detailed description of the work and what you learned>
+
+## Logs
+
+_(none yet)_

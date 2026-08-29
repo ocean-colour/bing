@@ -693,3 +693,56 @@ Design Q&A, Coding Q&A, the design document, and now the coding plan are all
 complete and mutually consistent. Next open prompt slots are `### Report`
 and `### Docs` (both currently empty) — no Coding Plan follow-up questions
 were raised this round since none were needed.
+
+### 2026-08-29 (Generated the milestone execution-prompt series: `claude_prompts/RT/rob_rt_prompt_1.md` … `_6.md`)
+
+Delegated to a Fable agent, same pattern as the design-doc and coding-plan
+writes. Gave it the coding plan, the design doc, this file's full Q&A/Logs,
+and — as a structural style model — the sibling
+`retrieve-or-bust/claude_prompts/RT/rt_elastic_coding_prompt_*.md` series
+plus the top-level `rt_elastic_prompts.md` that originally requested that
+series (this project mirrors that exact pattern: `rob_rt.md` ↔
+`rt_elastic_prompts.md`). Explicitly instructed it that the style-model
+files are *already executed* (their Q&A/Logs hold real historical work) but
+the six new files are **unexecuted templates** — no fabricated Logs entries
+or Q&A answers, only blank placeholders. Also had it correct two
+repo-specific details rather than copy the style model blindly: BING uses
+`nb/` for notebooks (not `notebooks/`), and BING's actual
+`.claude/skills/` roster (`run-bing-fit`, `inelastic-rrs`, `fit-l23-spectrum`,
+`diagnose-mcmc`, `debug-priors`, `plot-bing-fit`) rather than
+retrieve-or-bust's skill names.
+
+Created new directory
+[`bing/claude_prompts/RT/`](RT/) with six files, one per coding-plan
+milestone:
+
+- `rob_rt_prompt_1.md` (M0 — dependency, `rt_dict` keys, `ObsGeometry`)
+- `rob_rt_prompt_2.md` (M1 — the `calc_Rrs_from_models_robust` adapter,
+  JIT/domain-check strategy, dropping `RT_correction`; the longest file,
+  matching the largest milestone)
+- `rob_rt_prompt_3.md` (M2 — fitter dispatch, geometry threading)
+- `rob_rt_prompt_4.md` (M3 — free `B_p`)
+- `rob_rt_prompt_5.md` (M4 — Ed wiring, inelastic via robust)
+- `rob_rt_prompt_6.md` (M5 — deprecation notes, docs, benchmark, closing
+  Definition-of-Done confirmation; its `Next` section correctly says there
+  is no `_7.md`)
+
+Verified all six myself rather than trusting the agent's summary: read
+prompt_1 and prompt_2 in full (structure, working-agreements content, task
+fidelity to the coding plan, real file:line citations), read prompt_6 in
+full (checked its different closing structure — no "update next doc" step,
+a Definition-of-Done confirmation task instead), and confirmed prompts 3-5
+are well-formed (line counts, section counts, all ending in the correct
+blank `## Q&A` / `## Logs` placeholders) via `wc -l`/`grep`/`tail`. Every
+file's "Working agreements" section correctly encodes the four Coding Q&A
+decisions as binding constraints (float32-only, no `importorskip`, required
+`theta_s`, `set_raman_Ed` raw-pair stash) — stated in full in prompt_1
+("hold for every prompt"), referenced briefly thereafter, matching the style
+model's convention. No git state was changed; no code or other files were
+touched.
+
+This closes out Prompts/Coding Plan. Remaining open prompt slots in the doc
+are `### Report` and `### Docs` (both empty) — the six new prompt docs are
+themselves what will drive the actual `robust.rt` implementation work in
+future sessions, each one milestone at a time on the `rob-rt-backend`
+branch.
