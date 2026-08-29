@@ -26,7 +26,7 @@ Interface BING with the radiative transfer model from the retrieve-or-bust repos
 
 3. Based on our discussion, please write a coding plan.  Name it `docs/coding_plan/rob_rt_coding_plan.md`.  Use Fable if you can.  Log your work.
 
-### Report
+4. Generate a series of prompt docs to create the code based on the coding plan.  Name them `claude_prompts/RT/rob_rt_prompt_<number>.md`.  Use Fable if you can.  Log your work.
 
 ### Docs
 
@@ -645,3 +645,51 @@ one-line update before or alongside the coding plan write-up.
 
 No new questions needed. Marked Coding Q&A resolved in the doc; ready for
 the coding-plan write-up prompt.
+
+### 2026-08-29 (Wrote the coding plan: `docs/coding_plan/rob_rt_coding_plan.md`)
+
+Delegated the write to a Fable-model agent, same pattern as the design-doc
+write. Gave it three authoritative sources to read in full itself: the
+design doc, this file's complete `Q&A`/`Logs` sections (all 15 Design + 4
+Coding decisions), and `retrieve-or-bust/design/rt_elastic_model_coding_plan.md`
+as a structure-only style reference. Also asked it to make one small,
+surgical fix while it had the context loaded: the stale `theta_s = 0.0`
+tentative-default placeholder in `docs/design/rob_rt_design.md` §3.2,
+superseded by the Coding Q&A's "require explicit `theta_s`, raise" answer.
+Reviewed both the new file and the design-doc diff directly afterward.
+
+**Coding plan** —
+[`bing/docs/coding_plan/rob_rt_coding_plan.md`](../docs/coding_plan/rob_rt_coding_plan.md)
+(410 lines): milestone-gated **M0-M5**, each with Tasks/Deliverable/pytest
+Gate, plus a "Ground rules" section restating the 4 Coding Q&A decisions as
+binding constraints (float32-only, no `jax_enable_x64`; `set_raman_Ed`
+stashes the raw Ed pair; new tests assume `robust` is always present, no
+`importorskip`; `theta_s` required, never defaulted) and a files-touched
+diagram, a milestone table, testing strategy, dependency changes, risks, and
+a definition of done.
+
+Sequencing: **M0** dependency + `rt_dict` keys + `ObsGeometry` + a new
+`validate_rt_dict` fit-setup checker; **M1** the `calc_Rrs_from_models_robust`
+adapter (JIT cache keyed on mode/inelastic-config/wave, the un-jitted
+domain-check helper since `robust`'s `DomainWarning` is silent under `jit`)
++ dropping `RT_correction`; **M2** the two-line backend dispatch in both
+fitters + geometry threaded as an optional 5th tuple element (a plan choice:
+keep the tuple, no dataclass promotion, per design §7.2); **M3** free `B_p`
+appended as the last MCMC vector element with a plan-chosen linear-uniform
+[0.004, 0.05] prior; **M4** the `set_raman_Ed` raw-pair stash and its route
+into `Geometry.Ed`, plus the `correct_atmosphere` `collect_ignore` isolation
+so Ed tests don't gate earlier milestones; **M5** docstring-only deprecation
+notes, skill/doc updates, and a throughput benchmark (reported, not
+thresholded — an accept/optimize call left to the user).
+
+One correction the agent made along the way worth noting: it set parity/
+inelastic test tolerances to float32-honest values (`rtol <= 1e-5` /
+`5e-4`) rather than reusing `robust`'s own `1e-6` cross-check figure, since
+that figure only holds under `jax_enable_x64` — which Coding Q1 explicitly
+ruled out. Confirmed this is the correct reading of Q1, not a new
+discrepancy.
+
+Design Q&A, Coding Q&A, the design document, and now the coding plan are all
+complete and mutually consistent. Next open prompt slots are `### Report`
+and `### Docs` (both currently empty) — no Coding Plan follow-up questions
+were raised this round since none were needed.

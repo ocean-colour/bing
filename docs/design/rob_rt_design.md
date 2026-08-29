@@ -190,16 +190,15 @@ to `calc_Rrs_from_models_robust` the same way `Rrs`/`varRrs` already travel
 into `log_prob` via the `emcee` `args` list, so the sampler never sees it as
 a dimension.
 
-**Fallback (always).** When `geom is None` — or when only a solar zenith is
-known — the robust path uses nadir viewing:
+**Fallback (viewing geometry only).** When only a solar zenith is known, the
+robust path uses nadir viewing:
 `Geometry.nadir(theta_s)` (robust/rt/types.py:337, sets
-`theta_v = dphi = 0`). When nothing at all is supplied, `theta_s = 0.0` is
-the documented default (the only geometry-adjacent precedent in BING is a
-hard-coded 30° in a test fixture,
-`bing/tests/files/gen_l23_inelastic_fixture.py`; whether the package default
-should instead be 30° is left to the Coding Plan, §7). The Gordon backend
-ignores `geom` entirely — its geometry remains baked into fixed mean-cosine
-constants.
+`theta_v = dphi = 0`). The solar zenith itself is **never defaulted**:
+`theta_s` is a required input for every robust backend, and a robust-backend
+fit with no geometry supplied at all raises at fit setup rather than silently
+assuming an angle (resolved in Q&A/Coding item 4,
+`claude_prompts/rob_rt.md`). The Gordon backend ignores `geom` entirely — its
+geometry remains baked into fixed mean-cosine constants.
 
 ### 3.3 `B_p` as an optional free MCMC parameter
 
