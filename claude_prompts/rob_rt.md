@@ -24,6 +24,8 @@ Interface BING with the radiative transfer model from the retrieve-or-bust repos
 
 2. Read my answers to the Q&A/Coding section below. Ask me more questions if needed. Use Fable if you can.  Log your work.
 
+3. Based on our discussion, please write a coding plan.  Name it `docs/coding_plan/rob_rt_coding_plan.md`.  Use Fable if you can.  Log your work.
+
 ### Report
 
 ### Docs
@@ -113,6 +115,13 @@ these are concrete, not open-ended.
    silently default?
 
    **Answer:** Yes, require an explicit `theta_s` and raise rather than silently default.
+
+#### Coding Q&A: resolved
+
+All four questions are answered with no contradictions between them or with
+the resolved Design Q&A — see the Logs entry below for the consistency check
+(including one design-doc placeholder that's now stale and worth updating).
+Ready for the Coding Plan write-up.
 
 ### Design
 
@@ -603,3 +612,36 @@ current code, then logged questions 1-4 in `Q&A/Coding` above.
 §7.3 (`B_p` prior) and §7.6 (docs updates) didn't need further grounding —
 both are self-contained implementation choices the coding plan can specify
 directly once §7.1-.2/.4-.5 are answered.
+
+### 2026-08-29 (Read Coding Q&A answers; confirmed resolved, no follow-up needed)
+
+Read all four answers. All land cleanly:
+
+- **Float precision:** float32, no global `jax_enable_x64`, documented as
+  sufficient precision for BING's use case.
+- **Ed wiring:** modify `set_raman_Ed` to also stash the raw `(wave_Ed, Ed)`
+  pair; reuse the existing zenith-0° production Ed generation as-is.
+- **Test strategy:** new tests assume `robust` is always present, no
+  `importorskip` — matching BING's existing convention now that `robust` is
+  a real runtime dependency. (The `correct_atmosphere`/`collect_ignore`
+  sub-question wasn't explicitly answered, but doesn't need to be: it's an
+  orthogonal, already-existing convention for a *different* optional
+  dependency that Ed-wiring tests would trigger regardless of the robust
+  question — the coding plan can just note the new test module inherits it
+  where it touches `bing.fitting.l23`.)
+- **Default solar zenith:** require explicit `theta_s`, raise if absent —
+  narrower than, and consistent with, the earlier Design-phase nadir
+  fallback (Q11/Q14): that fallback covers missing *viewing* geometry
+  (`theta_v`/`dphi` default to 0 for nadir), while this answer covers the
+  case where `theta_s` itself is unknown, which now errors instead of
+  guessing.
+
+**One stale cross-reference found, not yet fixed:** `docs/design/rob_rt_design.md`
+§3.2 still documents a *tentative* `theta_s = 0.0` default and frames "0°
+vs. 30°" as the open Coding Plan question — superseded by this round's
+"raise, don't default" answer. Left as-is for now since only asked to read
+answers/log work this round; flagged here so the design doc gets a matching
+one-line update before or alongside the coding plan write-up.
+
+No new questions needed. Marked Coding Q&A resolved in the doc; ready for
+the coding-plan write-up prompt.
