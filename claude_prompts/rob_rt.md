@@ -2,7 +2,7 @@
 
 ## Goals
 
-Interaface BING with the radiative transfer model from the retrieve-or-bust repository.
+Interface BING with the radiative transfer model from the retrieve-or-bust repository.
 
 ## Prompts
 
@@ -14,7 +14,13 @@ Interaface BING with the radiative transfer model from the retrieve-or-bust repo
 
 3. Read my answers to the Q&A/Design section below. Ask me more questions if needed. Use Fable if you can.  Log your work.
 
+4. Read my answers to the Q&A/Design section below. Ask me more questions if needed. Use Fable if you can.  Log your work.
+
+5. Based on our discussion, please write a design document.  Name it `docs/design/rob_rt_design.md`.  Use Fable if you can.  Log your work.
+
 ### Coding Plan
+
+1.
 
 ### Report
 
@@ -237,7 +243,7 @@ checking/flagging before it goes into the Coding Plan.
     quantity from satellite/scene metadata, not something you'd want MCMC to
     search over. Which did you mean?
 
-    **Answer:**
+    **Answer:** Ok, you are right.  It needs to be (b).
 
 15. **Re Q12 — apparent tension in the band-averaged Rrs answer.** You wrote
     "don't worry about band-averaged Rrs for now" and then, in the same
@@ -253,7 +259,12 @@ checking/flagging before it goes into the Coding Plan.
     band-center approximation for this first integration with proper
     band-averaging deferred to a later phase?
 
-    **Answer:**
+    **Answer:** Band-averaging via multi-point integration is not in scope.  Don't preclude it, but don't include it for now.
+
+#### Design Q&A: resolved
+
+All 15 questions above are now answered with no open contradictions (see
+Logs entry below for the consistency check). Ready to move to Coding Plan.
 
 ### Coding Plan
 
@@ -396,3 +407,72 @@ follow-up. Two answers needed one more check each:
   `hybrid` point evaluations needs no retraining (consistent with "training
   not in scope"), so it may already be compatible with the stated
   constraints — asked for confirmation.
+
+### 2026-08-29 (Read round-3 answers; confirmed Design Q&A is fully resolved)
+
+Read answers 14-15. Both landed cleanly, no further contradiction:
+
+- **Q14 (geometry):** confirmed geometry is fixed, non-fit per-pixel data
+  (option b) — never varied by the sampler, bundled alongside `Rrs`/`varRrs`
+  as a known input, defaulting to nadir when unspecified (per Q11's answer).
+  This also resolves the open sourcing question from Q11: since no
+  per-pixel geometry data exists in BING today, the near-term deliverable is
+  the plumbing to accept it as optional fixed data (nadir default); wiring
+  in real satellite metadata for a given instrument is future work, not
+  blocking.
+- **Q15 (band-averaging):** deferred — band-center approximation for now,
+  explicitly not precluding the SRF-weighted multi-point-integration approach
+  later.
+
+Did a full consistency pass over all 15 Q&A entries looking for
+contradictions (e.g. Q1 "selectable backend" vs. Q10's phrasing "call
+`robust.rt.forward` from `evaluate.calc_Rrs_from_models`" vs. Q13's agreed
+dispatch through a new `calc_Rrs_from_models_robust` function) — found
+nothing unresolved; Q13's answer already supersedes Q10's literal phrasing
+and both point at the same design. No further questions needed this round.
+Marked Design Q&A resolved in the doc; ready for the Coding Plan prompt.
+
+### 2026-08-29 (Wrote the design document: `docs/design/rob_rt_design.md`)
+
+Delegated the write to a Fable-model agent, giving it all 15 resolved Q&A
+decisions plus the two prior survey findings as source material, and pointed
+it at `retrieve-or-bust/design/rt_elastic_model.md` purely as a style
+reference (structure/tone, not content). The agent read this file's full
+`Q&A`/`Logs` sections itself and wrote
+[`bing/docs/design/rob_rt_design.md`](../docs/design/rob_rt_design.md) (415
+lines) — reviewed it directly afterward rather than trusting the agent's
+summary.
+
+Structure: title + companion-doc preamble citing this Q&A log; 7 sections —
+Goals/non-goals, Architecture (ASCII dispatch diagram), Interface and data
+model, Wavelength-grid/out-of-domain policy, Dependency/packaging,
+Deprecations, Open items for the Coding Plan.
+
+Key concrete decisions it locked in, beyond restating the Q&A:
+- A single combined `rt_dict["rt_backend"]` selector (`"gordon"` default,
+  `"robust_ztt"`, `"robust_hybrid"`, `"robust_baseline"`) rather than two
+  separate keys — keeps illegal states unrepresentable and legacy `rt_dict`s
+  working via `.get(..., "gordon")`.
+- A new `ObsGeometry` frozen dataclass (`bing/rt/geometry.py`) riding as an
+  optional 5th element of the observation tuple
+  (`Rrs, varRrs, params, idx, geom`) — fixed, never sampled, nadir fallback.
+- Free `B_p` appended as the *last* MCMC vector element so the existing
+  `aparams`/`bparams` split (`inference.py:93-94`) survives unchanged.
+- New `calc_Rrs_from_models_robust` placed beside (not inside)
+  `calc_Rrs_from_models`, with a mapping table from BING objects to
+  `robust.rt` inputs, and both fitters gaining a two-line backend branch.
+- Grid policy: no restriction for `ztt`/`baseline`; `hybrid` errors only if a
+  band falls outside [350, 750] nm, checked once at fit setup.
+- A real implementation nuance the earlier survey missed: `robust.rt`'s
+  out-of-domain warning is silent under `jax.jit` (traced inputs), so
+  warn-and-continue (Q8) requires an explicit un-jitted domain check run once
+  before and once after sampling, not inside the hot loop.
+- Caught and corrected two stale line-number citations from the earlier
+  survey (`forward` at hybrid.py:364, not 353; `PhaseParams.B_p` at
+  types.py:250-275, not 239-244) by re-reading current source rather than
+  trusting the round-1 report.
+
+The doc explicitly restates non-goals (band-averaging, per-instrument
+emulator retraining, real geometry ingestion) and ends with a short "Open
+items for the Coding Plan" list rather than trying to fully plan the
+implementation — that's deferred to the Coding Plan prompt.
