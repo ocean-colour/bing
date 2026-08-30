@@ -22,15 +22,66 @@ gate), plus `code-review` before hand-off.
 
 ### Working agreements
 
-Per the working agreements in `rob_rt_prompt_1.md` (git by JXP on
-`rob-rt-backend`; `ocean14`; CQ1–CQ4 binding; BING scope discipline;
-pytest-gated; Fable; log). Two of them bear directly on this milestone:
+Per the working agreements in `rob_rt_prompt_1.md` (`ocean14`; CQ1–CQ4
+binding; BING scope discipline; pytest-gated; Fable; log) — **one
+correction**: M0 actually landed on JXP's existing branch **`rob_rt`**, not
+`rob-rt-backend` as the coding plan suggested. JXP has been reviewing and
+committing after each task (M0's four tasks are already four separate
+commits) — work here should assume the same cadence, not batch everything
+into one hand-off. Two agreements bear directly on this milestone:
 
 - **CQ1 is implemented here**: NumPy crosses to JAX at exactly one point,
   as float32; never `jax_enable_x64`; the docstring documents the downcast
   as more than sufficient precision. Parity tolerance is `rtol ≤ 1e-5`.
 - **Scope discipline is tested here**: the `RT_correction` sweep greps both
   `bing/` and `papers/` — `papers/` hits are **reported to JXP, not edited**.
+
+### Status entering M1 (from M0)
+
+- **`bing/tests/test_evaluate_robust.py` already exists** (18 tests from
+  M0) — this milestone **adds to it**, it does not create it. It already
+  has local `_FakeModel`/`_FakeGeom` stand-ins for `validate_rt_dict`-only
+  tests; M1's parity/shape/domain tests need real L23 spectra and a real
+  `ObsGeometry`, not those fakes — use the real classes here.
+- **The grid check is already built and already tested.** M0's
+  `bing.rt.defs.validate_rt_dict` already implements Gate item 4 (`robust_hybrid`
+  errors outside [350, 750] nm; `robust_ztt`/`robust_baseline` accept any
+  grid) against named constants `RT_BACKENDS` and
+  `ROBUST_HYBRID_WAVE_MIN`/`ROBUST_HYBRID_WAVE_MAX` (`bing/rt/defs.py`).
+  `calc_Rrs_from_models_robust` itself does **not** need to re-implement
+  this check — it belongs at fit setup (`validate_rt_dict`, called by the
+  fitters in M2), not inside the forward function. M1's own gate item 4 is
+  therefore mostly a **regression check** that M0's validator still behaves
+  correctly once `RT_BACKENDS` is actually consumed elsewhere (task 1's
+  backend-suffix dispatch, below) — not new logic to write.
+- **Backend-string → robust-call mapping** (task 1 needs this precisely):
+  `rt_dict['rt_backend']` values are `'gordon'` (routes to the untouched
+  `calc_Rrs_from_models`, never reaches this function), `'robust_ztt'` →
+  `robust.rt.forward(..., mode='ztt')`, `'robust_hybrid'` →
+  `robust.rt.forward(..., mode='hybrid')`, `'robust_baseline'` → **not** a
+  `forward()` mode at all — dispatches to `robust.rt.baselines.Rrs_gordon`
+  (baselines.py:97) instead. Special-case this one rather than trying to
+  find a `mode='baseline'`.
+- **`ObsGeometry` (`bing/rt/geometry.py`) is built and tested** — `to_robust(Ed=None)`
+  already accepts an `Ed=` keyword, but wiring a real Ed pair through is
+  **M4's job, not M1's**. Call `geom.to_robust()` with no `Ed` argument
+  here; passing anything else this milestone would be getting ahead of the
+  plan.
+- **JAX/Flax facts confirmed in M0** (matters for task 2's JIT strategy):
+  `ocean14` has `jax 0.11.0`, `flax 0.12.8`, `jaxtyping 0.3.11`,
+  `optax 0.2.8`. Plain `import robust.rt` loads `jax` but **not** `flax` —
+  Flax only loads (and the emulator's parameters actually materialize) on
+  the first real `mode='hybrid'` forward call. So task 2's first hybrid-mode
+  JIT compile is *also* this integration's first real exercise of the Flax
+  path end-to-end — worth a specific, deliberate check that it works (not
+  just that `ztt`/`baseline` do), since nothing before this milestone has
+  touched Flax at all.
+- **Full-suite baseline going into M1**: `pytest bing/tests/ -q` →
+  **196 passed, 2 skipped, 2 failed** (`test_l23_inelastic.py::test_raman_correction_matches_l23`
+  and `::test_fluorescence_matches_l23`, both pre-existing and unrelated —
+  root cause is a missing `bing/tests/files/l23_inelastic_fixture.npz` in
+  this checkout, confirmed via `git stash` in M0 task 1). Don't re-diagnose
+  these as an M1 regression; do check the count only grows from here.
 
 ## Context
 
@@ -51,11 +102,13 @@ Read before coding:
   Coding Q&A 1 (float32).
 - **Current code** — `bing/evaluate.py` (`calc_Rrs_from_models`,
   evaluate.py:94; the `RT_correction` block, evaluate.py:203-209; the `a_ph`
-  construction, evaluate.py:222); on the robust side `robust/rt/hybrid.py`
-  (`forward`, hybrid.py:364; the domain check, hybrid.py:130-162),
-  `robust/rt/types.py` (`IOPs.from_total_bb`, types.py:131; `PhaseParams`,
-  types.py:250-275; `Inelastic`, types.py:471), and
-  `robust/rt/baselines.py` (`Rrs_gordon`, baselines.py:97).
+  construction, evaluate.py:222); **new from M0**: `bing/rt/defs.py`
+  (`RT_BACKENDS`, `ROBUST_HYBRID_WAVE_MIN`/`MAX`, `validate_rt_dict`) and
+  `bing/rt/geometry.py` (`ObsGeometry`, `.to_robust()`); on the robust side
+  `robust/rt/hybrid.py` (`forward`, hybrid.py:364; the domain check,
+  hybrid.py:130-162), `robust/rt/types.py` (`IOPs.from_total_bb`,
+  types.py:131; `PhaseParams`, types.py:250-275; `Inelastic`, types.py:471),
+  and `robust/rt/baselines.py` (`Rrs_gordon`, baselines.py:97).
 
 ## Prompts
 

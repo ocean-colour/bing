@@ -405,3 +405,65 @@ New: `nb/RT/rob_rt_coding_1.ipynb`. Branch `rob_rt` — confirmed via
 "design", "mo", "coding", "ok" ×2, "2", "3"), so this entry's changes are
 the only uncommitted work as of this task. Task 5 (hand off learnings to
 `rob_rt_prompt_2.md`) is last for M0.
+
+### 2026-08-30 (M0 task 5 — updated `rob_rt_prompt_2.md` with what M0 established; M0 complete)
+
+Read `rob_rt_prompt_2.md` in full before editing (not just skimmed) to find
+where M1's assumptions and M0's actual results diverge. Confirmed via
+`git log` that task 4's notebook commit ("4") also already landed, so
+nothing was uncommitted going into this task.
+
+Added a new **"Status entering M1 (from M0)"** section (mirroring the
+pattern this style of prompt doc uses elsewhere) with six concrete
+hand-offs, each something M1 would otherwise have had to re-derive or could
+have gotten subtly wrong:
+
+1. `test_evaluate_robust.py` **already exists** with 18 M0 tests — M1 adds
+   to it, doesn't create it; its `_FakeModel`/`_FakeGeom` stand-ins are
+   `validate_rt_dict`-only and shouldn't be reused for M1's parity/shape
+   tests, which need real L23 spectra and a real `ObsGeometry`.
+2. **The grid check is already built** (`validate_rt_dict`, M0) — M1's own
+   Gate item 4 is a regression check on existing logic, not new logic the
+   adapter itself needs to implement. Flagged this explicitly so M1 doesn't
+   duplicate the `[350, 750]` nm check inside `calc_Rrs_from_models_robust`
+   itself.
+3. **The exact backend-string mapping** M1's task 1 needs:
+   `'robust_baseline'` is *not* a `forward()` mode — it special-cases to
+   `robust.rt.baselines.Rrs_gordon` — only `'robust_ztt'`/`'robust_hybrid'`
+   map to `forward(mode=...)`. This is implicit in the design doc but easy
+   to miss; made it explicit rather than trusting M1 to re-derive it
+   correctly from the mapping table alone.
+4. **`ObsGeometry.to_robust()`'s `Ed=` keyword already exists** (M0 built
+   it for M4) — told M1 explicitly to call it with no `Ed` argument this
+   milestone, so nobody gets tempted to start M4's work early.
+5. **Confirmed JAX/Flax facts from M0's investigation, restated for M1's
+   benefit**: `flax` is not loaded by plain `import robust.rt` — only a
+   real `mode='hybrid'` forward call first touches it. Framed this as "M1's
+   first hybrid compile is also this integration's first real Flax
+   exercise," since that's a more useful framing for what to watch for than
+   a bare version list.
+6. **The exact full-suite baseline** (196 passed/2 skipped/2 known-unrelated
+   failed) so M1 doesn't waste time re-diagnosing the same pre-existing
+   fixture-file gap as a regression.
+
+Also fixed one stale fact directly in the Working Agreements section: it
+still said "git by JXP on `rob-rt-backend`" — corrected to name the actual
+branch (`rob_rt`) and note JXP has been committing after every task, not
+batching. And extended the Context section's "Current code" bullet to name
+the two new M0 modules (`bing/rt/defs.py`'s `RT_BACKENDS`/
+`ROBUST_HYBRID_WAVE_MIN`/`MAX`/`validate_rt_dict`, `bing/rt/geometry.py`'s
+`ObsGeometry`) that weren't in the original draft since they didn't exist
+yet when prompt_2 was first written.
+
+**Not fixed**: prompts 3-6 likely carry the same stale `rob-rt-backend`
+branch reference, but task 5's scope is specifically "update the next
+prompt doc" (singular) — flagging here rather than silently widening scope
+to files this task wasn't asked to touch. Whoever runs prompt_3's task 6
+(update `rob_rt_prompt_3.md`... wait, prompt_2's own task 6) will have the
+same opportunity to correct it forward one more step; if JXP would rather
+fix all of them in one pass, that's a small, easy follow-up.
+
+Modified: `rob_rt_prompt_2.md` (Working agreements, new Status-entering-M1
+section, Context). No code changed. Branch `rob_rt`, uncommitted, for
+JXP's review. **All five M0 tasks are complete** — Milestone M0 is done;
+`rob_rt_prompt_2.md` (M1: the forward adapter) is ready to execute.
