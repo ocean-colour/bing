@@ -249,6 +249,112 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
     else:
         return Rrs
 
+@functools.lru_cache(maxsize=None)
+def _robust_forward_jit(mode, inelastic_key, wave_key):
+    """
+    Build (and cache) a jax.jit'd closure for one (mode, inelastic
+    configuration, wavelength grid) combination.
+
+    rob_rt integration, M1 task 2 -- plan choice, docs/design/rob_rt_design.md
+    §7.1. One compile per distinct combination, reused for the rest of the
+    fit. Deliberately a `functools.lru_cache` on top of (not instead of)
+    JAX's own compilation cache: this gives a stable, introspectable
+    `_robust_forward_jit.cache_info()` for the M1 gate's "second call with
+    identical config hits the cache, no recompile" check, which JAX's own
+    internal cache doesn't expose as directly.
+
+    `wave` is baked into the closure as a Python-level constant (via
+    `wave_key = wave.tobytes()`, assumed float64 -- BING's convention) rather
+    than passed as a traced argument: it never varies within a fit, so
+    there is no reason to let it participate in tracing, and doing so this
+    way keeps the traced signature to exactly the things that do vary
+    (`iops`, `phase_params`, `geometry`, and -- when inelastic is on --
+    `phi_C`). No `vmap` is used or needed: `robust.rt.forward`/
+    `baselines.Rrs_gordon` are natively batched over leading axes, so one
+    call handles a whole `(nsamples, nparam)` chain.
+
+    NumPy crosses to JAX only at the boundary of the returned closure --
+    plain float64 `IOPs`/`PhaseParams`/`Geometry` built outside `jit` are
+    converted to JAX's default dtype (float32; `jax_enable_x64` is never
+    enabled, CQ1) the moment they are passed into it. Nothing in this
+    module casts dtypes explicitly; the jit boundary does it.
+
+    Parameters
+    ----------
+    mode : str
+        'ztt', 'hybrid', or 'baseline' (`rt_dict['rt_backend']` with its
+        'robust_' prefix stripped, or literally 'baseline').
+    inelastic_key : tuple or None
+        `(raman: bool, fluorescence: bool, emission_shape: str)` -- the
+        *static* `Inelastic` configuration -- or `None` for the
+        elastic-only path. `None` is not the same as
+        `Inelastic(raman=False, fluorescence=False)`: passing `None` to
+        `robust.rt.forward` takes the pre-existing, bit-identical code
+        route (robust.rt.types.Inelastic docstring; design §3.5), so the
+        two are kept as genuinely different cache entries / closures,
+        never conflated.
+    wave_key : bytes
+        `a_model.wave` as float64 bytes (`np.asarray(wave,
+        dtype=np.float64).tobytes()`).
+
+    Returns
+    -------
+    callable
+        A `jax.jit`-wrapped function. Signature is `f(iops, phase_params,
+        geometry)` when `mode == 'baseline'` or `inelastic_key is None`;
+        `f(iops, phase_params, geometry, phi_C)` otherwise (`phi_C` is the
+        one `Inelastic` field that is a real traced leaf, not static).
+    """
+    wave = jnp.asarray(np.frombuffer(wave_key, dtype=np.float64))
+
+    # mode='hybrid' needs the trained emulator. forward()'s own default
+    # (emulator=None) lazily loads it from disk on first use
+    # (hybrid.py:_resolve_emulator -> emulator.load_default()) -- a side
+    # effect that raises jax.errors.UnexpectedTracerError the first time it
+    # happens inside a jit trace (found by running this exact code path,
+    # not anticipated in advance -- the same failure mode as
+    # corrections=None below, just a second, independent lazy-load). Fixed
+    # the same way: load it here, once, outside jit (robust's own
+    # load_default() is itself memoised -- "read once per process" -- so
+    # this is not a redundant read), and pass the already-loaded object
+    # explicitly so forward() never has a reason to load anything at trace
+    # time.
+    emulator_obj = robust_rt.emulator.load_default() if mode == 'hybrid' else None
+
+    if mode == 'baseline':
+        def _fn(iops, phase_params, geometry):
+            return robust_rt.baselines.Rrs_gordon(iops, phase_params,
+                                                   geometry, wave)
+        return jax.jit(_fn)
+
+    if inelastic_key is None:
+        def _fn(iops, phase_params, geometry):
+            return robust_rt.forward(iops, phase_params, geometry, wave,
+                                     mode=mode, inelastic=None,
+                                     corrections=False, emulator=emulator_obj)
+        return jax.jit(_fn)
+
+    raman, fluorescence, emission_shape = inelastic_key
+
+    def _fn(iops, phase_params, geometry, phi_C):
+        inelastic = robust_rt.Inelastic(
+            raman=raman, fluorescence=fluorescence, phi_C=phi_C,
+            emission_shape=emission_shape)
+        # corrections=False: explicit analytic-only inelastic physics (no
+        # M3 learned correction heads). Not a simplification of scope --
+        # it is the only inelastic behavior this integration ever resolved
+        # or cross-checked (claude_prompts/rob_rt.md, robust's own
+        # test_inelastic_bing_xcheck.py). It is also load-bearing for
+        # jit-safety, same reason as the emulator above: corrections=None
+        # (the forward() default) tries to lazily load trained
+        # correction-head weights from disk on first use
+        # (hybrid.py:_resolve_corrections -> inelastic_corr.load_default()),
+        # which raises jax.errors.UnexpectedTracerError under jit.
+        return robust_rt.forward(iops, phase_params, geometry, wave,
+                                 mode=mode, inelastic=inelastic,
+                                 corrections=False, emulator=emulator_obj)
+    return jax.jit(_fn)
+
 def calc_Rrs_from_models_robust(a_model, a_params, bb_model, bb_params,
         rt_dict:dict, geom=None, Bp:float=None, debug:bool=False,
         full_return:bool=False):
@@ -270,6 +376,12 @@ def calc_Rrs_from_models_robust(a_model, a_params, bb_model, bb_params,
     the JAX boundary here. Documented, not a bug: float32 is more than
     sufficient precision for these calculations, and no test tolerance
     against this function assumes float64 headroom.
+
+    The actual IOPs -> Rrs call is dispatched through `_robust_forward_jit`,
+    an `lru_cache`d builder of `jax.jit`'d closures (one compile per
+    distinct `(mode, inelastic configuration, wavelength grid)`
+    combination, reused for the rest of the fit -- see its own docstring
+    for the caching design, M1 task 2).
 
     Parameters
     ----------

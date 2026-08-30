@@ -296,6 +296,38 @@ difference across the 3 sets: ~3e-7, far inside the `rtol ≤ 1e-5` gate.
 **No answer needed to proceed** — flagging in case a genuine L23-spectrum
 version is wanted for closer parity with the Gate's literal wording.
 
+**Q6 (task 2, Claude → JXP).** Implementing the JIT strategy hit **two**
+real, previously-undocumented `robust.rt` gotchas — both are lazy
+disk-loads triggered by leaving a `forward()` keyword at its default, and
+both raise `jax.errors.UnexpectedTracerError` the *first* time they fire
+inside a `jax.jit` trace (a side effect escaping the trace scope), not a
+one-off fluke — reproduced deterministically on every fresh
+`_robust_forward_jit` cache miss:
+
+1. `corrections=None` (the default) makes `hybrid.py:_resolve_corrections`
+   call `inelastic_corr.load_default()` — this fires whenever `Inelastic`
+   is set (**any** mode, not just `hybrid`; first hit was actually on
+   `robust_ztt` + fluorescence). Fixed with `corrections=False` — the
+   *documented* "analytic-only, explicit and silent" option
+   (`hybrid.py:102-120`), and also the only inelastic physics this
+   integration ever resolved or cross-checked in the first place (M3's
+   learned correction heads were never part of any Q&A/design decision).
+2. `emulator=None` (the default) makes `hybrid.py:_resolve_emulator` call
+   `emulator.load_default()` — `hybrid`-mode only. Fixed by loading it
+   once **outside** `jit`, inside the (already-cached) builder itself —
+   `robust_rt.emulator.load_default()` is itself memoised process-wide
+   (`emulator.py:1093-1108`, "read once per process"), so this adds no
+   redundant I/O — and passing the loaded object explicitly as
+   `emulator=emulator_obj`, so `forward()` never has a reason to load
+   anything at trace time.
+
+Neither is a design decision to revisit — both are the only physically
+sensible fix given the constraint (`robust`/retrieve-or-bust source cannot
+be modified). **No answer needed to proceed** — flagging because this is
+exactly the kind of "JIT recompiles across configs" risk the coding plan's
+Risks section named in the abstract (M1 risk 1), now a concrete, reproduced
+failure mode with its actual fix on record rather than a hypothetical.
+
 ## Next
 
 → `rob_rt_prompt_3.md` (M2: fitter dispatch and geometry threading).
@@ -410,3 +442,84 @@ robust_rt` — plus the new function), `bing/tests/test_evaluate_robust.py`
 wrapping yet (tasks 2-3) — this function is deliberately plain and
 un-jitted for now, exactly as task 1 scopes it. Branch `rob_rt`,
 uncommitted, for JXP's review. Task 2 (the JIT strategy) is next.
+
+### 2026-08-30 (M1 task 2 — JIT strategy: `_robust_forward_jit`)
+
+Implemented the task spec's `functools.lru_cache`d builder
+`_robust_forward_jit(mode, inelastic_key, wave_key)` exactly as designed:
+`wave` decoded from `wave_key` bytes (`np.frombuffer(..., dtype=np.float64)`,
+BING's convention) and baked into the closure as a Python-level constant,
+never a traced argument; `inelastic_key` either `None` (elastic-only,
+genuinely distinct from an `Inelastic(raman=False, fluorescence=False)`
+instance per the design's own "None is bit-identical by construction"
+note — kept as separate cache entries, never conflated) or
+`(raman, fluorescence, emission_shape)`, the three *static* `Inelastic`
+fields; `phi_C` stays a real traced leaf, reconstructed into a fresh
+`Inelastic` instance inside the closure body each call. Rewired
+`calc_Rrs_from_models_robust` to look up the cached closure and call it,
+instead of calling `robust_rt.forward`/`baselines.Rrs_gordon` directly (its
+task-1 code). Confirmed `IOPs`/`PhaseParams`/`Geometry` need no manual
+`jnp.asarray`/dtype casting anywhere in this module: they're plain
+float64 NumPy-backed objects until they cross into a `jax.jit`-wrapped
+closure, at which point JAX's own argument-conversion handles the
+float64→float32 downcast (CQ1) automatically — "NumPy crosses to JAX only
+here" is a property of *where the objects are passed into `jit`*, not
+something requiring an explicit cast anywhere in this file.
+
+**Two real bugs, found by running the code, not by reading docs.** First
+run of the parametrized shape test crashed with
+`jax.errors.UnexpectedTracerError` — not a logic error in my closure, but
+`robust.rt.forward`'s own default `corrections=None` lazily calling
+`inelastic_corr.load_default()` (a disk read) *inside* the trace, on
+whichever mode/config combination happened to hit fluorescence first
+(`robust_ztt`, not `hybrid` — this fires for **any** mode when `Inelastic`
+is set, not just `hybrid`). Fixed with `corrections=False`
+(`hybrid.py:102-120`'s own documented "analytic-only, explicit, silent"
+option) — also the *only* inelastic behavior ever authorized by any
+resolved Q&A/design decision, so this isn't a scope reduction, just making
+explicit what was already true. Re-ran; a **second**, independent
+tracer-leak surfaced immediately after, this time only on `robust_hybrid`:
+`_resolve_emulator`'s own lazy `emulator.load_default()` disk read. Fixed
+by calling `robust_rt.emulator.load_default()` once inside the (already
+`lru_cache`d) builder — outside the `jax.jit` boundary entirely — and
+passing the loaded `Emulator` object explicitly as `emulator=emulator_obj`
+so `forward()` has no default left to fall back on at trace time. Checked
+`emulator.load_default()`'s own docstring before assuming this was safe to
+call once per builder invocation rather than once per process: it's
+memoised process-wide already ("read once per process"), so this adds no
+redundant I/O beyond what `robust` itself already does. Logged both as
+**Q6** — genuinely new information (the coding plan's Risks section named
+"JIT recompiles across configs" only in the abstract; this is the concrete
+failure mode and its fix), not a design question needing an answer.
+
+**Verified the caching actually works, at both levels, not just that
+tests pass.** Interactively (before writing tests): `cache_info()` showed
+`misses=1, hits=2` after 3 identical-config calls, and a 4th call under a
+different `rt_backend` bumped `misses` to 2 — the Python-level cache
+behaves correctly. Separately checked the *underlying* `jax.jit` object's
+own compiled-trace count (`jit_fn._cache_size()`) stays at 1 across
+repeat calls with the same shapes — confirming XLA itself isn't
+recompiling either, which the `lru_cache` layer alone wouldn't prove (a
+cache hit returning the same jitted closure says nothing about whether
+*that* closure would still retrace on each call).
+
+**Added 5 tests**: cache hit/miss counts across a repeat call, parametrized
+over all 3 backends (also checks the underlying `jit_fn._cache_size()`);
+distinct `rt_backend` values produce distinct cache entries (`misses == 3`
+across 3 different configs); `inelastic_key=None` vs a real key are
+separate entries (`misses == 2`, not collapsed to 1) — directly exercising
+the None-vs-instance distinction Q6/the design's own note calls out.
+
+**Verification.** `pytest bing/tests/test_evaluate_robust.py -q` → **34
+passed** (was 29; +5 new). Full suite: `pytest bing/tests/ -q` → **212
+passed, 2 skipped, 2 failed** (135.93s) — 212 = 207 + 5, same 2
+pre-existing, already-diagnosed failures, nothing else moved.
+
+Modified: `bing/evaluate.py` (`_robust_forward_jit` added; `import
+functools`, `import jax`, `import jax.numpy as jnp` added;
+`calc_Rrs_from_models_robust`'s body rewired to dispatch through it),
+`bing/tests/test_evaluate_robust.py` (5 new tests). Branch `rob_rt`,
+uncommitted, for JXP's review. Task 3 (the un-jitted domain check) is
+next — building on a codebase where `forward()` now always runs with
+`corrections=False` and an explicitly-loaded `emulator_obj`, both facts
+task 3's un-jitted call should reuse rather than re-derive.

@@ -421,3 +421,89 @@ def test_calc_Rrs_from_models_robust_baseline_rejects_inelastic(robust_models):
         with pytest.raises(ValueError, match='robust_baseline'):
             evaluate.calc_Rrs_from_models_robust(
                 a_model, a_params, bb_model, bb_params, rt_dict, geom=geom)
+
+
+# ===== M1 task 2: the JIT strategy =====
+
+@pytest.mark.parametrize('rt_backend', ['robust_ztt', 'robust_hybrid', 'robust_baseline'])
+def test_robust_forward_jit_cache_hits_on_repeat_config(robust_models, rt_backend):
+    """A second call with an identical (mode, inelastic, wave) config hits
+    the lru_cache -- no rebuild of the jax.jit closure, and (checked via
+    the jitted function's own compile-cache size) no XLA recompile
+    either."""
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_params, bb_params = _param_vector(ps)
+    geom = ObsGeometry(theta_s=30.)
+    rt_dict = {'rt_backend': rt_backend, 'include_Raman': False,
+               'include_Chl_fl': False, 'phi_C': 0.02, 'double_gaussian': True,
+               'Bp_value': 0.014}
+
+    evaluate._robust_forward_jit.cache_clear()
+    evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, rt_dict, geom=geom)
+    info_after_first = evaluate._robust_forward_jit.cache_info()
+    assert info_after_first.misses == 1
+    assert info_after_first.hits == 0
+
+    evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, rt_dict, geom=geom)
+    info_after_second = evaluate._robust_forward_jit.cache_info()
+    assert info_after_second.misses == 1  # no new build
+    assert info_after_second.hits == 1
+
+    # The underlying jax.jit closure itself has compiled exactly once --
+    # not just that we skipped rebuilding it.
+    mode = 'baseline' if rt_backend == 'robust_baseline' else rt_backend[len('robust_'):]
+    wave_key = np.asarray(a_model.wave, dtype=np.float64).tobytes()
+    jit_fn = evaluate._robust_forward_jit(mode, None, wave_key)
+    assert jit_fn._cache_size() == 1
+
+
+def test_robust_forward_jit_separate_configs_do_not_collide(robust_models):
+    """Different rt_backend values (hence different `mode`) get distinct
+    cache entries, never sharing a compiled closure."""
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_params, bb_params = _param_vector(ps)
+    geom = ObsGeometry(theta_s=30.)
+
+    evaluate._robust_forward_jit.cache_clear()
+    for rt_backend in ('robust_ztt', 'robust_hybrid', 'robust_baseline'):
+        rt_dict = {'rt_backend': rt_backend, 'include_Raman': False,
+                   'include_Chl_fl': False, 'phi_C': 0.02,
+                   'double_gaussian': True, 'Bp_value': 0.014}
+        evaluate.calc_Rrs_from_models_robust(
+            a_model, a_params, bb_model, bb_params, rt_dict, geom=geom)
+
+    info = evaluate._robust_forward_jit.cache_info()
+    assert info.misses == 3
+    assert info.currsize == 3
+
+
+def test_robust_forward_jit_none_vs_instance_inelastic_are_distinct_entries(robust_models):
+    """inelastic_key=None (elastic-only) and an actual (raman/fluorescence)
+    key are cached separately -- Inelastic(raman=False, fluorescence=False)
+    is not the same code path as inelastic=None (design §3.5)."""
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_params, bb_params = _param_vector(ps)
+    geom = ObsGeometry(theta_s=30.)
+
+    evaluate._robust_forward_jit.cache_clear()
+    rt_dict_elastic = {'rt_backend': 'robust_ztt', 'include_Raman': False,
+                       'include_Chl_fl': False, 'phi_C': 0.02,
+                       'double_gaussian': True, 'Bp_value': 0.014}
+    rt_dict_raman = dict(rt_dict_elastic, include_Raman=True)
+
+    evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, rt_dict_elastic, geom=geom)
+    evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, rt_dict_raman, geom=geom)
+
+    info = evaluate._robust_forward_jit.cache_info()
+    assert info.misses == 2
+    assert info.currsize == 2
