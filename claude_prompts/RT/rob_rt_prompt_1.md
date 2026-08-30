@@ -357,3 +357,51 @@ additions to `bing/tests/test_evaluate_robust.py`. No `robust`/
 retrieve-or-bust source changed. Branch `rob_rt`, uncommitted, for JXP's
 review. **All three M0 tasks are now done** — task 4 (the explainer
 notebook) is next, then task 5 (hand off to `rob_rt_prompt_2.md`).
+
+### 2026-08-30 (M0 task 4 — explainer notebook `nb/RT/rob_rt_coding_1.ipynb`)
+
+Created `nb/RT/` and built the notebook programmatically via `nbformat`
+(a throwaway builder script in the session scratchpad, not committed) rather
+than hand-authoring JSON — avoids manual cell-source escaping errors
+entirely. Hit and fixed exactly one: a code cell's docstring used
+`"""..."""` nested inside the builder's own `r"""..."""` string literal,
+closing it early (`SyntaxError: invalid syntax`) — replaced the nested
+docstring with a `#` comment; `grep -n '"""'` over the builder confirmed no
+other occurrences. Executed in place with
+`jupyter nbconvert --to notebook --execute --inplace` in `ocean14`
+(kernel `python3`, confirmed registered via `jupyter kernelspec list`
+first) — clean run, no errors.
+
+**11 cells** (6 markdown, 5 code), matching the task's four required
+elements exactly, no more: (1) one rendered diagram (matplotlib boxes +
+arrows, not just an ASCII sketch) showing the full params → `rt_dict['rt_backend']`
+→ Gordon-or-robust dispatch, **explicitly labeled** so M0's actual scope
+(the left two boxes) isn't overclaimed against M2's dispatch (the arrows);
+(2) the `rt_backend` single-combined-selector rationale plus a legacy-`p`
+and an explicit-`p` demo of `rt_dict_from_p`; (3) a `validate_rt_dict`
+table of all four checks plus a live demo triggering each one (including
+two *non*-failing cases — `robust_ztt` on a wide grid, and a legal
+`robust_hybrid` fit — so the notebook shows what passes, not just what
+raises); (4) `ObsGeometry` round-tripping nadir and non-nadir instances
+into `robust.rt.types.Geometry`, the `Ed` pass-through, the required-`theta_s`
+`TypeError`, and the frozen-instance check.
+
+**Verified every output, not just "it ran".** Read the executed notebook
+back with `nbformat`: all 5 code cells have `execution_count` set
+sequentially (1-5) and zero `error` outputs. Extracted and read the actual
+printed text from the `validate_rt_dict` and `ObsGeometry` cells — messages
+match what the M0 task-2/task-3 log entries already established word for
+word (e.g. `"...requires all wavelengths within [350.0, 750.0] nm...got
+range [400.0, 760.0]"`, `"Ed stored on ObsGeometry? False"`). Also decoded
+the diagram cell's `image/png` output to a file and viewed it directly —
+confirms real, legible rendering (boxes, arrows, and the caption all
+present), not merely "a display_data output exists."
+
+**No package code touched this task** (notebook + new directory only), so
+skipped a full `pytest bing/tests/` rerun — nothing it could have broken.
+
+New: `nb/RT/rob_rt_coding_1.ipynb`. Branch `rob_rt` — confirmed via
+`git log` that JXP has already reviewed and committed tasks 1-3 (commits
+"design", "mo", "coding", "ok" ×2, "2", "3"), so this entry's changes are
+the only uncommitted work as of this task. Task 5 (hand off learnings to
+`rob_rt_prompt_2.md`) is last for M0.
