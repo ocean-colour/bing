@@ -302,3 +302,58 @@ Modified: `bing/rt/defs.py`, `bing/tests/test_chl_fl.py` (two test bodies
 extended). New: `bing/tests/test_evaluate_robust.py`. No `bing/rt/__init__.py`,
 no `robust`/retrieve-or-bust source changed. Branch `rob_rt`, uncommitted,
 for JXP's review. Task 3 (`ObsGeometry`) is next.
+
+### 2026-08-30 (M0 task 3 — `ObsGeometry` frozen dataclass)
+
+New module `bing/rt/geometry.py`: `ObsGeometry(theta_s, theta_v=0.0,
+dphi=0.0, wind=None)`, a frozen dataclass with `theta_s` positional/required
+(no default -- dataclass field ordering puts it before the defaulted fields,
+so a missing `theta_s` is a plain `TypeError` from the generated
+`__init__`, exactly per the task spec and CQ4). `to_robust(Ed=None)` builds
+`robust.rt.types.Geometry(theta_s=..., theta_v=..., dphi=..., wind=...,
+Ed=Ed)` — field names match one-to-one, so it's a direct keyword
+pass-through, not a real transform. `Ed` is a `to_robust()` keyword only,
+never a stored `ObsGeometry` field, exactly as specced (keeps the dataclass
+pure per-pixel metadata; M4 will pass the raw Ed pair in at the point of
+use).
+
+**Followed task 2's precedent, not task 1's.** `robust.rt.types` is
+imported at module scope in `geometry.py` (not lazily inside `to_robust`) —
+consistent with `robust` now being a hard runtime dependency (task 1) with
+no `importorskip` anywhere (CQ3), so there's no reason to defer the import.
+Also **did not touch `bing/rt/__init__.py`** — same reasoning as task 2:
+nothing in this milestone's spec asks for a package-level re-export, and
+keeping `ObsGeometry` accessed as `from bing.rt.geometry import
+ObsGeometry` (or `from bing.rt import geometry`) matches how `defs.py`'s
+new `validate_rt_dict` is accessed. If M2 later finds callers want it
+re-exported for convenience, that's a small, separate, easily-reviewed
+addition rather than something to guess at now.
+
+**Verified interactively before writing tests** (not just asserted): built
+an `ObsGeometry(theta_s=30.)`, confirmed `to_robust()` produces a
+`robust.rt.types.Geometry` with matching `theta_s`/nadir `theta_v=dphi=0`/
+`wind=None`/`Ed=None`; built a non-nadir instance with `wind=5.` and passed
+`Ed=(None, None)` through `to_robust(Ed=...)`, confirming the pass-through
+(not stored) semantics; confirmed `ObsGeometry()` raises `TypeError`
+(`missing 1 required positional argument: 'theta_s'`); confirmed
+`FrozenInstanceError` on attribute assignment.
+
+**New tests** in `test_evaluate_robust.py` (6 added, matching the manual
+checks above): required `theta_s` → `TypeError`; nadir defaults; frozen;
+round-trip on a nadir instance (asserts `isinstance` against the actual
+`robust.rt.types.Geometry`, not just attribute equality); round-trip on a
+non-nadir instance with `wind` and an `Ed` pass-through pair, including
+`assert not hasattr(g, 'Ed')` to pin down that `Ed` never becomes an
+`ObsGeometry` field.
+
+**Verification.** `pytest bing/tests/test_evaluate_robust.py -q` → **18
+passed** (was 13; +5 new — one of the six was folded into an existing
+assertion rather than counted twice). Full suite:
+`pytest bing/tests/ -q` → **196 passed, 2 skipped, 2 failed** (142.38s) —
+196 = 191 + 5, same 2 pre-existing failures, nothing else moved.
+
+Modified: none beyond new files. New: `bing/rt/geometry.py`,
+additions to `bing/tests/test_evaluate_robust.py`. No `robust`/
+retrieve-or-bust source changed. Branch `rob_rt`, uncommitted, for JXP's
+review. **All three M0 tasks are now done** — task 4 (the explainer
+notebook) is next, then task 5 (hand off to `rob_rt_prompt_2.md`).
