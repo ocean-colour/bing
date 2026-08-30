@@ -412,6 +412,41 @@ let `l23_inelastic_fixture.npz` be committed once regenerated, fixing the
 2 standing failures for every checkout). I did not edit `.gitignore`
 myself — changing what the repo commits is your call.
 
+**Q11 (task 5, Claude → JXP).** Building the notebook produced the first
+actual *measurement* of what CQ1's float32 downcast costs, plus two smaller
+numeric facts worth having on record:
+
+1. **Measured float32 cost.** `robust_baseline` computes the identical
+   physics to `calc_Rrs_from_models` (same Gordon constants, same A/B
+   surface conversion), so on a real L23 spectrum (idx=170, PACE grid) the
+   baseline-vs-Gordon residual *is* the float64-vs-float32 difference,
+   isolated: **max 2.31e-7 relative (1.9 float32 ULPs; median 8.2e-8),
+   max 7.7e-10 sr⁻¹ absolute** — 26,124× below even an optimistic 2%
+   measurement-noise floor (2.0e-5 sr⁻¹ on this spectrum's median Rrs of
+   1.0e-3 sr⁻¹). Task 1's independently-observed ~1e-10-scale inelastic
+   static-path noise reproduces live in the same notebook: −4.7e-10 sr⁻¹
+   worst "negative fluorescence" dip at 15/61 wavelengths vs a +7.1e-5
+   sr⁻¹ real 685 nm emission signal (signal/noise ≈ 152,000×).
+2. **Where the downcast actually happens.** The task-2 docstring's "NumPy
+   crosses to JAX at the jit boundary" is not literally where the bits
+   change: `IOPs.from_total_bb` itself calls `jnp.asarray`, so the leaves
+   land as float32 there — *before* the jit boundary (confirmed live:
+   `iops.a.dtype == float32` straight out of the constructor). Same CQ1
+   outcome (one NumPy→JAX crossing, float32, nothing in `bing` casts
+   explicitly), just one call earlier than the docstring's mental model —
+   noted in the notebook, not worth a code change.
+3. **jit-vs-eager rounding.** The adapter's jitted closure and a manual
+   un-jitted `robust_rt.forward` call on bit-identical inputs differ by up
+   to 9.3e-10 sr⁻¹ (XLA fusion reorders float32 arithmetic) — same
+   ULP-level scale as (1), harmless, but worth knowing the two paths are
+   not bit-identical. Also for the record: on this L23 spectrum the real
+   robust backends sit **above** Gordon by +0.3% to +7.4% (median +4.5%,
+   ztt; hybrid similar) — smooth, physical, and exactly the kind of
+   difference the integration exists to capture.
+
+**No answer needed to proceed** — all three are measurements now recorded
+in the executed notebook (`nb/RT/rob_rt_coding_2.ipynb`), not code changes.
+
 ## Next
 
 → `rob_rt_prompt_3.md` (M2: fitter dispatch and geometry threading).
@@ -774,3 +809,83 @@ rule is the likely root cause of the 2 standing `l23_inelastic` failures).
 Branch `rob_rt`, uncommitted, for JXP's review — plus Q9 awaiting an answer
 on the `papers/biomass` plumbing. Task 5 (the explainer notebook
 `nb/RT/rob_rt_coding_2.ipynb`) is next.
+
+### 2026-08-30 (M1 task 5 — explainer notebook)
+
+Built and **executed** `nb/RT/rob_rt_coding_2.ipynb` (25 cells: 13 markdown,
+12 code, every code cell with real output), next to M0's
+`rob_rt_coding_1.ipynb` and matching its style (markdown-explained sections,
+same kernel metadata). Every number below is quoted *from the executed
+outputs*, written after the cells ran — not before.
+
+**Setup + Section 1 (mapping table, walked live).** Loads a genuinely real
+L23 spectrum — idx=170 on the PACE grid via `prep_one_l23`/`init_guess`,
+the exact recipe of task 4's fixture generator (needs `$OS_COLOR` at run
+time; Chl=0.1306, 61 bands 400–700 nm) — then walks design §3.4's mapping
+table step by step with printed intermediates: `eval_a`/`eval_bb`
+(a(440)=0.02622, bb(440)=0.00263 m⁻¹) → `IOPs.from_total_bb` (robust's own
+water split: bb_w(440)=0.002196, bb_p(440)=0.000439; `bb_p == bb − bb_w`
+verified True; u(440)=0.09130) → `PhaseParams(B_p=0.014)` →
+`geom.to_robust()` (nadir `Geometry`, Ed=None per the M4 boundary) →
+`Inelastic=None` → backend dispatch. Closes the loop by composing the
+robust call *by hand* (`robust_rt.forward(..., mode='ztt',
+corrections=False)`) and showing the adapter reproduces it to 9.3e-10 sr⁻¹
+(jit-vs-eager float32 rounding — Q11 item 3). Also shown live: the
+float64→float32 crossing actually happens inside `IOPs.from_total_bb`
+(`iops.a.dtype == float32` straight out of the constructor), one call
+before the jit boundary the task-2 docstring describes (Q11 item 2).
+
+**Section 2 (parity figure).** Two-panel matplotlib figure on the same L23
+spectrum: Gordon vs `robust_baseline` overlaid (indistinguishable), with
+`robust_ztt`/`robust_hybrid` as context curves (genuinely different — +0.3%
+to +7.4%, median +4.5%, the point of the integration), and a log-scale
+|baseline/Gordon − 1| panel with the 1e-5 gate line and the float32-ε line
+drawn in. Printed: **max rel diff 2.31e-7, median 8.17e-8** — 43× inside
+the gate, consistent with Q5's task-1 "~3e-7" on synthetic params, now
+demonstrated on real L23.
+
+**Section 3 (shape contract).** A genuine 1-D `(3,)`/`(2,)` param pair and
+a genuine `(5, nparam)` batch through `robust_ztt`: printed shapes
+`(1, 61)` and `(5, 61)` — Q4's real convention, and the Gordon twin run on
+the same 1-D input prints `(1, 61)` too, showing it is a shared convention,
+not a robust quirk.
+
+**Section 4 (`DomainWarning` live).** `Bp_value=0.005` (task 3's verified
+out-of-domain value, vs the emulator's trained lower bound ~0.01026) into
+`robust_domain_check` with `rt_backend='robust_hybrid'` under
+`warnings.catch_warnings(record=True)`: the full real warning text is in
+the executed output ("B_p 100.0% of values outside [0.01026, 0.018], worst
+0.005 — 68% of the trained span beyond it. Consider mode='ztt'."). The
+immediately following cell runs the *jitted* adapter on the identical
+turbid inputs: 0 DomainWarnings, finite Rrs — the silent-under-jit /
+warn-and-continue pairing (design §4/Q8) demonstrated as two live cells.
+
+**Section 5 (float32 cost, measured).** The key observation: since
+`robust_baseline` computes the identical physics to `calc_Rrs_from_models`,
+section 2's residual *is* the float64-vs-float32 difference isolated —
+**max 2.31e-7 relative = 1.9 float32 ULPs (median 8.2e-8), max 7.7e-10 sr⁻¹
+absolute, 26,124× smaller than a 2% noise floor** (2.0e-5 sr⁻¹ on this
+spectrum's median Rrs of 1.0e-3 sr⁻¹). Second, independent measurement:
+task 1's inelastic static-path ULP noise reproduced live — fluor-minus-
+elastic dips to −4.7e-10 sr⁻¹ at 15/61 wavelengths vs the real +7.1e-5 sr⁻¹
+685 nm emission peak (signal/noise 151,980×). All logged as Q11.
+
+**How the outputs were verified as real** (not just exit-code-0 from
+`jupyter nbconvert --to notebook --execute --inplace` under ocean14): every
+cell was smoke-tested first in a standalone script (same env, same
+numbers); after execution the saved `.ipynb` was read back
+programmatically — execution_counts are exactly `[1..12]` sequential with
+no nulls, every code cell has ≥1 real output, the parity figure's PNG is
+embedded (and was extracted and visually inspected); and every numeric
+claim in the markdown cells was re-diffed against the corresponding cell's
+actual printed output. That re-diff caught one real prose error — a
+markdown cell said the parity residual sits "two orders of magnitude" under
+the gate when the measured headroom is 43× (~1.6 orders) — fixed to "a
+factor of ~40" (markdown-only edit; outputs untouched).
+
+Added: `nb/RT/rob_rt_coding_2.ipynb` (executed, outputs embedded). No
+source or test changes — `bing/evaluate.py` and the test suite are exactly
+as task 4 left them. Branch `rob_rt`, uncommitted, for JXP's review. Task 6
+(updating `rob_rt_prompt_3.md` with what M1 established — the adapter's
+exact signature, the lru_cache/jit behavior, and Q6/Q7/Q11's robust.rt
+numerics facts) is next.
