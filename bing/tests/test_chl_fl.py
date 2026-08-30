@@ -766,11 +766,19 @@ def test_rt_dict_from_p_defaults():
     assert rt_dict['phi_C'] == 0.02
     assert rt_dict['double_gaussian'] is True
 
+    # RT backend keys (rob_rt integration, M0): real defaults, not None,
+    # since p_ntuple.gen doesn't define these attributes either -- this is
+    # the same "legacy p" fallback as test_rt_dict_from_p_missing_attrs.
+    assert rt_dict['rt_backend'] == 'gordon'
+    assert rt_dict['fit_Bp'] is False
+    assert rt_dict['Bp_value'] == 0.01
+
     # No other unexpected keys are added
     assert set(rt_dict.keys()) == {
         'variable_Gordon', 'variable_Gordon_G0', 'variable_Gordon_bbp',
         'include_Raman', 'include_Chl_fl',
         'phi_C', 'double_gaussian',
+        'rt_backend', 'fit_Bp', 'Bp_value',
     }
 
 
@@ -804,6 +812,13 @@ def test_rt_dict_from_p_missing_attrs():
                 'phi_C', 'double_gaussian'):
         assert key in rt_dict
         assert rt_dict[key] is None
+
+    # RT backend keys (rob_rt integration, M0) get real defaults instead --
+    # a legacy p with none of these attributes must still yield a fully
+    # valid, Gordon-backend rt_dict, not None placeholders.
+    assert rt_dict['rt_backend'] == 'gordon'
+    assert rt_dict['fit_Bp'] is False
+    assert rt_dict['Bp_value'] == 0.01
 
 
 # =============================================================================

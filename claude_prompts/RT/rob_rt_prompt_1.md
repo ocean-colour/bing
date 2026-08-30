@@ -235,3 +235,70 @@ suggestion). Modified: `setup.py`, `docs/design/rob_rt_design.md` (one
 paragraph), this file (Q&A). No `bing/` package code, no `robust`/
 retrieve-or-bust source changed. Ready for JXP to review/commit; task 2
 (config keys + validator) is next.
+
+### 2026-08-30 (M0 task 2 — `rt_dict` config keys + `validate_rt_dict`; new test module)
+
+Extended `bing/rt/defs.py`: `rt_dict_from_p` now sets `rt_backend` (default
+`'gordon'`), `fit_Bp` (default `False`), `Bp_value` (default `0.01`) via
+explicit `getattr(p, key, <default>)` calls *outside* the existing
+`for key in [...]` loop — those three keys deliberately don't share the
+loop's None-on-missing behavior, per the task spec. Added module constants
+`RT_BACKENDS = ('gordon', 'robust_ztt', 'robust_hybrid', 'robust_baseline')`
+and `ROBUST_HYBRID_WAVE_MIN/MAX = 350./750.` so the valid-backend set and
+the grid bounds have one named source rather than being re-typed at each
+call site later. Added `validate_rt_dict(rt_dict, models=None, geom=None)`
+implementing all four checks from the task spec: unknown `rt_backend`;
+`fit_Bp=True` with `rt_backend='gordon'`; a robust backend with `geom is
+None`; `rt_backend='robust_hybrid'` with any `models[0].wave` value outside
+`[350, 750]` nm. `models`/`geom` are optional — omitting either just skips
+the check that needs it (useful for testing one check in isolation), rather
+than raising for lack of information.
+
+**Did not touch `bing/rt/__init__.py`.** Checked first: `rt_dict_from_p` is
+not re-exported at package level anywhere — every caller
+(`bing/io.py`, `bing/fitting/l23.py`, and 8 test files) imports it as
+`from bing.rt import defs as rt_defs` then `rt_defs.rt_dict_from_p(...)`.
+`validate_rt_dict` follows the identical pattern
+(`rt_defs.validate_rt_dict(...)`), so no `__init__.py` change was needed or
+made.
+
+**Caught and fixed a real regression before it happened.**
+`test_chl_fl.py::test_rt_dict_from_p_defaults` asserted
+`set(rt_dict.keys()) == {...the 7 original keys...}` — an exact-set
+equality that the three new always-present keys would have broken outright.
+Since this test directly exercises the function task 2 modifies, updating
+it is in-scope (not opportunistic widening): added assertions for
+`rt_backend`/`fit_Bp`/`Bp_value`'s defaults and the three keys to the
+expected set. Also extended the neighboring
+`test_rt_dict_from_p_missing_attrs` (a fully minimal namedtuple with *no* RT
+attributes at all) to assert the three new keys still get their real
+defaults rather than `None` — this is the exact "legacy p" scenario the
+task was designed around, so it belongs right next to the existing
+"returns None for missing attributes" check it would otherwise contradict.
+
+**New test module** `bing/tests/test_evaluate_robust.py` (per the M0 gate,
+no `importorskip`): `test_import_robust_rt` (task 1, formalizing the manual
+check from the last log entry into a real test); two `rt_dict_from_p`
+tests mirroring `test_chl_fl.py`'s coverage from this module's own vantage
+point (legacy defaults; explicit values via a custom namedtuple); and eight
+`validate_rt_dict` tests covering every check (parametrized over
+`robust_ztt`/`robust_hybrid`/`robust_baseline` for the missing-geometry
+check; both grid-restricted-vs-not backends for the grid check; a
+models=None case confirming that check is skipped, not treated as failure,
+without models to check against). Used a tiny local `_FakeModel`/`_FakeGeom`
+rather than real BING models — `validate_rt_dict` only ever reads
+`models[0].wave` and `geom is None`, so a full model/geometry object would
+be untested weight, not stronger coverage.
+
+**Full verification.** `pytest bing/tests/test_evaluate_robust.py
+bing/tests/test_chl_fl.py -q` → 49 passed. Full suite:
+`pytest bing/tests/ -q` → **191 passed, 2 skipped, 2 failed** (140.56s) —
+the count is exactly 178 (previous baseline) + 13 new
+`test_evaluate_robust.py` tests, with the same 2 pre-existing,
+already-diagnosed failures (missing `l23_inelastic_fixture.npz`) and
+nothing else changed.
+
+Modified: `bing/rt/defs.py`, `bing/tests/test_chl_fl.py` (two test bodies
+extended). New: `bing/tests/test_evaluate_robust.py`. No `bing/rt/__init__.py`,
+no `robust`/retrieve-or-bust source changed. Branch `rob_rt`, uncommitted,
+for JXP's review. Task 3 (`ObsGeometry`) is next.
