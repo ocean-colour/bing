@@ -147,7 +147,36 @@ First tests in the new `bing/tests/test_evaluate_robust.py` (no
 
 ## Q&A
 
-_(none yet — this prompt has not been executed)_
+**Q1 (M0 task 1, Claude → JXP).** The design doc (§5) said adding
+`retrieve-or-bust` to `install_requires` "transitively brings in JAX/Flax,
+which `robust` already declares." That's false: `retrieve-or-bust`'s own
+`setup.py` deliberately keeps `jax`/`flax`/`optax`/`jaxtyping` **out** of its
+`install_requires` (they live only in its `requirements.txt` — a documented
+choice from that repo's own elastic-RT coding plan). Confirmed directly:
+`import robust.rt` in `ocean14` loads `jax` but not `flax`/`optax`; plain
+`import robust` and `import robust.rt` never touch `flax` at module scope
+(the emulator only needs it when a `hybrid`-mode forward call actually
+runs the trained network — later milestones). Since this integration's
+working agreements forbid modifying `retrieve-or-bust` source, the fix has
+to be on BING's side: I added `jax`, `flax`, and `jaxtyping` directly to
+`bing/setup.py`'s `install_requires` (not `optax` — `robust` only imports it
+lazily inside its own emulator-*training* functions,
+`robust/rt/emulator.py:814,903`, never on the inference path BING uses).
+Also corrected the stale "transitively" claim in
+`docs/design/rob_rt_design.md` §5 to state this explicitly. **No answer
+needed to proceed** — this is the only sensible resolution given the scope
+constraint; flagging in case you'd rather fix it upstream in
+`retrieve-or-bust` yourself outside this integration's scope.
+
+One caveat worth naming: `retrieve-or-bust` itself is not published to
+PyPI (`pip show` confirms it's editable-installed from the local checkout,
+home-page `github.com/ocean-colour/retrieve-or-bust`). Listing it as a bare
+`install_requires` string is what the design calls for and is harmless in
+practice — both repos already coexist as editable installs in `ocean14` —
+but a hypothetical fresh `pip install bing` off PyPI alone would still fail
+to resolve it. This isn't a new problem for this integration (`bing`
+already has no working "from PyPI alone" install story), so I didn't try to
+solve it here.
 
 ## Next
 
@@ -164,4 +193,45 @@ Record work in the Logs section below, format:
 
 ## Logs
 
-_(none yet)_
+### 2026-08-29 (M0 task 1 — `retrieve-or-bust` dependency added; import gate green)
+
+Added `'retrieve-or-bust'` to `install_requires` in `bing/setup.py`, plus
+`'jax'`, `'flax'`, `'jaxtyping'` (not `'optax'`) — see **Q1** above for why
+the latter three are needed explicitly rather than assumed transitive.
+Verified in `ocean14`:
+
+```
+import robust.rt; import jax, flax, jaxtyping
+```
+
+succeeds — `jax 0.11.0`, `flax 0.12.8`, `jaxtyping 0.3.11` (already present
+in the shared env from `retrieve-or-bust`'s own earlier development;
+`optax 0.2.8` is also present but, per Q1, not declared as a BING
+dependency since nothing on BING's inference path needs it). `robust.rt.forward`
+resolves and is callable-looking (`<function forward at ...>`).
+
+**Existing-suite check.** `pytest bing/tests/` → **178 passed, 2 skipped, 2
+failed** (144.67s). The 2 failures
+(`test_l23_inelastic.py::test_raman_correction_matches_l23`,
+`::test_fluorescence_matches_l23`) are **pre-existing and unrelated**:
+`git stash`-ed my `setup.py`/doc changes and reran just that file — identical
+2 failures, root cause
+`FileNotFoundError: .../bing/tests/files/l23_inelastic_fixture.npz` missing
+from this checkout (a data fixture gap, not a code regression). `setup.py`'s
+`install_requires` list has no runtime effect on test execution anyway
+(pip-install-time metadata only), so this was a sanity check, not something
+the edit could plausibly have broken. Per scope discipline, not touched —
+flagging here for JXP rather than fixing an unrelated gap under this
+milestone.
+
+Also made one correction to `docs/design/rob_rt_design.md` §5 while the
+finding was fresh: replaced the now-known-false "this transitively brings in
+JAX/Flax" claim with the actual mechanism (BING declares them directly,
+since `retrieve-or-bust`'s own `setup.py` deliberately excludes them).
+
+Branch: `rob_rt` (JXP's existing branch — not `rob-rt-backend` as the
+coding plan suggested; noting the actual name rather than the plan's
+suggestion). Modified: `setup.py`, `docs/design/rob_rt_design.md` (one
+paragraph), this file (Q&A). No `bing/` package code, no `robust`/
+retrieve-or-bust source changed. Ready for JXP to review/commit; task 2
+(config keys + validator) is next.

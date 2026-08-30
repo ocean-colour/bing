@@ -356,8 +356,15 @@ also flood stderr at 10^6 calls).
 - `bing` takes `retrieve-or-bust` as a **real runtime dependency** (not
   test-only, not optional): add it to `install_requires` in `bing/setup.py`
   (setup.py:23). The distribution name is `retrieve-or-bust`; the importable
-  package is `robust`. This transitively brings in JAX/Flax, which `robust`
-  already declares.
+  package is `robust`. **JAX/Flax do not arrive transitively** — corrected
+  during M0 execution: `retrieve-or-bust`'s own `setup.py` deliberately keeps
+  the JAX stack out of its `install_requires` (declared only in its
+  `requirements.txt`, a documented choice from its own coding plan), and
+  `bing` cannot modify `retrieve-or-bust` source under this integration's
+  scope discipline. So `bing/setup.py` lists `jax`, `flax`, and `jaxtyping`
+  explicitly alongside `retrieve-or-bust` (not `optax`, which `robust` only
+  imports lazily inside its own emulator-training functions, never on the
+  inference path `bing` uses).
 - This reverses today's soft coupling, where only `robust`'s cross-check
   tests reference `bing` via `importorskip`. That test-side reference is
   unaffected (it is not a packaging dependency).
