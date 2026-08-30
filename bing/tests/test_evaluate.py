@@ -17,6 +17,8 @@ Coverage:
       std of Rrs returned by ``reconstruct_from_chains`` matches what
       ``calc_Rrs_from_models`` produces directly from the same chains.
 """
+import os
+
 import numpy as np
 
 import pytest
@@ -24,6 +26,7 @@ import pytest
 from bing.fitting import l23 as fit_l23
 from bing.parameters import standard
 from bing import evaluate
+from bing.models import utils as model_utils
 from bing.rt import defs as rt_defs
 
 
@@ -294,3 +297,98 @@ def test_reconstruct_chisq_fits_basic(l23_fit_standard):
     assert a2.shape == (2, nwave)
     assert bb2.shape == (2, nwave)
     np.testing.assert_allclose(Rrs2[0], Rrs2[1], rtol=1e-12)
+
+
+# ===== Gordon-path regression fixture (rob_rt M1 task 4) =====
+#
+# Pins calc_Rrs_from_models' literal output on L23-idx-170-derived inputs,
+# captured *before* the deprecated RT_correction block was deleted (design
+# docs/design/rob_rt_design.md §6), so "the Gordon path is untouched" stays
+# a test rather than a claim -- for that deletion and for anyone touching
+# this function in the future. Regenerate (only if the Gordon physics is
+# *deliberately* changed) with tests/files/gen_l23_gordon_fixture.py.
+
+_GORDON_FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               'files', 'l23_gordon_fixture.npz')
+
+
+@pytest.fixture(scope="module")
+def gordon_fixture():
+    """The pinned Gordon-path snapshot (see gen_l23_gordon_fixture.py)."""
+    return np.load(_GORDON_FIXTURE)
+
+
+def _rebuild_fixture_models(fx):
+    """Rebuild the ExpBricaud + Pow pair exactly as the generator did --
+    public API only, no L23 data access."""
+    models = model_utils.init(['ExpBricaud', 'Pow'], fx['wave'])
+    models[0].set_aph(np.array([float(fx['Chl'])]))
+    return models
+
+
+def test_calc_Rrs_from_models_matches_gordon_fixture_elastic(gordon_fixture):
+    """Elastic, constant-Gordon Rrs/a/bb match the pinned snapshot, for both
+    a 1-D parameter vector and a parameter batch.
+
+    The tolerance is essentially exact (rtol=1e-10): same code path, same
+    float64 inputs -- only cross-platform BLAS/libm noise is allowed. Had
+    the deleted RT_correction block ever fired here, the mismatch would be
+    O(1), not O(1e-10).
+    """
+    fx = gordon_fixture
+    models = _rebuild_fixture_models(fx)
+    rt_dict = {'variable_Gordon': False, 'include_Raman': False,
+               'include_Chl_fl': False}
+
+    Rrs1, a1, bb1 = evaluate.calc_Rrs_from_models(
+        models[0], fx['a_params_1d'], models[1], fx['bb_params_1d'],
+        rt_dict, full_return=True)
+    np.testing.assert_allclose(Rrs1, fx['Rrs_elastic_1d'], rtol=1e-10)
+    np.testing.assert_allclose(a1, fx['a_elastic_1d'], rtol=1e-10)
+    np.testing.assert_allclose(bb1, fx['bb_elastic_1d'], rtol=1e-10)
+
+    RrsB, aB, bbB = evaluate.calc_Rrs_from_models(
+        models[0], fx['a_params_batch'], models[1], fx['bb_params_batch'],
+        rt_dict, full_return=True)
+    np.testing.assert_allclose(RrsB, fx['Rrs_elastic_batch'], rtol=1e-10)
+    np.testing.assert_allclose(aB, fx['a_elastic_batch'], rtol=1e-10)
+    np.testing.assert_allclose(bbB, fx['bb_elastic_batch'], rtol=1e-10)
+
+
+def test_calc_Rrs_from_models_matches_gordon_fixture_raman(gordon_fixture):
+    """The Raman branch (code *before* the deleted block) matches the
+    pinned snapshot."""
+    from correct_atmosphere import downwelling
+
+    fx = gordon_fixture
+    models = _rebuild_fixture_models(fx)
+    wave = fx['wave']
+    wv_Ed = np.arange(np.floor(models[0].wave_ex.min()) - 5.,
+                      wave.max() + 5.1, 1.)
+    models[0].set_raman_Ed(wv_Ed, downwelling.downwelling_irradiance(wv_Ed, 0.))
+    rt_dict = {'variable_Gordon': False, 'include_Raman': True,
+               'include_Chl_fl': False}
+
+    Rrs = evaluate.calc_Rrs_from_models(
+        models[0], fx['a_params_batch'], models[1], fx['bb_params_batch'],
+        rt_dict)
+    np.testing.assert_allclose(Rrs, fx['Rrs_raman_batch'], rtol=1e-10)
+
+
+def test_calc_Rrs_from_models_matches_gordon_fixture_chlfl(gordon_fixture):
+    """The fluorescence branch (code *after* the deleted block) matches the
+    pinned snapshot."""
+    from correct_atmosphere import downwelling
+
+    fx = gordon_fixture
+    models = _rebuild_fixture_models(fx)
+    Ed = downwelling.downwelling_irradiance(fx['wave'], 0.)
+    models[0].init_Chl_fluorescence(Ed=Ed)
+    rt_dict = {'variable_Gordon': False, 'include_Raman': False,
+               'include_Chl_fl': True, 'phi_C': float(fx['phi_C']),
+               'double_gaussian': bool(fx['double_gaussian'])}
+
+    Rrs = evaluate.calc_Rrs_from_models(
+        models[0], fx['a_params_batch'], models[1], fx['bb_params_batch'],
+        rt_dict)
+    np.testing.assert_allclose(Rrs, fx['Rrs_chlfl_batch'], rtol=1e-10)

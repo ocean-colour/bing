@@ -33,8 +33,12 @@ configs, None-vs-instance inelastic keys).
 M1 task 3: ``robust_domain_check`` -- ``DomainWarning`` fires un-jitted on a
 deliberately out-of-domain IOP set while the jitted hot path on the same
 inputs is silent (Gate item 5), the in-domain/ztt/baseline silence, and the
-shared argument-error paths. Dropping ``RT_correction`` (task 4) lands in a
-later addition.
+shared argument-error paths.
+
+M1 task 4: the ``RT_correction`` block is gone -- a stale key in an rt_dict
+is silently ignored (Gate item 6). The companion regression pin (the Gordon
+path's literal output, unchanged by the deletion) lives in
+``test_evaluate.py`` against ``files/l23_gordon_fixture.npz``.
 """
 import numpy as np
 
@@ -630,3 +634,43 @@ def test_robust_domain_check_shares_adapter_error_paths(robust_models):
         evaluate.robust_domain_check(
             a_model, a_params, bb_model, bb_params,
             dict(_TURBID_RT_DICT, rt_backend='gordon'), geom=geom)
+
+
+# ===== M1 task 4: RT_correction is gone (Gate item 6) =====
+
+def test_calc_Rrs_from_models_ignores_stale_RT_correction_key(robust_models):
+    """An rt_dict carrying a stale ``RT_correction`` key is silently ignored:
+    no multiplication, no KeyError (Gate item 6; design §6).
+
+    Decisive by construction: before the deletion, this exact key (a uniform
+    factor of 2) doubled Rrs on both the 1-D and batch paths -- verified live
+    on the pre-deletion code -- so bit-identical output with and without the
+    key proves the block is gone, not merely dormant. The companion pin that
+    the deletion changed nothing for rt_dicts *without* the key is
+    test_evaluate.py's l23_gordon_fixture suite.
+    """
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_params, bb_params = _param_vector(ps)
+
+    rt_dict = {'variable_Gordon': False, 'include_Raman': False,
+               'include_Chl_fl': False}
+    rt_dict_stale = dict(rt_dict,
+                         RT_correction=np.full(len(a_model.wave), 2.0))
+
+    # 1-D parameter vector
+    Rrs = evaluate.calc_Rrs_from_models(
+        a_model, a_params, bb_model, bb_params, rt_dict)
+    Rrs_stale = evaluate.calc_Rrs_from_models(
+        a_model, a_params, bb_model, bb_params, rt_dict_stale)
+    np.testing.assert_array_equal(Rrs_stale, Rrs)
+
+    # Batch -- the deleted block had a separate np.outer branch for ndim == 2.
+    a_batch = np.tile(a_params, (3, 1))
+    bb_batch = np.tile(bb_params, (3, 1))
+    Rrs_b = evaluate.calc_Rrs_from_models(
+        a_model, a_batch, bb_model, bb_batch, rt_dict)
+    Rrs_b_stale = evaluate.calc_Rrs_from_models(
+        a_model, a_batch, bb_model, bb_batch, rt_dict_stale)
+    np.testing.assert_array_equal(Rrs_b_stale, Rrs_b)

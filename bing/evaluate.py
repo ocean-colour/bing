@@ -208,14 +208,6 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
     if debug:
         embed(header='174 of evaluate.py')
 
-    # RT correction?
-    #  THIS SHOULD BE REMOVED
-    if rt_dict.get('RT_correction', None) is not None:
-        if a_params.ndim == 1:
-            Rrs = Rrs * rt_dict['RT_correction']
-        else:
-            Rrs = Rrs * np.outer(np.ones(a_params.shape[0]), rt_dict['RT_correction'])
-
     # Fluorescence? Accept rt_dicts that don't specify the key (ad-hoc dicts
     # built by tests / notebooks pre-date the include_Chl_fl field).
     if rt_dict.get('include_Chl_fl', False):

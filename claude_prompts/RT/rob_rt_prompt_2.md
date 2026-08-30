@@ -354,6 +354,64 @@ configuration can never drift from the fitted one. The adapter's behavior
 is unchanged (all 34 pre-existing tests pass untouched, same error
 messages). **No answer needed to proceed.**
 
+**Q8 (task 4, Claude → JXP).** The task spec offered "a reference L23
+spectrum" for the regression fixture while Q5's precedent for this milestone
+was synthetic parameters. Resolved with a hybrid that satisfies both: the
+fixture *generator* (`bing/tests/files/gen_l23_gordon_fixture.py`) derives
+its inputs from real L23 data — idx=170 (the same reference index
+`test_evaluate.py`'s end-to-end fixtures fit), PACE grid, the true L23 `Chl`
+via `prep_one_l23`, and parameters from `init_guess` on the spectrum's true
+`anw`/`bbnw` — but stores everything needed to re-evaluate (wave, Chl, the
+exact parameter arrays, RT flags) in the `.npz`, so the regression *test*
+rebuilds the models from the public API alone (`model_utils.init` +
+`set_aph`) with zero L23/`$OS_COLOR` dependency at test time. This avoids
+exactly the failure mode the two pre-existing `test_l23_inelastic.py`
+failures demonstrate (a test needing a data-dependent fixture missing from
+a checkout): the `.npz` is committed and self-contained. Three Gordon
+configurations are pinned, bracketing the deleted block on both sides of
+the function body — elastic constant-Gordon (1-D + batch, `full_return` →
+Rrs/a/bb), +Raman (batch), +fluorescence (batch). **No answer needed to
+proceed.**
+
+**Q9 (task 4, Claude → JXP).** The `RT_correction` sweep of `papers/` found
+**7 hits in 2 files, both in `papers/biomass/Analysis/py/` — reported, not
+edited, per the working agreement — and they now need a decision**, because
+with the block deleted the key they set is silently ignored:
+
+- `fitting.py:55` — `fit_me(..., RT_correction:np.ndarray=None)` keyword
+  argument; `fitting.py:72` — its docstring ("This is a hack to explore RT
+  effects"); `fitting.py:128-129` — `if RT_correction is not None:
+  rt_dict['RT_correction'] = RT_correction` just before the LM + MCMC fit.
+- `lowest_bbp.py:518` — under its `correct_RT` option, computes
+  `RT_correction = spec['Rrs_true'] / Rrs_GordonE` (the true-Rrs/Gordon
+  ratio on the L23 truth); `lowest_bbp.py:520` — the `else: RT_correction =
+  None` branch; `lowest_bbp.py:528` — passes it into `fit_me(...,
+  RT_correction=RT_correction)`.
+
+`bing/` itself never constructed the key (`rt_dict_from_p` never emitted
+it), so these two scripts were its only real users. Post-deletion,
+`fit_me(RT_correction=...)` and `lowest_bbp.py`'s `correct_RT=True` path
+run without error but **silently apply no correction** — arguably worse
+than crashing for anyone re-running that exploration. **Question for JXP:**
+should these be (a) left as-is (dead plumbing, historical scripts), (b)
+stripped of the `RT_correction` plumbing, or (c) made to raise loudly if a
+correction is requested? (b) or (c) require edits under `papers/`, which I
+am not authorized to make.
+
+**Q10 (task 4, Claude → JXP).** Found the likely root cause of the 2
+pre-existing `test_l23_inelastic.py` failures while committing-prepping the
+new fixture: the repo's `.gitignore` (line 16) has a blanket `*.npz`, so
+`git status` does not even show `bing/tests/files/l23_gordon_fixture.npz`
+as untracked — and `l23_inelastic_fixture.npz` (whose generator's docstring
+says "committed") was presumably silently excluded the same way, which is
+exactly why it's missing from this checkout. **Question for JXP:** when
+committing task 4, please either `git add -f
+bing/tests/files/l23_gordon_fixture.npz` or add a
+`!bing/tests/files/*.npz` exception to `.gitignore` (the latter would also
+let `l23_inelastic_fixture.npz` be committed once regenerated, fixing the
+2 standing failures for every checkout). I did not edit `.gitignore`
+myself — changing what the repo commits is your call.
+
 ## Next
 
 → `rob_rt_prompt_3.md` (M2: fitter dispatch and geometry threading).
@@ -631,3 +689,88 @@ Branch `rob_rt`, uncommitted, for JXP's review. Task 4 (dropping
 reference L23 spectrum under `bing/tests/files/` *first*, then delete the
 block at evaluate.py's `RT_correction` stanza and sweep call sites
 (`papers/` hits reported, not edited).
+
+### 2026-08-30 (M1 task 4 — pin regression fixture, drop `RT_correction`)
+
+Read before coding: the *current* `calc_Rrs_from_models` body end to end
+(the doc's `evaluate.py:203-209` reference is stale after tasks 1-3 grew
+the file — the block actually sat at evaluate.py:211-217, found by
+searching the string, not the line number), `rt_dict_from_p`
+(`bing/rt/defs.py:21-55` — confirmed it never emitted an `RT_correction`
+key, so no rt_dict construction in `bing/` needed editing), the full
+`RT_correction`/`RT_corr` grep across `bing/` and `papers/` (no
+differently-cased or partial-name aliases exist — the block used the
+rt_dict key directly, no local variable), and the two existing fixture
+generators in `bing/tests/files/` for the naming convention
+(`gen_<name>.py` → `<name>.npz`, generator committed next to the fixture
+with a regenerate-once docstring).
+
+**What the block actually did** (deletion rationale on record, design §6):
+flagged `# THIS SHOULD BE REMOVED` in the source itself, it multiplied the
+already-computed Gordon `Rrs` by a caller-supplied per-wavelength array
+whenever `rt_dict.get('RT_correction')` was not None — `Rrs *
+rt_dict['RT_correction']` for 1-D params, `Rrs * np.outer(ones(nsample),
+...)` for batches. A fudge for forcing Gordon Rrs toward HydroLight truth,
+superseded outright by this integration (the robust backends *are* the
+principled version of that correction). Verified live on the pre-deletion
+code that the block genuinely fired when the key was set (a uniform
+factor-2 key exactly doubled Rrs on both the 1-D and batch branches) — so
+the Gate-item-6 test added below is decisive, not vacuous — and that no
+real config ever set the key (`rt_dict_from_p` never built it), so the
+fixture snapshot is a true "what the function outputs today, dead code and
+all" capture.
+
+**Step A first, exactly as specced.** Fixture:
+`bing/tests/files/l23_gordon_fixture.npz` (17 kB, committed), generated by
+the new `gen_l23_gordon_fixture.py` on the *unmodified* code. L23-derived
+inputs, data-free test — Q8 has the full rationale: parameters from
+`prep_one_l23(p, idx=170)`'s `init_guess` on the true L23 anw/bbnw (PACE
+grid, true L23 Chl), plus a deterministic ±2% 5-sample batch, with the
+realized arrays stored in the `.npz` so the test rebuilds everything from
+the public API alone (no `$OS_COLOR` at test time). Pinned three Gordon
+configs bracketing the block: elastic constant-Gordon (1-D + batch,
+`full_return` → Rrs/a/bb), +Raman (batch; `set_raman_Ed` with the real
+downwelling Ed, same recipe as `prep_one_l23`), +fluorescence (batch;
+`init_Chl_fluorescence`, `phi_C=0.02`, double Gaussian). Added 3 tests to
+`test_evaluate.py` (where the Gordon-path `calc_Rrs_from_models` tests
+live) at `rtol=1e-10` — same code path, same float64 inputs, only
+cross-platform BLAS noise allowed; a live `RT_correction` would miss by
+O(1). **Ran them on the still-unmodified code first: 3 passed.**
+
+**Step B.** Deleted the 7-line stanza (comment + `if`/`else`) at
+evaluate.py:211-217 — the function's docstring never mentioned the key, so
+no docstring edit needed. That was the *only* functional `RT_correction`
+code anywhere in `bing/`: the sweep found no key in any rt_dict
+construction and no `bing/` call sites (the remaining `bing/` grep hits are
+the new test/generator docstrings describing the deletion itself, plus
+docs/prompts history). `papers/` hits: **7, in 2 files**
+(`papers/biomass/Analysis/py/fitting.py` and `lowest_bbp.py`) — reported
+in Q9 with a real question attached, since those scripts' `correct_RT`
+machinery now silently no-ops rather than erroring; not edited, per the
+working agreement. Added the Gate-item-6 test to `test_evaluate_robust.py`
+(`test_calc_Rrs_from_models_ignores_stale_RT_correction_key`): a stale
+factor-2 `RT_correction` key in an otherwise-identical rt_dict changes
+nothing, bit-for-bit, on both the 1-D and batch paths, and raises nothing.
+
+**Verification.** Before: `test_evaluate_robust.py` **40 passed**, full
+suite **218 passed, 2 skipped, 2 failed** (task-3 baseline). After:
+`test_evaluate.py -k gordon_fixture` → **3 passed** (both before and after
+the deletion — the pin held, proving the block was inert in every real
+config); `test_evaluate_robust.py -q` → **41 passed** (+1, Gate item 6);
+full suite `pytest bing/tests/ -q` → **222 passed, 2 skipped, 2 failed**
+(140.29s) — 222 = 218 + 4 (3 fixture-regression + 1 stale-key), same 2
+pre-existing `test_l23_inelastic.py` failures (missing
+`l23_inelastic_fixture.npz`), nothing else moved. Gate items 1-7 are now
+all covered: 6 landed here; 1-3, 5, 7 in tasks 1-3; 4 was M0's validator.
+
+Modified: `bing/evaluate.py` (block deleted, nothing else),
+`bing/tests/test_evaluate.py` (3 regression tests + `os`/`model_utils`
+imports), `bing/tests/test_evaluate_robust.py` (1 test + module-docstring
+coverage note). Added: `bing/tests/files/gen_l23_gordon_fixture.py`,
+`bing/tests/files/l23_gordon_fixture.npz` — **note the `.npz` is invisible
+to git under the repo's blanket `*.npz` ignore rule; Q10 explains, and asks
+for `git add -f` or a `.gitignore` exception when committing** (the same
+rule is the likely root cause of the 2 standing `l23_inelastic` failures).
+Branch `rob_rt`, uncommitted, for JXP's review — plus Q9 awaiting an answer
+on the `papers/biomass` plumbing. Task 5 (the explainer notebook
+`nb/RT/rob_rt_coding_2.ipynb`) is next.
