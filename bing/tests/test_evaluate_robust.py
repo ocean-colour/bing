@@ -25,8 +25,16 @@ batch), ``full_return``, the free-``Bp`` override, Raman/fluorescence
 branches, and the four error paths (missing ``geom``, a non-robust
 ``rt_backend``, ``robust_baseline`` + inelastic, and -- via M0's
 ``validate_rt_dict``, not repeated here -- the grid/backend/``fit_Bp``
-checks). The JIT strategy (task 2), the un-jitted domain check (task 3), and
-dropping ``RT_correction`` (task 4) land in later additions.
+checks).
+
+M1 task 2: the ``_robust_forward_jit`` lru_cache (hit/miss counts, distinct
+configs, None-vs-instance inelastic keys).
+
+M1 task 3: ``robust_domain_check`` -- ``DomainWarning`` fires un-jitted on a
+deliberately out-of-domain IOP set while the jitted hot path on the same
+inputs is silent (Gate item 5), the in-domain/ztt/baseline silence, and the
+shared argument-error paths. Dropping ``RT_correction`` (task 4) lands in a
+later addition.
 """
 import numpy as np
 
@@ -507,3 +515,118 @@ def test_robust_forward_jit_none_vs_instance_inelastic_are_distinct_entries(robu
     info = evaluate._robust_forward_jit.cache_info()
     assert info.misses == 2
     assert info.currsize == 2
+
+
+# ===== M1 task 3: robust_domain_check (the un-jitted domain check) =====
+
+# A deliberately out-of-domain configuration: B_p = 0.005 is well below the
+# emulator's trained lower bound (~0.0103 -- the same breach the task-1 log
+# hit incidentally at Bp_value=0.01/theta_s=30 deg before bumping the shape
+# tests to 0.014). Everything else stays at the in-domain values used above,
+# so the warning is attributable to B_p alone.
+_TURBID_RT_DICT = {'rt_backend': 'robust_hybrid', 'include_Raman': False,
+                   'include_Chl_fl': False, 'phi_C': 0.02,
+                   'double_gaussian': True, 'Bp_value': 0.005}
+
+
+def _domain_check_args(robust_models):
+    """Model pair + params + geom shared by the task-3 tests."""
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_params, bb_params = _param_vector(ps)
+    geom = ObsGeometry(theta_s=30.)
+    return a_model, a_params, bb_model, bb_params, geom
+
+
+def test_robust_domain_check_turbid_fires_domain_warning(robust_models):
+    """Gate item 5, first half: on a deliberately out-of-domain IOP set the
+    un-jitted check emits robust's DomainWarning -- the whole reason the
+    helper exists, since the jitted hot path can never warn (the domain
+    check needs concrete values and is skipped for traced inputs)."""
+    from robust.rt.hybrid import DomainWarning
+
+    a_model, a_params, bb_model, bb_params, geom = _domain_check_args(robust_models)
+
+    with pytest.warns(DomainWarning, match='outside its training range'):
+        evaluate.robust_domain_check(
+            a_model, a_params, bb_model, bb_params, _TURBID_RT_DICT, geom=geom)
+
+
+def test_robust_domain_check_jitted_path_same_inputs_no_error(robust_models):
+    """Gate item 5, second half: the jitted hot path on the *same*
+    out-of-domain inputs neither errors nor warns -- it silently produces a
+    finite value (warn-and-continue, design §4 / Q8: the fit proceeds; the
+    diagnosis belongs to robust_domain_check, outside the hot loop)."""
+    import warnings as _warnings
+
+    from robust.rt.hybrid import DomainWarning
+
+    a_model, a_params, bb_model, bb_params, geom = _domain_check_args(robust_models)
+
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter('always')
+        Rrs = evaluate.calc_Rrs_from_models_robust(
+            a_model, a_params, bb_model, bb_params, _TURBID_RT_DICT, geom=geom)
+
+    assert np.all(np.isfinite(Rrs))
+    assert [w for w in caught if issubclass(w.category, DomainWarning)] == []
+
+
+def test_robust_domain_check_in_domain_is_silent(robust_models):
+    """An in-domain configuration (the Bp_value=0.014 the rest of this
+    module uses precisely because it is in-domain) emits nothing, and the
+    helper returns None -- it is a diagnostic, not a forward model."""
+    import warnings as _warnings
+
+    from robust.rt.hybrid import DomainWarning
+
+    a_model, a_params, bb_model, bb_params, geom = _domain_check_args(robust_models)
+    rt_dict = dict(_TURBID_RT_DICT, Bp_value=0.014)
+
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter('always')
+        result = evaluate.robust_domain_check(
+            a_model, a_params, bb_model, bb_params, rt_dict, geom=geom)
+
+    assert result is None
+    assert [w for w in caught if issubclass(w.category, DomainWarning)] == []
+
+
+@pytest.mark.parametrize('rt_backend', ['robust_ztt', 'robust_baseline'])
+def test_robust_domain_check_noop_for_ztt_and_baseline(robust_models, rt_backend):
+    """Only robust_hybrid has a trained domain: forward()'s check sits past
+    the mode='ztt' early return, and baselines.Rrs_gordon has no emulator or
+    domain logic at all (both confirmed by reading robust's source). For the
+    other backends the helper validates arguments and returns silently, even
+    on the out-of-domain B_p."""
+    import warnings as _warnings
+
+    from robust.rt.hybrid import DomainWarning
+
+    a_model, a_params, bb_model, bb_params, geom = _domain_check_args(robust_models)
+    rt_dict = dict(_TURBID_RT_DICT, rt_backend=rt_backend)
+
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter('always')
+        result = evaluate.robust_domain_check(
+            a_model, a_params, bb_model, bb_params, rt_dict, geom=geom)
+
+    assert result is None
+    assert [w for w in caught if issubclass(w.category, DomainWarning)] == []
+
+
+def test_robust_domain_check_shares_adapter_error_paths(robust_models):
+    """robust_domain_check builds its call arguments through the same
+    _build_robust_inputs as the adapter, so a direct call fails identically:
+    missing geom and a non-robust backend raise the same ValueErrors."""
+    a_model, a_params, bb_model, bb_params, geom = _domain_check_args(robust_models)
+
+    with pytest.raises(ValueError, match='geom'):
+        evaluate.robust_domain_check(
+            a_model, a_params, bb_model, bb_params, _TURBID_RT_DICT, geom=None)
+
+    with pytest.raises(ValueError, match='robust backend'):
+        evaluate.robust_domain_check(
+            a_model, a_params, bb_model, bb_params,
+            dict(_TURBID_RT_DICT, rt_backend='gordon'), geom=geom)

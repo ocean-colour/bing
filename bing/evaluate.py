@@ -27,6 +27,7 @@ Examples
 >>> stats = evaluate.calc_stats(chains, names=['Adg', 'Sdg', 'Aph', 'Bnw', 'beta'])
 """
 
+import collections
 import functools
 import warnings
 
@@ -355,6 +356,93 @@ def _robust_forward_jit(mode, inelastic_key, wave_key):
                                  corrections=False, emulator=emulator_obj)
     return jax.jit(_fn)
 
+#: Everything a robust.rt call needs, built once from BING-side arguments.
+#: Shared by `calc_Rrs_from_models_robust` (the jitted hot path) and
+#: `robust_domain_check` (the un-jitted diagnostic) so the BING -> robust
+#: argument mapping is defined in exactly one place -- the two callers can
+#: never drift apart on how IOPs/PhaseParams/Geometry are constructed.
+_RobustInputs = collections.namedtuple(
+    '_RobustInputs',
+    ['rt_backend', 'iops', 'phase_params', 'geometry', 'a', 'bb',
+     'include_raman', 'include_fl', 'emission_shape', 'phi_C'])
+
+
+def _build_robust_inputs(a_model, a_params, bb_model, bb_params,
+                         rt_dict, geom, Bp):
+    """
+    Validate and map BING-side arguments onto robust.rt call inputs.
+
+    The single definition of the BING -> robust argument construction
+    (design §3.4's mapping table): parameter evaluation via
+    ``a_model.eval_a``/``bb_model.eval_bb`` (identical to the Gordon path),
+    the ``IOPs.from_total_bb`` split, ``PhaseParams(B_p=...)`` with the
+    free-``Bp`` override, ``geom.to_robust()`` (no ``Ed`` -- M4's job), and
+    the inelastic flags. Also owns the three argument-validity errors
+    (missing ``geom``, a non-robust ``rt_backend``, ``robust_baseline`` +
+    inelastic), so a direct call to either consumer fails identically.
+
+    Parameters and error semantics are exactly those documented on
+    `calc_Rrs_from_models_robust`; see its docstring.
+
+    Returns
+    -------
+    _RobustInputs
+        The validated, fully-constructed robust.rt call ingredients
+        (plus the raw ``a``/``bb`` arrays for ``full_return``).
+    """
+    if geom is None:
+        raise ValueError(
+            "calc_Rrs_from_models_robust requires geom (a bing.rt.geometry."
+            "ObsGeometry) -- theta_s is never silently defaulted "
+            "(claude_prompts/rob_rt.md, Q&A/Coding item 4). "
+            "rt_defs.validate_rt_dict should have raised before this "
+            "function was ever reached for a robust backend.")
+
+    rt_backend = rt_dict.get('rt_backend', 'gordon')
+    if rt_backend not in rt_defs.RT_BACKENDS or rt_backend == 'gordon':
+        raise ValueError(
+            f"calc_Rrs_from_models_robust: rt_dict['rt_backend']={rt_backend!r} "
+            "is not a robust backend -- use one of "
+            f"{[b for b in rt_defs.RT_BACKENDS if b != 'gordon']}, or "
+            "dispatch 'gordon' to calc_Rrs_from_models instead.")
+
+    include_raman = rt_dict.get('include_Raman', False)
+    include_fl = rt_dict.get('include_Chl_fl', False)
+
+    if rt_backend == 'robust_baseline' and (include_raman or include_fl):
+        raise ValueError(
+            "rt_dict['rt_backend']='robust_baseline' has no inelastic "
+            "composition path -- robust.rt.baselines.Rrs_gordon takes "
+            "no `inelastic` argument and is elastic-only by "
+            "construction. Disable include_Raman/include_Chl_fl, or "
+            "use rt_backend='robust_ztt'/'robust_hybrid' instead.")
+
+    # IOPs for model wave -- identical evaluation to the Gordon path.
+    a = a_model.eval_a(a_params)
+    bb = bb_model.eval_bb(bb_params)
+
+    # Fluorescence source term (full spectrum on a_model.wave -- see
+    # calc_Rrs_from_models_robust's Notes; not sliced at a_model.i_Chl_ex
+    # like calc_Rrs_from_models' aph_ex).
+    a_ph = (10**a_params[..., -1:]) * a_model.a_ph if include_fl else None
+
+    iops = robust_rt.IOPs.from_total_bb(a, bb, wave=a_model.wave, a_ph=a_ph)
+
+    B_p = Bp if Bp is not None else rt_dict['Bp_value']
+    phase_params = robust_rt.PhaseParams(B_p=B_p)
+
+    geometry = geom.to_robust()
+
+    emission_shape = ('double' if rt_dict.get('double_gaussian', True)
+                      else 'single')
+
+    return _RobustInputs(
+        rt_backend=rt_backend, iops=iops, phase_params=phase_params,
+        geometry=geometry, a=a, bb=bb, include_raman=include_raman,
+        include_fl=include_fl, emission_shape=emission_shape,
+        phi_C=rt_dict.get('phi_C', 0.02))
+
+
 def calc_Rrs_from_models_robust(a_model, a_params, bb_model, bb_params,
         rt_dict:dict, geom=None, Bp:float=None, debug:bool=False,
         full_return:bool=False):
@@ -459,65 +547,28 @@ def calc_Rrs_from_models_robust(a_model, a_params, bb_model, bb_params,
     bing.rt.defs.validate_rt_dict : the fit-setup checks this function
         assumes have already run.
     """
-    if geom is None:
-        raise ValueError(
-            "calc_Rrs_from_models_robust requires geom (a bing.rt.geometry."
-            "ObsGeometry) -- theta_s is never silently defaulted "
-            "(claude_prompts/rob_rt.md, Q&A/Coding item 4). "
-            "rt_defs.validate_rt_dict should have raised before this "
-            "function was ever reached for a robust backend.")
-
-    rt_backend = rt_dict.get('rt_backend', 'gordon')
-    if rt_backend not in rt_defs.RT_BACKENDS or rt_backend == 'gordon':
-        raise ValueError(
-            f"calc_Rrs_from_models_robust: rt_dict['rt_backend']={rt_backend!r} "
-            "is not a robust backend -- use one of "
-            f"{[b for b in rt_defs.RT_BACKENDS if b != 'gordon']}, or "
-            "dispatch 'gordon' to calc_Rrs_from_models instead.")
-
-    # IOPs for model wave -- identical evaluation to the Gordon path.
-    a = a_model.eval_a(a_params)
-    bb = bb_model.eval_bb(bb_params)
-
-    # Fluorescence source term (full spectrum on a_model.wave -- see Notes;
-    # not sliced at a_model.i_Chl_ex like calc_Rrs_from_models' aph_ex).
-    include_raman = rt_dict.get('include_Raman', False)
-    include_fl = rt_dict.get('include_Chl_fl', False)
-    a_ph = (10**a_params[..., -1:]) * a_model.a_ph if include_fl else None
-
-    iops = robust_rt.IOPs.from_total_bb(a, bb, wave=a_model.wave, a_ph=a_ph)
-
-    B_p = Bp if Bp is not None else rt_dict['Bp_value']
-    phase_params = robust_rt.PhaseParams(B_p=B_p)
-
-    geometry = geom.to_robust()
+    inp = _build_robust_inputs(a_model, a_params, bb_model, bb_params,
+                               rt_dict, geom, Bp)
 
     wave_key = np.asarray(a_model.wave, dtype=np.float64).tobytes()
 
-    if rt_backend == 'robust_baseline':
-        if include_raman or include_fl:
-            raise ValueError(
-                "rt_dict['rt_backend']='robust_baseline' has no inelastic "
-                "composition path -- robust.rt.baselines.Rrs_gordon takes "
-                "no `inelastic` argument and is elastic-only by "
-                "construction. Disable include_Raman/include_Chl_fl, or "
-                "use rt_backend='robust_ztt'/'robust_hybrid' instead.")
+    if inp.rt_backend == 'robust_baseline':
         jit_fn = _robust_forward_jit('baseline', None, wave_key)
-        Rrs = jit_fn(iops, phase_params, geometry)
+        Rrs = jit_fn(inp.iops, inp.phase_params, inp.geometry)
     else:
         # 'robust_ztt' -> mode='ztt'; 'robust_hybrid' -> mode='hybrid'.
-        mode = rt_backend[len('robust_'):]
-        if include_raman or include_fl:
-            emission_shape = ('double' if rt_dict.get('double_gaussian', True)
-                              else 'single')
-            inelastic_key = (include_raman, include_fl, emission_shape)
+        mode = inp.rt_backend[len('robust_'):]
+        if inp.include_raman or inp.include_fl:
+            inelastic_key = (inp.include_raman, inp.include_fl,
+                             inp.emission_shape)
             jit_fn = _robust_forward_jit(mode, inelastic_key, wave_key)
-            Rrs = jit_fn(iops, phase_params, geometry, rt_dict.get('phi_C', 0.02))
+            Rrs = jit_fn(inp.iops, inp.phase_params, inp.geometry, inp.phi_C)
         else:
             jit_fn = _robust_forward_jit(mode, None, wave_key)
-            Rrs = jit_fn(iops, phase_params, geometry)
+            Rrs = jit_fn(inp.iops, inp.phase_params, inp.geometry)
 
     Rrs = np.asarray(Rrs)
+    a, bb = inp.a, inp.bb
 
     # Call me
     if debug:
@@ -528,6 +579,114 @@ def calc_Rrs_from_models_robust(a_model, a_params, bb_model, bb_params,
         return Rrs, a, bb
     else:
         return Rrs
+
+
+def robust_domain_check(a_model, a_params, bb_model, bb_params,
+                        rt_dict:dict, geom=None, Bp:float=None):
+    """
+    Run robust.rt's out-of-domain check on concrete arrays, un-jitted, so
+    its `DomainWarning` can actually fire (rob_rt integration, M1 task 3;
+    design docs/design/rob_rt_design.md §4).
+
+    The emulator's domain check (`robust.rt.hybrid._check_domain`,
+    hybrid.py:139-163) is deliberately skipped whenever any input is a JAX
+    tracer -- it needs concrete values to compare against the trained
+    ranges -- so on the fitting hot path, which always goes through
+    `_robust_forward_jit`'s `jax.jit`-wrapped closures, an out-of-domain
+    evaluation is *silent by construction* (design §4; the warn-and-continue
+    policy of claude_prompts/rob_rt.md Q8). This helper is the sanctioned
+    complement: it rebuilds the exact same robust.rt call arguments as
+    `calc_Rrs_from_models_robust` (through the shared `_build_robust_inputs`,
+    so the two can never drift) and calls the **un-jitted**
+    `robust.rt.forward` once on the concrete NumPy-backed inputs, letting
+    `robust.rt.hybrid.DomainWarning` propagate to the caller. Fitters call
+    it twice per fit (M2): on the initial guess before sampling and on the
+    posterior median after -- never inside the hot loop.
+
+    Only ``rt_backend='robust_hybrid'`` has a domain to check: the check
+    lives past `forward()`'s ``mode='ztt'`` early return (hybrid.py:304),
+    and `robust.rt.baselines.Rrs_gordon` (the ``robust_baseline`` dispatch
+    target) is a closed-form expression with no emulator and no domain
+    logic at all -- both confirmed by reading robust's source directly.
+    For ``robust_ztt``/``robust_baseline`` this function is therefore a
+    validated no-op: it still runs `_build_robust_inputs` (so the same
+    argument errors raise as on the hot path) but performs no forward call.
+
+    Runs the same `corrections=False` / explicitly-loaded-emulator
+    configuration as `_robust_forward_jit` (see Q6 in
+    claude_prompts/RT/rob_rt_prompt_2.md): not for jit-safety here (nothing
+    is traced), but so the domain check evaluates the *identical* forward
+    configuration the fit itself uses. `robust.rt.emulator.load_default()`
+    is memoised process-wide, so this adds no I/O beyond the fit's own.
+
+    Parameters
+    ----------
+    a_model : aNWModel
+        Absorption model object (e.g., aNWExpBricaud).
+    a_params : np.ndarray
+        Absorption model parameters, ``(nparam,)`` or ``(nsamples, nparam)``
+        -- e.g. the initial guess, or the posterior median.
+    bb_model : bbNWModel
+        Backscattering model object (e.g., bbNWPow).
+    bb_params : np.ndarray
+        Backscattering model parameters. Shape matches a_params.
+    rt_dict : dict
+        Radiative transfer configuration -- same keys as
+        `calc_Rrs_from_models_robust`.
+    geom : bing.rt.geometry.ObsGeometry, optional
+        Viewing/illumination geometry. Required (non-None), same rule as
+        the adapter.
+    Bp : float, optional
+        Free-parameter override for B_p; falls back to
+        rt_dict['Bp_value'] when None.
+
+    Returns
+    -------
+    None
+        This is a diagnostic side-effect function: it exists to let
+        `DomainWarning` reach the caller's warning filters, not to return
+        Rrs -- use `calc_Rrs_from_models_robust` for values.
+
+    Warns
+    -----
+    robust.rt.hybrid.DomainWarning
+        If any input lies outside the emulator's training range
+        (``robust_hybrid`` only). Callers that must not extrapolate can
+        promote it: ``warnings.simplefilter('error', DomainWarning)``.
+
+    Raises
+    ------
+    ValueError
+        Same argument-validity errors as `calc_Rrs_from_models_robust`
+        (missing geom, non-robust backend, robust_baseline + inelastic).
+
+    See Also
+    --------
+    calc_Rrs_from_models_robust : the jitted hot-path twin whose inputs
+        this function checks.
+    """
+    inp = _build_robust_inputs(a_model, a_params, bb_model, bb_params,
+                               rt_dict, geom, Bp)
+
+    # Only the hybrid backend carries an emulator, hence a trained domain.
+    if inp.rt_backend != 'robust_hybrid':
+        return
+
+    inelastic = None
+    if inp.include_raman or inp.include_fl:
+        inelastic = robust_rt.Inelastic(
+            raman=inp.include_raman, fluorescence=inp.include_fl,
+            phi_C=inp.phi_C, emission_shape=inp.emission_shape)
+
+    # Un-jitted, concrete-array call: the whole point. Same
+    # corrections=False / explicit-emulator configuration as the jitted
+    # closures (Q6) so the checked configuration is the fitted one.
+    emulator_obj = robust_rt.emulator.load_default()
+    wave = np.asarray(a_model.wave, dtype=np.float64)
+    robust_rt.forward(inp.iops, inp.phase_params, inp.geometry, wave,
+                      mode='hybrid', inelastic=inelastic,
+                      corrections=False, emulator=emulator_obj)
+
 
 def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
                             perc=(5,95)):

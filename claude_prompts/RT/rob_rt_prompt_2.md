@@ -328,6 +328,32 @@ exactly the kind of "JIT recompiles across configs" risk the coding plan's
 Risks section named in the abstract (M1 risk 1), now a concrete, reproduced
 failure mode with its actual fix on record rather than a hypothetical.
 
+**Q7 (task 3, Claude → JXP).** The task spec says `robust_domain_check`
+"calls the un-jitted `robust.rt.forward` once so the emulator's
+`DomainWarning` can actually fire" — but only **one** of the three robust
+backends has a domain to check at all. Confirmed by reading robust's source
+directly: `forward()`'s `_check_domain` call sits *past* the `mode='ztt'`
+early return (`hybrid.py:303-309` — ztt returns before `_resolve_emulator`
+is ever reached), and `robust.rt.baselines.Rrs_gordon` (the
+`robust_baseline` dispatch target) is a closed-form expression with no
+emulator, no `check_domain` keyword, and no domain logic anywhere in
+`baselines.py`. Resolved by making the helper a **validated no-op** for
+`robust_ztt`/`robust_baseline`: it still runs the full argument
+construction (so the same `ValueError`s fire as on the hot path — missing
+`geom`, non-robust backend, baseline+inelastic), but performs no forward
+call — running the un-jitted forward for a mode that cannot warn would be
+pure wasted compute with no diagnostic value. Documented in the function's
+docstring and pinned by a parametrized test. A secondary decision made in
+the same task: rather than duplicating the adapter's BING→robust argument
+construction (IOPs split, `PhaseParams`, `geom.to_robust()`, inelastic
+flags, the three validity errors), that logic was factored out of
+`calc_Rrs_from_models_robust` into a shared private builder
+`_build_robust_inputs` returning a `_RobustInputs` namedtuple — both the
+jitted hot path and the un-jitted check now consume it, so the checked
+configuration can never drift from the fitted one. The adapter's behavior
+is unchanged (all 34 pre-existing tests pass untouched, same error
+messages). **No answer needed to proceed.**
+
 ## Next
 
 → `rob_rt_prompt_3.md` (M2: fitter dispatch and geometry threading).
@@ -523,3 +549,85 @@ uncommitted, for JXP's review. Task 3 (the un-jitted domain check) is
 next — building on a codebase where `forward()` now always runs with
 `corrections=False` and an explicitly-loaded `emulator_obj`, both facts
 task 3's un-jitted call should reuse rather than re-derive.
+
+### 2026-08-30 (M1 task 3 — un-jitted domain check: `robust_domain_check`)
+
+Read before coding: the current actual state of `bing/evaluate.py` (task 2
+rewired the adapter through `_robust_forward_jit` since the task-1 log was
+written — the file, not the log prose, is ground truth for what the helper
+had to reuse), `robust/rt/hybrid.py`'s domain machinery (`DomainWarning` at
+hybrid.py:84, `_is_traced` at 123-136, `_check_domain` at 139-163 — silent
+whenever *any* pytree leaf is a tracer, which is exactly why the jitted hot
+path can never warn), and `robust/rt/baselines.py` end to end. That reading
+produced the task's one real architectural finding, logged as **Q7**: the
+domain check only exists for `mode='hybrid'` — `forward()` returns for
+`mode='ztt'` *before* `_resolve_emulator`/`_check_domain` are reached
+(hybrid.py:303-309), and `baselines.Rrs_gordon` has no domain logic at
+all — so `robust_domain_check` is a **validated no-op** for
+`robust_ztt`/`robust_baseline` (argument errors still fire; no wasted
+un-jitted forward call for a mode that cannot warn).
+
+Built two things in `bing/evaluate.py`. (1) A shared private builder
+`_build_robust_inputs(a_model, a_params, bb_model, bb_params, rt_dict,
+geom, Bp)` returning a `_RobustInputs` namedtuple — the adapter's entire
+BING→robust argument construction (geom/backend/baseline+inelastic
+validation, `eval_a`/`eval_bb`, the `a_ph` fluorescence source term,
+`IOPs.from_total_bb`, `PhaseParams` with the free-`Bp` override,
+`geom.to_robust()` with no `Ed` per the M4 boundary, `emission_shape`,
+`phi_C`) factored out of `calc_Rrs_from_models_robust` verbatim, which now
+consumes it; behavior and error messages unchanged (all 34 pre-existing
+tests pass untouched). (2) `robust_domain_check(a_model, a_params,
+bb_model, bb_params, rt_dict, geom, Bp=None)` — the exact spec signature,
+no `debug`/`full_return` — directly below the adapter: builds inputs
+through the same shared builder (the checked configuration can never drift
+from the fitted one), returns immediately for non-hybrid backends (Q7),
+and otherwise calls the **un-jitted** `robust_rt.forward` once on the
+concrete NumPy-backed inputs with `mode='hybrid'`, `corrections=False`,
+and an explicitly-loaded `emulator=robust_rt.emulator.load_default()` —
+task 2's two Q6 fixes reused deliberately (not for jit-safety here, since
+nothing is traced, but so the domain check evaluates the identical forward
+configuration the fit uses; `load_default()` is memoised process-wide, so
+no added I/O). Returns `None` — a diagnostic side-effect function, and the
+docstring says so, along with *why* it must stay un-jitted.
+
+**Verified interactively before writing tests** (ocean14, real
+`ExpBricaud`+`Pow` pair, `theta_s=30°`): `Bp_value=0.01` — the task-1
+log's incidental trigger — fires exactly one `DomainWarning` un-jitted
+("B_p 100.0% of values outside [0.01026, …]"), and the emulator's actual
+trained lower bound is ~0.01026, i.e. 0.01 sits only ~2.5% of the span
+outside it. The tests therefore use `Bp_value=0.005` instead — well
+outside, so the gate test isn't riding a knife edge of the trained domain.
+Also confirmed live: the jitted path (`calc_Rrs_from_models_robust`) on
+the *same* out-of-domain inputs raises nothing, warns nothing, and returns
+finite Rrs (the silence being the entire point, design §4/Q8);
+`Bp_value=0.014` (the in-domain value the rest of the test module uses) is
+silent un-jitted; ztt/baseline are silent no-ops even on the turbid B_p;
+and both shared error paths (`geom=None`, `rt_backend='gordon'`) raise the
+same `ValueError`s from the helper as from the adapter. No new bugs — the
+one surprise was Q7's ztt-has-no-domain-check fact, caught by reading
+`forward()`'s body rather than assuming every mode could warn.
+
+**Added 5 test functions (6 test items)** to `test_evaluate_robust.py`:
+Gate item 5's two halves as separate tests (`pytest.warns(DomainWarning,
+match='outside its training range')` un-jitted on the turbid set; the
+jitted path on identical inputs finite with zero `DomainWarning`s
+recorded), in-domain silence + `None` return, the ztt/baseline no-op
+(parametrized, 2 items), and the shared adapter error paths. Also updated
+the module docstring's coverage note (it still said tasks 2-3 "land in
+later additions").
+
+**Verification.** `pytest bing/tests/test_evaluate_robust.py -q` → **40
+passed** (was 34; +6 items). Full suite: `pytest bing/tests/ -q` → **218
+passed, 2 skipped, 2 failed** (139.92s) — 218 = 212 + 6, same 2
+pre-existing, already-diagnosed `test_l23_inelastic.py` failures (missing
+fixture file), nothing else moved.
+
+Modified: `bing/evaluate.py` (`import collections`; `_RobustInputs` +
+`_build_robust_inputs` added; `calc_Rrs_from_models_robust` body rewired
+through the builder, behavior unchanged; `robust_domain_check` added),
+`bing/tests/test_evaluate_robust.py` (5 new tests + docstring update).
+Branch `rob_rt`, uncommitted, for JXP's review. Task 4 (dropping
+`RT_correction`) is next — pin the Gordon-path regression fixture on a
+reference L23 spectrum under `bing/tests/files/` *first*, then delete the
+block at evaluate.py's `RT_correction` stanza and sweep call sites
+(`papers/` hits reported, not edited).
