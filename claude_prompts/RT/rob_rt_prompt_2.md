@@ -398,6 +398,8 @@ stripped of the `RT_correction` plumbing, or (c) made to raise loudly if a
 correction is requested? (b) or (c) require edits under `papers/`, which I
 am not authorized to make.
 
+>A. You can ignore any code inside of `papers/` 
+
 **Q10 (task 4, Claude → JXP).** Found the likely root cause of the 2
 pre-existing `test_l23_inelastic.py` failures while committing-prepping the
 new fixture: the repo's `.gitignore` (line 16) has a blanket `*.npz`, so
@@ -411,6 +413,8 @@ bing/tests/files/l23_gordon_fixture.npz` or add a
 let `l23_inelastic_fixture.npz` be committed once regenerated, fixing the
 2 standing failures for every checkout). I did not edit `.gitignore`
 myself — changing what the repo commits is your call.
+
+>A. I added `l23_gordon_fixture.npz` and will add the other when it is generated
 
 **Q11 (task 5, Claude → JXP).** Building the notebook produced the first
 actual *measurement* of what CQ1's float32 downcast costs, plus two smaller
@@ -889,3 +893,53 @@ as task 4 left them. Branch `rob_rt`, uncommitted, for JXP's review. Task 6
 (updating `rob_rt_prompt_3.md` with what M1 established — the adapter's
 exact signature, the lru_cache/jit behavior, and Q6/Q7/Q11's robust.rt
 numerics facts) is next.
+
+### 2026-08-30 (M1 task 6 — handing off to `rob_rt_prompt_3.md`)
+
+Doc-only task: brought `rob_rt_prompt_3.md` (M2) up to date with what M1
+actually established, replacing its planning-time assumptions with current
+facts. **Fact-checked against the live source first, not this doc's own
+prose**: re-read `calc_Rrs_from_models_robust`'s def (evaluate.py:438-440),
+`robust_domain_check`'s def (evaluate.py:576-577), `_robust_forward_jit`'s
+decorator/def (evaluate.py:245-246, `corrections=False` +
+`emulator=emulator_obj` at 327/348/680), and `validate_rt_dict`'s full body
+(defs.py:58-111). Two things that reading settled: (1) `robust_domain_check`
+as built takes `geom=None` (a keyword default, not the bare required
+positional the task-3 spec text implied — `None` still raises the shared
+`ValueError`, so behavior matches the spec's intent); (2) `validate_rt_dict`
+does **not** validate the `robust_baseline`+inelastic combination (its four
+checks are backend name, `fit_Bp`+gordon, robust-needs-geom, hybrid grid) —
+that `ValueError` (Q2) lives only in the adapter/domain-check path via
+`_build_robust_inputs`, a fact M2's task-3 setup-validation wiring needs
+stated rather than guessed.
+
+Two edits to `rob_rt_prompt_3.md`. (1) **Working agreements**: the same
+one-line branch correction this doc carries — `rob_rt`, not
+`rob-rt-backend` — plus the review-per-task cadence; nothing else in the
+paragraph touched. (2) **Context**: replaced the vague
+"Previous prompt … and its Logs" pointer with the concrete hand-off facts,
+in this doc's citation style: the adapter's exact signature and the Q4
+`(1, nwave)` shape convention (Gate-item-1 relevant); the domain check's
+real signature, the shared-builder guarantee, and Q7's validated-no-op fact
+(so task 3's "robust backends only" wiring is read correctly — only
+`robust_hybrid` can ever warn); `_robust_forward_jit`'s cache key and the
+settled `corrections=False`/pre-loaded-emulator behavior (Q6), confirming
+M2's per-worker-cache Risks note as written; the Q2
+baseline+inelastic `ValueError` and where it does (adapter) and does not
+(`validate_rt_dict`) fire; Q11's numerics for the smoke fits (robust
+backends +0.3% to +7.4% above Gordon on real L23 — expected, not a
+regression; float32 cost ~2.3e-7 rel; Q1's different-by-design inelastic
+approximation); the 222/2/2 full-suite baseline entering M2; and a
+one-line Q10 caveat that Gate item 2's pinned `.npz` fixture is invisible
+to git under the blanket `*.npz` ignore. M2's Tasks/Gate/Q&A/Logs sections
+untouched — scope is JXP's.
+
+**M1 is now fully complete — all 6 tasks done.** State handed to M2: the
+adapter works standalone and is cache-verified at both the `lru_cache` and
+XLA levels, `robust_domain_check` is built and wired for M2's fitters to
+call, `RT_correction` is deleted with the Gordon path regression-pinned
+(the `papers/biomass` plumbing question Q9 and the `.gitignore` `.npz`
+question Q10 still await JXP), and the executed explainer notebook
+`nb/RT/rob_rt_coding_2.ipynb` records the measured numerics. Branch
+`rob_rt`, docs-only changes this task, for JXP's review. Next milestone:
+`rob_rt_prompt_3.md` (M2).

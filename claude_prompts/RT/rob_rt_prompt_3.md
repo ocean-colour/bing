@@ -20,9 +20,12 @@ must not disturb), `fit-l23-spectrum` (the smoke-fit spectra),
 
 ## Working agreements
 
-Per the working agreements in `rob_rt_prompt_1.md` (git by JXP on
-`rob-rt-backend`; `ocean14`; CQ1–CQ4 binding; scope discipline;
-pytest-gated; Fable; log). Milestone-specific emphasis:
+Per the working agreements in `rob_rt_prompt_1.md` (git by JXP; `ocean14`;
+CQ1–CQ4 binding; scope discipline; pytest-gated; Fable; log) — **one
+correction, carried over from `rob_rt_prompt_2.md`**: the branch is JXP's
+existing **`rob_rt`**, not `rob-rt-backend` as the coding plan suggested;
+all of M0 and M1 landed there, with JXP reviewing and committing after
+each task — assume the same cadence. Milestone-specific emphasis:
 
 - **CQ4 lands here as behavior**: a robust-backend fit with a legacy
   4-tuple (no geom) must raise at setup with a message naming `theta_s`.
@@ -33,8 +36,67 @@ pytest-gated; Fable; log). Milestone-specific emphasis:
 
 Read before coding:
 
-- **Previous prompt** — `rob_rt_prompt_2.md` (M1: the adapter's final
-  signature, the JIT cache, `robust_domain_check`) and its Logs.
+- **Previous prompt** — `rob_rt_prompt_2.md` (M1, **complete**: all 6
+  tasks done, Gate items 1–7 covered; full-suite baseline entering M2 is
+  **222 passed, 2 skipped, 2 failed** — the same 2 pre-existing
+  `test_l23_inelastic.py` failures diagnosed in M0/Q10, not a regression).
+  Its Q&A/Logs are the record; the load-bearing facts for this milestone:
+  - **Adapter signature** (evaluate.py:438):
+    `calc_Rrs_from_models_robust(a_model, a_params, bb_model, bb_params,
+    rt_dict, geom=None, Bp=None, debug=False, full_return=False)` — task
+    1's dispatch snippet calls it exactly so. Shape convention (Q4): 1-D
+    `(nparam,)` params → `(1, nwave)` Rrs, **not** `(nwave,)` — identical
+    to the Gordon path's own convention; Gate item 1's "correct shape"
+    means this.
+  - **Domain check** (evaluate.py:576):
+    `robust_domain_check(a_model, a_params, bb_model, bb_params, rt_dict,
+    geom=None, Bp=None)` — no `debug`/`full_return`; `geom=None` raises
+    the same `ValueError` as the adapter (both consume the shared
+    `_build_robust_inputs`, evaluate.py:362, so the checked configuration
+    can never drift from the fitted one). Per Q7 it is a **validated
+    no-op** for `robust_ztt`/`robust_baseline` — only `mode='hybrid'` has
+    a domain to check in `robust.rt` at all (ztt returns before
+    `_check_domain`; `baselines.Rrs_gordon` has no domain logic). Task 3's
+    "robust backends only" wiring is therefore harmless and cheap for
+    ztt/baseline (argument validation still fires) but can only ever emit
+    `DomainWarning` for `robust_hybrid`.
+  - **Cache** (evaluate.py:245): `_robust_forward_jit(mode, inelastic_key,
+    wave_key)`, a module-level `functools.lru_cache`d builder of jitted
+    closures — one compile per (backend, inelastic config, grid), verified
+    at both the `lru_cache` and underlying XLA compiled-trace levels
+    (M1 Gate item 7). `forward()` always runs with `corrections=False` and
+    an explicitly pre-loaded `emulator` object (Q6 — both defaults
+    lazy-load from disk and leak tracers under `jit`); settled, load-bearing
+    behavior, not a TODO. The Risks note below (per-worker caches in
+    `fit_batch`) stands as written.
+  - **`robust_baseline` + inelastic raises** (Q2): the adapter and domain
+    check raise `ValueError` when `rt_backend='robust_baseline'` is
+    combined with `include_Raman`/`include_Chl_fl`
+    (`baselines.Rrs_gordon` has no inelastic composition path).
+    **`validate_rt_dict` does *not* check this combination** — its checks
+    are backend name, `fit_Bp`+gordon, robust-needs-geom, and the hybrid
+    grid (defs.py:87-111) — so at fit setup this error surfaces only when
+    the forward path (or task 3's domain-check call on `p0`) first runs.
+  - **Numerics for the smoke fits** (Q11 / `nb/RT/rob_rt_coding_2.ipynb`):
+    on a real L23 spectrum the real robust backends sit **above** Gordon
+    by +0.3% to +7.4% (median +4.5%) — smooth and physical, not a bug;
+    expect robust-backend chains centered on genuinely different values
+    than a Gordon fit of the same spectrum. Measured float32 cost:
+    ~2.3e-7 relative / ~7.7e-10 sr⁻¹ absolute worst case, ~26,000× below
+    a 2% noise floor (CQ1 confirmed empirically). Raman/fluorescence on
+    robust backends derive excitation IOPs by interpolating/clamping the
+    emission-grid spectrum (Q1) — a real-but-different approximation from
+    BING's Gordon+Raman path, so inelastic robust fits will differ
+    slightly from Gordon+Raman fits of the same data by design.
+  - **Fixture caveat** (Q10, resolved): the repo's blanket `*.npz`
+    gitignore hid `bing/tests/files/l23_gordon_fixture.npz` (Gate item 2's
+    pinned pre-change result) from `git status` — JXP force-added it
+    (`git add -f`, confirmed staged), so it's safe on a fresh checkout;
+    `l23_inelastic_fixture.npz` (the two pre-existing, unrelated failures'
+    missing fixture) is pending the same treatment once regenerated.
+  - **`papers/` scope** (Q9, resolved): JXP's answer is to ignore any code
+    under `papers/` — the 7 now-inert `RT_correction` hits in
+    `papers/biomass/Analysis/py/` stay as-is, no follow-up needed.
 - **Coding plan** — `docs/coding_plan/rob_rt_coding_plan.md` **M2** section,
   plus Risks (`fit_batch` + ProcessPoolExecutor: each worker compiles its
   own JIT cache — acceptable, measured at M5, not silently redesigned).
