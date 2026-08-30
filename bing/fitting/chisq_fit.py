@@ -121,7 +121,7 @@ def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None,
     return ans, cov, idx
 
 def fit_func(wave:np.ndarray, *params, models:list=None,
-             return_full:bool=False, rt_dict:dict=None):
+             return_full:bool=False, rt_dict:dict=None, geom=None):
     """
     Forward model function for curve_fit optimization.
 
@@ -144,7 +144,15 @@ def fit_func(wave:np.ndarray, *params, models:list=None,
         If True, returns (Rrs, a, bb) instead of just Rrs.
         Useful for diagnostics. Default is False.
     rt_dict : dict
-        Radiative transfer configuration dictionary.
+        Radiative transfer configuration dictionary. The optional
+        'rt_backend' key (default 'gordon' when absent; see
+        bing.rt.defs.RT_BACKENDS) selects the forward model: 'gordon'
+        keeps the legacy calc_Rrs_from_models call, any robust value
+        dispatches to bing.evaluate.calc_Rrs_from_models_robust.
+    geom : bing.rt.geometry.ObsGeometry, optional
+        Fixed per-pixel viewing/illumination geometry. Required (non-None)
+        whenever rt_dict['rt_backend'] selects a robust backend; ignored
+        by the default Gordon backend.
 
     Returns
     -------
@@ -170,9 +178,17 @@ def fit_func(wave:np.ndarray, *params, models:list=None,
     aparams = np.array(params[:models[0].nparam])
     bparams = np.array(params[models[0].nparam:])
 
-    # Calculate
-    pred = bing_eval.calc_Rrs_from_models(models[0], aparams, models[1],
-        bparams, rt_dict)
+    # Calculate -- dispatch on the RT backend (design §3.4).  The default
+    # ('gordon', also the value when 'rt_backend' is absent) keeps the
+    # legacy call byte-for-byte unchanged.
+    if rt_dict.get('rt_backend', 'gordon') == 'gordon':
+        pred = bing_eval.calc_Rrs_from_models(models[0], aparams, models[1],
+            bparams, rt_dict)
+    else:
+        # Bp=None -> the adapter falls back to rt_dict['Bp_value'] (the
+        # fixed-B_p case); a free/sampled Bp arrives in M3.
+        pred = bing_eval.calc_Rrs_from_models_robust(models[0], aparams,
+            models[1], bparams, rt_dict, geom=geom, Bp=None)
 
     if return_full:
         a = models[0].eval_a(aparams)

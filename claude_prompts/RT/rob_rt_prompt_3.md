@@ -193,7 +193,17 @@ Existing suite green throughout.
 
 ## Q&A
 
-_(none yet — this prompt has not been executed)_
+**Q1 (task 1, Claude → JXP).** The task-1 snippet says the robust branch
+calls `calc_Rrs_from_models_robust(..., geom=geom, Bp=Bp)`, but no `Bp`
+variable exists in `log_prob`/`fit_func` at this point in the milestone —
+the task's own parenthetical defers `Bp` handling to M3. Resolution, by
+reading the adapter: `Bp=None` is the adapter's own default and means
+"fall back to `rt_dict['Bp_value']`" (`_build_robust_inputs`,
+evaluate.py:423; documented on `calc_Rrs_from_models_robust` as "the
+fixed-B_p, default case"). So the dispatch passes `Bp=None` explicitly,
+with a comment noting the free/sampled `Bp` arrives in M3 — the design
+snippet's `Bp=Bp` describes the *final* (post-M3) form of the call, not
+something to fabricate now. No answer needed to proceed.
 
 ## Next
 
@@ -209,4 +219,56 @@ Record work in the Logs section below, format:
 
 ## Logs
 
-_(none yet)_
+### 2026-08-30 (M2 task 1 — two-line fitter dispatch)
+
+**Read before coding.** `bing/fitting/inference.py` and
+`bing/fitting/chisq_fit.py` in full, plus `bing/evaluate.py:360-540`
+(`_build_robust_inputs` and the `calc_Rrs_from_models_robust` docstring)
+to confirm the adapter's exact signature and its `Bp=None` semantics.
+Unlike M1's `evaluate.py` drift, this doc's line citations were still
+accurate: the single forward call in `log_prob` sat exactly at
+inference.py:105, and `fit_func`'s at chisq_fit.py:174-175. Also
+confirmed no current caller anywhere sets `rt_backend` in an `rt_dict`
+passed to these two functions, so `rt_dict.get('rt_backend', 'gordon')`
+degrades to the old behavior for every existing call site.
+
+**Implemented.**
+
+- `inference.log_prob` (signature now inference.py:52-53): gained
+  trailing `geom=None`; the forward call became the two-line dispatch at
+  inference.py:116-123 — `'gordon'` (or absent key) keeps the legacy
+  `calc_Rrs_from_models` call byte-for-byte, else
+  `calc_Rrs_from_models_robust(models[0], aparams, models[1], bparams,
+  rt_dict, geom=geom, Bp=None)`. Docstring documents `rt_backend` and
+  `geom`.
+- `chisq_fit.fit_func` (signature now chisq_fit.py:123-124): gained
+  trailing `geom=None`; same dispatch at chisq_fit.py:184-191. Docstring
+  updated likewise.
+- **`Bp` resolution (Q1)**: the snippet's `Bp=Bp` is the post-M3 form;
+  at this stage the dispatch passes `Bp=None` explicitly, which the
+  adapter documents as "fall back to `rt_dict['Bp_value']`"
+  (evaluate.py:423) — the fixed-B_p case. In-code comments at both
+  branches say so.
+
+Nothing else was touched: no observation-tuple threading (task 2), no
+`validate_rt_dict`/`robust_domain_check` wiring (task 3) — `run_emcee`'s
+`args` list and both `fit`/`fit_one` unpacks are unchanged, so nothing
+yet passes a real `geom` into either function.
+
+**Tested.** Full suite in `ocean14`, before-vs-after identical:
+**222 passed, 2 skipped, 2 failed** (the same two pre-existing
+`test_l23_inelastic.py` missing-fixture failures — not a regression).
+No test file changed. Plus a throwaway interactive smoke check (not
+committed, per the task's guidance not to pre-build task-2/3 test
+infrastructure): direct `log_prob`/`fit_func` calls with an
+`expb_pow2` setup — gordon branch gives `log_prob = 0.0` against its
+own forward Rrs (exact legacy behavior); `rt_backend='robust_ztt'` +
+`ObsGeometry(theta_s=30.)` gives finite log_prob and a finite `(61,)`
+flattened `fit_func` Rrs (the adapter's `(1, nwave)` flattened, matching
+the Gordon path's convention); robust backend without `geom` raises the
+adapter's `ValueError` naming geom/theta_s.
+
+**Next.** Task 2: grow the observation tuple to
+`(Rrs, varRrs, params, idx[, geom])` — unpacks at inference.py `fit_one`
+and chisq_fit.py `fit`, `geom` appended to `run_emcee`'s emcee `args`
+list, `fit_batch` docs updated.

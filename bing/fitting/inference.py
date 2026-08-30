@@ -50,7 +50,7 @@ import emcee
 from IPython import embed
 
 def log_prob(params, models:list, Rrs:np.ndarray,
-             varRrs:np.ndarray, rt_dict:dict):
+             varRrs:np.ndarray, rt_dict:dict, geom=None):
     """
     Compute the log-posterior probability for given parameters.
 
@@ -74,6 +74,15 @@ def log_prob(params, models:list, Rrs:np.ndarray,
         Radiative transfer configuration dictionary with keys:
         - 'variable_Gordon' : bool - Use wavelength-dependent Gordon coefficients
         - 'include_Raman' : bool - Include Raman scattering correction
+        - 'rt_backend' : str, optional - Radiative transfer backend
+          ('gordon', the default when absent, or one of the robust.rt
+          backends; see bing.rt.defs.RT_BACKENDS). Non-gordon values
+          dispatch the forward model to
+          bing.evaluate.calc_Rrs_from_models_robust.
+    geom : bing.rt.geometry.ObsGeometry, optional
+        Fixed per-pixel viewing/illumination geometry. Required (non-None)
+        whenever rt_dict['rt_backend'] selects a robust backend; ignored
+        by the default Gordon backend.
 
     Returns
     -------
@@ -101,9 +110,17 @@ def log_prob(params, models:list, Rrs:np.ndarray,
     if np.any(np.isneginf([a_prior, b_prior])):
         return -np.inf
 
-    # Proceed
-    pred = bing_eval.calc_Rrs_from_models(models[0], aparams, models[1],
-        bparams, rt_dict)
+    # Proceed -- dispatch on the RT backend (design §3.4).  The default
+    # ('gordon', also the value when 'rt_backend' is absent) keeps the
+    # legacy call byte-for-byte unchanged.
+    if rt_dict.get('rt_backend', 'gordon') == 'gordon':
+        pred = bing_eval.calc_Rrs_from_models(models[0], aparams, models[1],
+            bparams, rt_dict)
+    else:
+        # Bp=None -> the adapter falls back to rt_dict['Bp_value'] (the
+        # fixed-B_p case); a free/sampled Bp arrives in M3.
+        pred = bing_eval.calc_Rrs_from_models_robust(models[0], aparams,
+            models[1], bparams, rt_dict, geom=geom, Bp=None)
 
     # Evaluate
     eeval = (pred-Rrs)**2 / varRrs
