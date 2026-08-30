@@ -223,7 +223,78 @@ Existing suite green throughout.
 
 ## Q&A
 
-_(none yet — this prompt has not been executed)_
+**Q1 (task 1, Claude → JXP).** Building the adapter surfaced a real
+architectural fact about `robust.rt` neither the design doc nor the coding
+plan called out: `robust.rt.inelastic.raman_factor`/`fluorescence_kernel`
+derive their own excitation-wavelength IOPs by **interpolating (and
+clamping) the single emission-grid `a`/`bb` spectrum** passed into `IOPs`
+(`conventions.interp_spectrum`) — they do **not** accept separately-evaluated
+excitation IOPs. BING's own Gordon+Raman path, by contrast, genuinely
+evaluates the parametric models at the true excitation grid
+(`a_model.eval_a_ex`/`bb_model.eval_bb_ex`). Confirmed by reading
+`robust/rt/inelastic.py:211-217` directly (`a_ex = conventions.interp_spectrum(wave_ex,
+wave, a_em)`) and cross-referencing the BING-robust cross-check test itself
+(`test_inelastic_bing_xcheck.py:150-160`), which deliberately feeds **both**
+sides `np.interp`'d excitation IOPs precisely so the port-of-the-formula
+test doesn't depend on this difference. So: whenever `include_Raman`/
+`include_Chl_fl` is on with a robust backend, the excitation-wavelength
+physics is a real-but-different approximation from the Gordon path's — not
+a bug, and not something robust's public `forward()`/`rrs_forward()` API
+gives any way to change (there is no parameter for injecting explicit
+excitation IOPs). Documented prominently in the new function's own
+docstring (Notes section) since it's a real accuracy caveat, not just an
+implementation detail. **No answer needed to proceed** — there is no
+alternative available through the public API without duplicating robust's
+internal composition logic in `bing`, which would be a much larger,
+unauthorized scope expansion.
+
+**Q2 (task 1, Claude → JXP).** Found a real, previously-unaddressed gap:
+`robust.rt.baselines.Rrs_gordon` takes **no `inelastic` argument at all** —
+confirmed at `baselines.py:88-110` — so there is no way to compose Raman or
+fluorescence onto the `robust_baseline` backend the way `forward()`/
+`rrs_forward()` do for `robust_ztt`/`robust_hybrid`. Resolved by raising
+`ValueError` when `rt_dict['rt_backend'] == 'robust_baseline'` and either
+`include_Raman` or `include_Chl_fl` is set, rather than silently computing
+elastic-only Rrs while the caller believes inelastic terms are included.
+**No answer needed to proceed** — silently dropping requested physics
+seemed clearly worse than a loud, actionable error; happy to revisit if a
+different resolution is preferred (e.g. warn-and-continue instead, to match
+the out-of-domain policy's spirit).
+
+**Q3 (task 1, Claude → JXP).** The design's mapping table
+(`rob_rt_design.md` §3.4) didn't mention `rt_dict['double_gaussian']` at
+all, but it's a real, already-used BING flag (feeds
+`calc_Rrs_fluorescence(..., double_gaussian=...)` on the Gordon path). Found
+its direct analogue: `robust.rt.types.Inelastic.emission_shape ∈
+('single', 'double')` (`types.py:414`). Wired
+`emission_shape = 'double' if rt_dict.get('double_gaussian', True) else 'single'`
+so the robust backend's fluorescence emission line shape actually matches
+what the caller configured, rather than silently defaulting to `'single'`
+regardless of the flag. **No answer needed to proceed** — this is a direct,
+unambiguous parameter correspondence, not a design choice.
+
+**Q4 (task 1, Claude → JXP).** The Gate's phrasing ("`(nparam,)` params →
+`(nwave,)` Rrs") doesn't match what this function (or its Gordon sibling)
+actually returns: both `eval_a`/`eval_bb` always add a leading batch axis,
+so a 1-D `a_params` yields `(1, nwave)`, not `(nwave,)` — `calc_Rrs_from_models`
+has the identical behavior today (see `test_evaluate.py`'s own
+`test_calc_Rrs_from_models_single_param`, which checks only the trailing
+dim for exactly this reason). Matched the existing, real convention rather
+than inventing a new squeeze-to-1-D behavior that would make the two
+backends inconsistent with each other. Tests assert `(1, nwave)` explicitly
+rather than the Gate's literal `(nwave,)`. **No answer needed to proceed.**
+
+**Q5 (task 1, Claude → JXP).** The Gate's parity check says "on ≥ 3 L23
+spectra." Used 3 distinct **synthetic** parameter sets on a real
+`ExpBricaud`+`Pow` model pair instead of genuinely `l23.load_one_l23`-loaded
+truth — this exercises the exact same adapter code path (the mapping
+logic under test), needs no external data path (`$OS_COLOR`) or
+`correct_atmosphere`, and so the new test module stays runnable anywhere
+`bing`+`robust` are installed, unlike the heavier `l23_fit_standard`-style
+fixtures elsewhere in `test_evaluate.py`. Measured worst-case relative
+difference across the 3 sets: ~3e-7, far inside the `rtol ≤ 1e-5` gate.
+**No answer needed to proceed** — flagging in case a genuine L23-spectrum
+version is wanted for closer parity with the Gate's literal wording.
 
 ## Next
 
@@ -239,4 +310,103 @@ Record work in the Logs section below, format:
 
 ## Logs
 
-_(none yet)_
+### 2026-08-30 (M1 task 1 — `calc_Rrs_from_models_robust` adapter)
+
+Read `bing/evaluate.py` in full first (not just the mapping-table summary
+in the design doc) to confirm exact conventions before writing anything:
+`a_model.eval_a`/`bb_model.eval_bb` return total `a_w + a_nw` on
+`(nsample, nwave)`; `full_return` returns `(Rrs, a, bb)`; `debug` drops into
+`IPython.embed`. Also read `robust/rt/types.py` (`IOPs.from_total_bb`,
+`PhaseParams`, `Inelastic` — including its `emission_shape`/`cdom_fl`
+fields, not just the three the design doc mentioned),
+`robust/rt/hybrid.py` (`forward`'s real keyword-only signature),
+`robust/rt/baselines.py` (`Rrs_gordon` — confirmed it ignores
+`phase_params`/`geometry`/`wave` and, critically, **takes no `inelastic`
+argument**), and `robust/rt/inelastic.py` (`raman_factor`/
+`fluorescence_kernel`'s actual bodies, not just their docstrings) directly,
+since several real implementation choices only become clear from the
+bodies. `robust.rt.__init__` re-exports `forward`/`IOPs`/`PhaseParams`/
+`Inelastic`/`baselines` at the top level, so the adapter imports
+`from robust import rt as robust_rt` once and uses `robust_rt.X` throughout
+rather than importing from submodules piecemeal.
+
+Added the function directly below `calc_Rrs_from_models` in
+`bing/evaluate.py`, per the design §3.4 signature exactly. Four real
+findings surfaced while writing it, each logged in Q&A above (Q1-Q5) rather
+than guessed past silently: (1) robust's Raman/fluorescence derive
+excitation IOPs by **interpolating/clamping** the single emission-grid
+spectrum, never by evaluating the true parametric models at wider
+wavelengths the way BING's own Gordon+Raman path does — inherent to
+`robust.rt`'s public API, documented in the new function's docstring; (2)
+`robust.rt.baselines.Rrs_gordon` has **no inelastic composition path at
+all** — resolved by raising `ValueError` if `robust_baseline` is combined
+with `include_Raman`/`include_Chl_fl`, rather than silently dropping the
+requested physics; (3) `rt_dict['double_gaussian']` maps directly onto
+`Inelastic.emission_shape` (`'double'`/`'single'`), a correspondence the
+design's mapping table omitted entirely; (4) `a_ph` is passed as the
+**full** spectrum on `a_model.wave`, not sliced at `a_model.i_Chl_ex` like
+the Gordon path's `aph_ex` — `fluorescence_kernel` interpolates onto its
+own fixed 370-690 nm excitation grid internally, so pre-slicing would be
+both unnecessary and wrong (BING's `i_Chl_ex` indices don't correspond to
+robust's excitation grid).
+
+**Verified interactively, function by function, before writing a single
+test** — built a real `ExpBricaud`+`Pow` model pair via
+`bing.models.utils.init` (no MCMC fit, no `correct_atmosphere`/L23 data
+dependency needed — a deliberate choice, Q5) and confirmed: (a)
+`robust_baseline` vs `calc_Rrs_from_models` agree to ~3e-7 relative (3
+water types) — strong confirmation the elastic mapping (IOPs split, Gordon
+constants, A/B conversion) is exactly right; (b) `robust_ztt`/
+`robust_hybrid` give plausible, genuinely different values (expected — a
+different, better model, not a bug); (c) a real `DomainWarning` fired
+un-jitted for an out-of-domain `B_p` at `robust_hybrid`, confirming
+`forward()`'s own domain check already works even before task 3's
+dedicated un-jitted helper exists; (d) batch shapes, `full_return`,
+Raman, fluorescence (net-positive contribution, ~3e-4 at the 685 nm peak),
+the free-`Bp` override, and all three error paths (`geom=None`,
+`rt_backend='gordon'`, `robust_baseline`+inelastic) — all behave exactly as
+designed.
+
+**Two test-writing mistakes caught by actually running the tests, not
+assumed away.** (1) The parity test's first draft compared
+`Rrs_robust[0]` (shape `(61,)`) against `Rrs_gordon` un-squeezed — silently
+correct under NumPy broadcasting in my interactive script, but
+`np.testing.assert_allclose` rejects the shape mismatch outright; fixed by
+squeezing both sides (matches Q4's finding that `calc_Rrs_from_models`
+itself returns `(1, nwave)`, not `(nwave,)`, for 1-D input). (2) The
+fluorescence test's first draft asserted a bare `Rrs_fl >= Rrs_elastic`;
+it failed at 5/61 wavelengths by ~1e-10 — measured directly, not
+guessed — because `Inelastic` being set switches `rrs_forward` onto a
+different static code path even where the fluorescence kernel itself is
+~0 far from the 685 nm peak, so the elastic backbone recomputes with
+float32 rounding noise at the ULP level. Fixed with a small `atol` on the
+`>=` check plus a separate assertion that the real signal
+(`(Rrs_fl - Rrs_elastic).max() > 1e-5`) is far above that noise floor —
+distinguishing "no regression" from "the fluorescence kernel itself went
+negative," which would be a real bug.
+
+**Added 11 tests** to `test_evaluate_robust.py` (task 1's slice of the
+milestone's Gate — items 1-3; items 4-7 depend on tasks 2-4, not yet
+built, and are **not** duplicated here per the M0 hand-off note already in
+this file's Status section): baseline-vs-Gordon parity (3 water types,
+`rtol ≤ 1e-5`); shapes across all 3 robust backends × 1-D/batch;
+`full_return`; Raman branch; fluorescence branch; free-`Bp` override; and
+the three error paths. Bumped a shared test `Bp_value` from `0.01` to
+`0.014` (still well within `PhaseParams`'s definitional bound, but inside
+the emulator's actual trained domain at `theta_s=30°`) purely to keep the
+shape test's output free of an incidental (correct, but off-topic)
+`DomainWarning` — domain-check testing is task 3's job, not this one's.
+
+**Verification.** `pytest bing/tests/test_evaluate_robust.py -q` → **29
+passed** (was 18; +11 new), zero warnings after the `Bp_value` tweak. Full
+suite: `pytest bing/tests/ -q` → **207 passed, 2 skipped, 2 failed**
+(138.03s) — 207 = 196 (M0 baseline) + 11, same 2 pre-existing,
+already-diagnosed failures, nothing else moved.
+
+Modified: `bing/evaluate.py` (two new imports —
+`from bing.rt import defs as rt_defs`, `from robust import rt as
+robust_rt` — plus the new function), `bing/tests/test_evaluate_robust.py`
+(11 new tests). No `RT_correction` deletion yet (task 4); no JIT/domain-check
+wrapping yet (tasks 2-3) — this function is deliberately plain and
+un-jitted for now, exactly as task 1 scopes it. Branch `rob_rt`,
+uncommitted, for JXP's review. Task 2 (the JIT strategy) is next.

@@ -19,14 +19,23 @@ Coverage so far (M0):
     * ``ObsGeometry`` -- required ``theta_s``, nadir defaults, frozen,
       round-trips through ``to_robust()`` (task 3).
 
-The forward adapter (M1+) lands in later additions to this file.
+M1 task 1 (this addition): ``calc_Rrs_from_models_robust`` -- baseline-vs-
+Gordon parity, shape contract across all three robust backends (1-D and
+batch), ``full_return``, the free-``Bp`` override, Raman/fluorescence
+branches, and the four error paths (missing ``geom``, a non-robust
+``rt_backend``, ``robust_baseline`` + inelastic, and -- via M0's
+``validate_rt_dict``, not repeated here -- the grid/backend/``fit_Bp``
+checks). The JIT strategy (task 2), the un-jitted domain check (task 3), and
+dropping ``RT_correction`` (task 4) land in later additions.
 """
 import numpy as np
 
 import pytest
 
+from bing.models import utils as model_utils
 from bing.rt import defs as rt_defs
 from bing.rt.geometry import ObsGeometry
+from bing import evaluate
 
 
 # ===== Task 1: the dependency =====
@@ -198,3 +207,217 @@ def test_obsgeometry_to_robust_roundtrip_non_nadir_and_ed():
 
     # Ed is never stored on ObsGeometry itself.
     assert not hasattr(g, 'Ed')
+
+
+# ===== M1 task 1: calc_Rrs_from_models_robust =====
+
+# Three distinct water types (Chl-driven a_ph amplitude, independent Adg/Sdg/
+# Bnw/beta) on a real BING model pair -- not L23-loaded truth, since these
+# tests exercise the adapter's mapping logic, not L23 data loading, and a
+# synthetic fixture needs no external data path ($OS_COLOR) to run anywhere.
+_PARAM_SETS = [
+    dict(Chl=1.0, a=[-1.5, 0.017], bb=[-3.0, 1.0]),
+    dict(Chl=0.3, a=[-2.2, 0.014], bb=[-3.5, 0.5]),
+    dict(Chl=5.0, a=[-0.8, 0.020], bb=[-2.2, 1.3]),
+]
+
+
+@pytest.fixture()
+def robust_models():
+    """A fresh ExpBricaud + Pow model pair on a robust_hybrid-legal grid."""
+    wave = np.linspace(400., 700., 61)
+    return model_utils.init(['ExpBricaud', 'Pow'], wave)
+
+
+def _param_vector(ps):
+    a_params = np.array(ps['a'] + [np.log10(0.05582 * ps['Chl'])])
+    bb_params = np.array(ps['bb'])
+    return a_params, bb_params
+
+
+def test_calc_Rrs_from_models_robust_baseline_parity(robust_models):
+    """robust_baseline matches calc_Rrs_from_models (elastic Gordon) at
+    rtol <= 1e-5 on 3 distinct water types -- both use G1=0.0949/G2=0.0794
+    and the same A_Rrs/B_Rrs conversion; float32 sets the tolerance
+    (measured worst: ~3e-7, comfortably inside the gate)."""
+    a_model, bb_model = robust_models
+    rt_dict_robust = {'rt_backend': 'robust_baseline', 'include_Raman': False,
+                      'include_Chl_fl': False, 'phi_C': 0.02,
+                      'double_gaussian': True, 'Bp_value': 0.014}
+    rt_dict_gordon = {'variable_Gordon': False, 'include_Raman': False,
+                       'include_Chl_fl': False}
+    geom = ObsGeometry(theta_s=30.)
+
+    for ps in _PARAM_SETS:
+        a_model.set_aph(np.array([ps['Chl']]))
+        a_params, bb_params = _param_vector(ps)
+
+        Rrs_robust = evaluate.calc_Rrs_from_models_robust(
+            a_model, a_params, bb_model, bb_params, rt_dict_robust, geom=geom)
+        Rrs_gordon = evaluate.calc_Rrs_from_models(
+            a_model, a_params, bb_model, bb_params, rt_dict_gordon)
+
+        # calc_Rrs_from_models preserves eval_a/eval_bb's (1, nwave) batch
+        # axis for 1-D params too (see test_evaluate.py's own note on this);
+        # squeeze both sides to compare like shapes.
+        np.testing.assert_allclose(np.squeeze(Rrs_robust), np.squeeze(Rrs_gordon),
+                                   rtol=1e-5)
+
+
+@pytest.mark.parametrize('rt_backend', ['robust_ztt', 'robust_hybrid', 'robust_baseline'])
+def test_calc_Rrs_from_models_robust_shapes(robust_models, rt_backend):
+    """(nparam,) -> (1, nwave); (nsamples, nparam) -> (nsamples, nwave);
+    finite throughout, for every robust backend."""
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_params, bb_params = _param_vector(ps)
+    rt_dict = {'rt_backend': rt_backend, 'include_Raman': False,
+               'include_Chl_fl': False, 'phi_C': 0.02, 'double_gaussian': True,
+               'Bp_value': 0.014}
+    geom = ObsGeometry(theta_s=30.)
+
+    Rrs_1d = evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, rt_dict, geom=geom)
+    assert Rrs_1d.shape == (1, len(a_model.wave))
+    assert np.all(np.isfinite(Rrs_1d))
+
+    nsample = 4
+    a_batch = np.tile(a_params, (nsample, 1))
+    bb_batch = np.tile(bb_params, (nsample, 1))
+    Rrs_batch = evaluate.calc_Rrs_from_models_robust(
+        a_model, a_batch, bb_model, bb_batch, rt_dict, geom=geom)
+    assert Rrs_batch.shape == (nsample, len(a_model.wave))
+    assert np.all(np.isfinite(Rrs_batch))
+
+
+def test_calc_Rrs_from_models_robust_full_return(robust_models):
+    """full_return=True returns (Rrs, a, bb), matching calc_Rrs_from_models'
+    convention."""
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_params, bb_params = _param_vector(ps)
+    rt_dict = {'rt_backend': 'robust_ztt', 'include_Raman': False,
+               'include_Chl_fl': False, 'phi_C': 0.02, 'double_gaussian': True,
+               'Bp_value': 0.014}
+    geom = ObsGeometry(theta_s=30.)
+
+    Rrs, a, bb = evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, rt_dict, geom=geom,
+        full_return=True)
+    nwave = len(a_model.wave)
+    assert Rrs.shape == (1, nwave)
+    assert a.shape == (1, nwave)
+    assert bb.shape == (1, nwave)
+
+
+def test_calc_Rrs_from_models_robust_raman_branch(robust_models):
+    """include_Raman=True runs and produces a finite, physically plausible
+    Rrs when the a-model has an Ed spectrum set."""
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_model.set_raman_Ed(np.array([350., 750.]), np.array([1.0, 1.0]))
+    a_params, bb_params = _param_vector(ps)
+    rt_dict = {'rt_backend': 'robust_ztt', 'include_Raman': True,
+               'include_Chl_fl': False, 'phi_C': 0.02, 'double_gaussian': True,
+               'Bp_value': 0.014}
+    geom = ObsGeometry(theta_s=30.)
+
+    Rrs = evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, rt_dict, geom=geom)
+    assert np.all(np.isfinite(Rrs))
+    assert np.all(Rrs > 0)
+
+
+def test_calc_Rrs_from_models_robust_fluorescence_adds_emission(robust_models):
+    """include_Chl_fl=True adds a (net strictly positive) contribution
+    relative to the elastic-only Rrs (fluorescence is additive, design
+    §3.5). The elastic backbone itself is recomputed along a different
+    static code path when Inelastic is set (even with fluorescence's own
+    kernel ~0 far from the 685 nm peak), so a few wavelengths differ by
+    float32 rounding noise (~1e-10, measured) rather than the kernel itself
+    -- hence the small atol rather than a bare >=; the peak-region check
+    below confirms the real signal isn't just noise."""
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_params, bb_params = _param_vector(ps)
+    geom = ObsGeometry(theta_s=30.)
+
+    rt_dict_elastic = {'rt_backend': 'robust_ztt', 'include_Raman': False,
+                        'include_Chl_fl': False, 'phi_C': 0.02,
+                        'double_gaussian': True, 'Bp_value': 0.014}
+    rt_dict_fl = dict(rt_dict_elastic, include_Chl_fl=True)
+
+    Rrs_elastic = evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, rt_dict_elastic, geom=geom)
+    Rrs_fl = evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, rt_dict_fl, geom=geom)
+
+    assert np.all(Rrs_fl >= Rrs_elastic - 1e-8)
+    assert (Rrs_fl - Rrs_elastic).max() > 1e-5  # a real signal, not just noise
+
+
+def test_calc_Rrs_from_models_robust_free_Bp_changes_result(robust_models):
+    """Bp overrides rt_dict['Bp_value'] when given."""
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_params, bb_params = _param_vector(ps)
+    rt_dict = {'rt_backend': 'robust_ztt', 'include_Raman': False,
+               'include_Chl_fl': False, 'phi_C': 0.02, 'double_gaussian': True,
+               'Bp_value': 0.014}
+    geom = ObsGeometry(theta_s=30.)
+
+    Rrs_default = evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, rt_dict, geom=geom)
+    Rrs_override = evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, rt_dict, geom=geom, Bp=0.02)
+
+    assert not np.allclose(Rrs_default, Rrs_override)
+
+
+def test_calc_Rrs_from_models_robust_requires_geom(robust_models):
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_params, bb_params = _param_vector(ps)
+    rt_dict = {'rt_backend': 'robust_ztt', 'Bp_value': 0.014}
+
+    with pytest.raises(ValueError, match='geom'):
+        evaluate.calc_Rrs_from_models_robust(
+            a_model, a_params, bb_model, bb_params, rt_dict, geom=None)
+
+
+def test_calc_Rrs_from_models_robust_rejects_gordon_backend(robust_models):
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_params, bb_params = _param_vector(ps)
+    rt_dict = {'rt_backend': 'gordon', 'Bp_value': 0.014}
+    geom = ObsGeometry(theta_s=30.)
+
+    with pytest.raises(ValueError, match='robust backend'):
+        evaluate.calc_Rrs_from_models_robust(
+            a_model, a_params, bb_model, bb_params, rt_dict, geom=geom)
+
+
+def test_calc_Rrs_from_models_robust_baseline_rejects_inelastic(robust_models):
+    """robust_baseline has no inelastic composition path -- requesting Raman
+    or fluorescence with it must raise, not silently drop the term."""
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_params, bb_params = _param_vector(ps)
+    geom = ObsGeometry(theta_s=30.)
+
+    for flag in ('include_Raman', 'include_Chl_fl'):
+        rt_dict = {'rt_backend': 'robust_baseline', 'include_Raman': False,
+                   'include_Chl_fl': False, 'phi_C': 0.02,
+                   'double_gaussian': True, 'Bp_value': 0.014}
+        rt_dict[flag] = True
+        with pytest.raises(ValueError, match='robust_baseline'):
+            evaluate.calc_Rrs_from_models_robust(
+                a_model, a_params, bb_model, bb_params, rt_dict, geom=geom)

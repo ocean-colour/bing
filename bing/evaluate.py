@@ -27,12 +27,19 @@ Examples
 >>> stats = evaluate.calc_stats(chains, names=['Adg', 'Sdg', 'Aph', 'Bnw', 'beta'])
 """
 
+import functools
 import warnings
 
 import numpy as np
 
+import jax
+import jax.numpy as jnp
+
 from bing.rt import rrs as bing_rrs
+from bing.rt import defs as rt_defs
 from bing.fitting import chisq_fit
+
+from robust import rt as robust_rt
 
 from IPython import embed
 
@@ -235,6 +242,174 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
             double_gaussian=rt_dict['double_gaussian'])
         # Add
         Rrs += Rrs_fl
+
+    # Return
+    if full_return:
+        return Rrs, a, bb
+    else:
+        return Rrs
+
+def calc_Rrs_from_models_robust(a_model, a_params, bb_model, bb_params,
+        rt_dict:dict, geom=None, Bp:float=None, debug:bool=False,
+        full_return:bool=False):
+    """
+    Calculate Rrs from model parameters using the robust.rt backend
+    (rob_rt integration, M1).
+
+    Sibling of calc_Rrs_from_models: same parameter-to-IOP evaluation
+    (a_model.eval_a / bb_model.eval_bb, unchanged) and the same batch shape
+    contract, but the IOPs -> Rrs step is retrieve-or-bust's robust.rt
+    forward model instead of the Gordon relation. Called only for a robust
+    rt_dict['rt_backend'] value -- the Gordon path stays on
+    calc_Rrs_from_models unchanged. See docs/design/rob_rt_design.md §3.4
+    for the full mapping table this implements, and claude_prompts/rob_rt.md
+    (Q&A/Design 4, 13; Q&A/Coding 1) for the decisions behind it.
+
+    Runs entirely at float32 -- robust.rt never enables jax_enable_x64
+    (Q&A/Coding item 1), and BING's float64 NumPy arrays downcast crossing
+    the JAX boundary here. Documented, not a bug: float32 is more than
+    sufficient precision for these calculations, and no test tolerance
+    against this function assumes float64 headroom.
+
+    Parameters
+    ----------
+    a_model : aNWModel
+        Absorption model object (e.g., aNWExpBricaud).
+    a_params : np.ndarray
+        Absorption model parameters. Shape can be (nparam,) for single
+        evaluation or (nsamples, nparam) for batch evaluation.
+    bb_model : bbNWModel
+        Backscattering model object (e.g., bbNWPow).
+    bb_params : np.ndarray
+        Backscattering model parameters. Shape matches a_params.
+    rt_dict : dict
+        Radiative transfer configuration. Consulted keys:
+        - 'rt_backend' : str - one of 'robust_ztt'/'robust_hybrid'/
+          'robust_baseline' (see bing.rt.defs.RT_BACKENDS). 'gordon' is a
+          caller error here -- dispatch to calc_Rrs_from_models instead.
+        - 'include_Raman', 'include_Chl_fl', 'phi_C', 'double_gaussian' :
+          same meaning as for calc_Rrs_from_models.
+        - 'Bp_value' : float - constant B_p when Bp is not given.
+    geom : bing.rt.geometry.ObsGeometry, optional
+        Fixed per-pixel viewing/illumination geometry. Required (non-None)
+        for every robust backend -- theta_s is never silently defaulted
+        (claude_prompts/rob_rt.md, Q&A/Coding item 4). Fitters raise via
+        rt_defs.validate_rt_dict before this function is ever reached; a
+        direct call is held to the same rule.
+    Bp : float, optional
+        Free-parameter override for the particle phase-function ratio
+        B_p = bb_p/b_p (design §3.3). Falls back to rt_dict['Bp_value']
+        when None (the fixed-B_p, default case).
+    debug : bool, optional
+        If True, drop into an IPython shell after computing Rrs.
+    full_return : bool, optional
+        If True, return the full Rrs, a, bb arrays. Default is False.
+
+    Returns
+    -------
+    np.ndarray
+        Remote sensing reflectance Rrs [sr^-1]. Shape is (nwave,) for
+        single evaluation or (nsamples, nwave) for batch.
+
+    Raises
+    ------
+    ValueError
+        If geom is None; if rt_dict['rt_backend'] is not a robust backend;
+        or if rt_dict['rt_backend'] == 'robust_baseline' while Raman or
+        chlorophyll fluorescence is requested (robust.rt.baselines.Rrs_gordon
+        takes no `inelastic` argument -- it is elastic-only by
+        construction, see Notes).
+
+    Notes
+    -----
+    Unlike calc_Rrs_from_models, this function never evaluates a_model/
+    bb_model at separate Raman-excitation wavelengths (eval_a_ex/eval_bb_ex):
+    robust.rt.inelastic derives its own excitation-grid IOPs by interpolating
+    (and, outside the supplied wave range, clamping) the single emission-grid
+    IOPs passed in here. This is a real, load-bearing difference from BING's
+    own Raman path, which evaluates the true parametric models at the wider
+    excitation grid -- not a bug in this adapter, but an inherent property of
+    delegating to robust.rt's public forward()/rrs_forward() API, which has
+    no parameter for separately-evaluated excitation IOPs. Likewise a_ph is
+    passed as the *full* spectrum on a_model.wave, not pre-sliced at
+    a_model.i_Chl_ex -- robust.rt.inelastic.fluorescence_kernel interpolates
+    onto its own fixed 370-690 nm excitation grid internally.
+
+    'robust_baseline' has no inelastic composition path at all: it dispatches
+    directly to robust.rt.baselines.Rrs_gordon (elastic-only by construction,
+    the point of the like-for-like Gordon comparison), bypassing forward()
+    entirely. Requesting Raman/fluorescence with 'robust_baseline' raises
+    rather than silently dropping the inelastic terms.
+
+    See Also
+    --------
+    calc_Rrs_from_models : the Gordon-backend sibling this mirrors.
+    bing.rt.defs.validate_rt_dict : the fit-setup checks this function
+        assumes have already run.
+    """
+    if geom is None:
+        raise ValueError(
+            "calc_Rrs_from_models_robust requires geom (a bing.rt.geometry."
+            "ObsGeometry) -- theta_s is never silently defaulted "
+            "(claude_prompts/rob_rt.md, Q&A/Coding item 4). "
+            "rt_defs.validate_rt_dict should have raised before this "
+            "function was ever reached for a robust backend.")
+
+    rt_backend = rt_dict.get('rt_backend', 'gordon')
+    if rt_backend not in rt_defs.RT_BACKENDS or rt_backend == 'gordon':
+        raise ValueError(
+            f"calc_Rrs_from_models_robust: rt_dict['rt_backend']={rt_backend!r} "
+            "is not a robust backend -- use one of "
+            f"{[b for b in rt_defs.RT_BACKENDS if b != 'gordon']}, or "
+            "dispatch 'gordon' to calc_Rrs_from_models instead.")
+
+    # IOPs for model wave -- identical evaluation to the Gordon path.
+    a = a_model.eval_a(a_params)
+    bb = bb_model.eval_bb(bb_params)
+
+    # Fluorescence source term (full spectrum on a_model.wave -- see Notes;
+    # not sliced at a_model.i_Chl_ex like calc_Rrs_from_models' aph_ex).
+    include_raman = rt_dict.get('include_Raman', False)
+    include_fl = rt_dict.get('include_Chl_fl', False)
+    a_ph = (10**a_params[..., -1:]) * a_model.a_ph if include_fl else None
+
+    iops = robust_rt.IOPs.from_total_bb(a, bb, wave=a_model.wave, a_ph=a_ph)
+
+    B_p = Bp if Bp is not None else rt_dict['Bp_value']
+    phase_params = robust_rt.PhaseParams(B_p=B_p)
+
+    geometry = geom.to_robust()
+
+    wave_key = np.asarray(a_model.wave, dtype=np.float64).tobytes()
+
+    if rt_backend == 'robust_baseline':
+        if include_raman or include_fl:
+            raise ValueError(
+                "rt_dict['rt_backend']='robust_baseline' has no inelastic "
+                "composition path -- robust.rt.baselines.Rrs_gordon takes "
+                "no `inelastic` argument and is elastic-only by "
+                "construction. Disable include_Raman/include_Chl_fl, or "
+                "use rt_backend='robust_ztt'/'robust_hybrid' instead.")
+        jit_fn = _robust_forward_jit('baseline', None, wave_key)
+        Rrs = jit_fn(iops, phase_params, geometry)
+    else:
+        # 'robust_ztt' -> mode='ztt'; 'robust_hybrid' -> mode='hybrid'.
+        mode = rt_backend[len('robust_'):]
+        if include_raman or include_fl:
+            emission_shape = ('double' if rt_dict.get('double_gaussian', True)
+                              else 'single')
+            inelastic_key = (include_raman, include_fl, emission_shape)
+            jit_fn = _robust_forward_jit(mode, inelastic_key, wave_key)
+            Rrs = jit_fn(iops, phase_params, geometry, rt_dict.get('phi_C', 0.02))
+        else:
+            jit_fn = _robust_forward_jit(mode, None, wave_key)
+            Rrs = jit_fn(iops, phase_params, geometry)
+
+    Rrs = np.asarray(Rrs)
+
+    # Call me
+    if debug:
+        embed(header='calc_Rrs_from_models_robust of evaluate.py')
 
     # Return
     if full_return:
