@@ -627,3 +627,77 @@ numbers (16 walkers, 0.1–1.7 s per 250-step fit on this machine,
 one-time JIT compile per robust backend/grid, hybrid's emulator load
 dominating its first call), and Q5's Gate-coverage gap so M3 doesn't
 inherit it silently.
+
+### 2026-08-31 (M2 task 5 — handing off to `rob_rt_prompt_4.md`)
+
+**Read before writing.** This doc in full (Q1–Q5, all four Logs entries),
+`rob_rt_prompt_4.md` in full, and the live source — every signature and
+line number written into the M3 doc was re-verified against
+`bing/fitting/inference.py`, `bing/fitting/chisq_fit.py`,
+`bing/evaluate.py`, and `robust/rt/types.py` on this date (the Logs'
+recurring lesson: citations drift; the task-3/4 numbers were still
+accurate, the M3 doc's pre-existing ones were not). One doc-internal
+wrinkle resolved by the doc itself: the Prompts section's item 5 says
+"update `rob_rt_prompt_5.md`", but the M2 → Tasks section's own task-5
+text, the Next pointer, and M3's Context all name **`rob_rt_prompt_4.md`**
+— the Tasks text governs, and `rob_rt_prompt_4.md` is what was updated.
+
+**Updated `rob_rt_prompt_4.md`** (Context + Working agreements only —
+its M3 Tasks/Gate sections are JXP's plan and were not touched; Q&A/Logs
+correctly remain "none yet"):
+
+- **Working agreements**: carried over the branch correction (**`rob_rt`**,
+  not `rob-rt-backend`) exactly as prompt 2/3 did, and refreshed the
+  load-bearing split citation to post-M2 lines (inference.py:113-114,
+  chisq_fit.py:230-231).
+- **Context, "Previous prompt" bullet**: expanded from one line into the
+  M2 fact sheet — the verified fitter signatures and dispatch/peel sites,
+  the `Bp=None` → `rt_dict['Bp_value']` fallback (Q1) that M3 task 1
+  replaces, the mandatory `!= 'gordon'` domain-check gate (Q3, incl. that
+  the check accepts `Bp=` so the peeled value should flow into it), the
+  measured smoke-fit numbers below, and the Q5 gap with its M3
+  consequence.
+- **Context, "Current code" bullet**: stale line numbers corrected
+  (`init_mcmc` ndim now inference.py:187-188, not 159-160;
+  `reconstruct_from_chains` now evaluate.py:683, not 245 — 245 is
+  `_robust_forward_jit` these days; `PhaseParams` types.py:250/277).
+
+**Smoke-fit measurements** (new, standalone in `ocean14` — the task-4
+notebook demonstrated the fits but never timed them; same recipe: L23
+idx=170, 61-band PACE grid, seeded `fit_one`, nsteps=200/nburn=50/
+nwalkers=16): gordon 0.12 s cold and warm (no JIT, ~2200 emcee it/s).
+Warm robust fits 0.51–0.61 s (ztt 0.59 / hybrid 0.61 / baseline 0.51;
+~420–520 it/s — ~5× Gordon per step at this size). One-time first-call
+compile on top: ztt ~0.35 s, hybrid ~1.1 s (Flax emulator load
+dominating; 1.72 s cold total, identical whether run first in a fresh
+process or after other backends — verified both ways), baseline ~0.03 s
+(negligible; `Rrs_gordon` is a trivial trace). **No genuine surprises**:
+repeated identical-config fits never recompile (M1's `lru_cache`
+behavior paying off in a real fit context, observed not assumed), no
+memory growth at these sizes — a confirmed "nothing unusual", stated for
+M3's benefit as the pre-`fit_Bp` baseline (ndim 5→6 keeps nwalkers at
+max(16, 2×ndim)=16).
+
+**The Q5 → M3 Gate item 6 dependency, flagged.** M3's Gate item 6 reads
+"`fit_Bp=False` results identical to an M2-pinned value" — but Q5's
+still-open finding is precisely that **no fitter-level regression pin
+exists** (Gate item 2 partial: only M1's forward-model fixture and task
+2's tuple-arg-identity tests). There is no "M2-pinned value" for M3 to
+compare against; M3 task 3 will hit this directly. Stated in the M3 doc
+with the options (answer Q5 first, or let M3 create its own fixed-`B_p`
+pin when `fit_Bp=False` is first tested) and left as JXP's decision —
+not resolved unilaterally, same as Q5 itself.
+
+**Tested.** No package source changed (doc edits + a scratchpad timing
+script only), so the suite baseline stands at task 3's **239 passed,
+2 skipped, 2 failed** (the same two pre-existing `test_l23_inelastic.py`
+missing-fixture failures).
+
+**M2 is now fully complete — all 5 tasks done.** Handed to M3: all four
+`rt_backend` values run end-to-end through both fitters with setup
+validation, geometry threading by value, and legacy calls regression-
+pinned at the argument level; measured per-backend cost baselines; and
+one genuinely open item — Q5's Gate-coverage gap (items 1/4/5 untested,
+item 2 partial), which now has a concrete downstream consequence in M3
+Gate item 6 and should be resolved before or during M3 task 3 rather
+than deferred indefinitely.
