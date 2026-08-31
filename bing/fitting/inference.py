@@ -44,6 +44,7 @@ from tqdm import tqdm
 
 from bing.models import utils as model_utils
 from bing import evaluate as bing_eval
+from bing.rt import defs as rt_defs
 
 import emcee
 
@@ -97,6 +98,16 @@ def log_prob(params, models:list, Rrs:np.ndarray,
 
     The total log-posterior is:
         log(P) = log(L) + log(prior_a) + log(prior_bb)
+
+    log_prob itself performs no configuration validation -- it sits on
+    the sampling hot path. fit_one / chisq_fit.fit run
+    bing.rt.defs.validate_rt_dict (and, for robust backends,
+    bing.evaluate.robust_domain_check) once at fit setup instead, so an
+    illegal rt_dict/geom combination raises there, before sampling. A
+    *direct* robust-backend call with geom=None still fails loudly --
+    with the adapter's own ValueError from
+    calc_Rrs_from_models_robust -- rather than silently defaulting
+    theta_s.
     """
     # Unpack for convenience
     aparams = params[:models[0].nparam]
@@ -193,11 +204,16 @@ def fit_one(items:list, models:list=None, pdict:dict=None,
     Parameters
     ----------
     items : tuple
-        Tuple containing (Rrs, varRrs, params, idx):
+        Tuple containing (Rrs, varRrs, params, idx[, geom]):
         - Rrs : np.ndarray - Observed remote sensing reflectance [sr^-1]
         - varRrs : np.ndarray - Variance of Rrs [sr^-2]
         - params : np.ndarray - Initial parameter guess
         - idx : int - Spectrum index (for batch tracking and Chl/Y lookup)
+        - geom : bing.rt.geometry.ObsGeometry, optional 5th element -
+          fixed per-pixel viewing/illumination geometry (design §3.2).
+          Required whenever rt_dict['rt_backend'] selects a robust
+          backend; ignored by the default Gordon backend. Legacy
+          4-tuples remain valid and imply geom=None.
     models : list
         List of two model objects: [absorption_model, backscattering_model].
     pdict : dict
@@ -218,18 +234,58 @@ def fit_one(items:list, models:list=None, pdict:dict=None,
     idx : int
         Input index (echoed for tracking in batch processing)
 
+    Raises
+    ------
+    ValueError
+        At setup, from bing.rt.defs.validate_rt_dict -- before any
+        sampling work: an unknown rt_backend; fit_Bp=True with the
+        Gordon backend; a robust backend without geom (the error names
+        theta_s -- it is never silently defaulted); or a robust_hybrid
+        fit whose model wavelengths fall outside the emulator's
+        [350, 750] nm training range.
+
+    Warns
+    -----
+    robust.rt.hybrid.DomainWarning
+        If the initial guess (checked before sampling) or the posterior
+        median (checked after) lies outside the emulator's trained
+        domain. Possible for rt_backend='robust_hybrid' only -- the
+        check is a validated no-op for the other robust backends and is
+        never invoked for 'gordon'. Warn-and-continue: the fit result is
+        still returned.
+
     Notes
     -----
     The function updates model internals (Chl for Bricaud, Y for Lee)
     before running MCMC. These values are looked up from pdict using idx.
+
+    Setup validation runs once per fit, immediately after the tuple
+    unpack (bing.rt.defs.validate_rt_dict) -- the sampler itself runs
+    jitted for robust backends and can never warn or validate, so both
+    the configuration errors and the out-of-domain diagnostics
+    (bing.evaluate.robust_domain_check on the initial guess and on the
+    posterior median) live here, outside the hot loop.
 
     See Also
     --------
     fit_batch : Fit multiple spectra in parallel
     run_emcee : Lower-level emcee interface
     """
-    # Unpack
-    Rrs, varRrs, params, idx = items
+    # Unpack -- either the legacy 4-tuple (Rrs, varRrs, params, idx) or
+    # the 5-tuple with a trailing ObsGeometry (design §3.2)
+    Rrs, varRrs, params, idx = items[:4]
+    geom = items[4] if len(items) > 4 else None
+
+    # Setup validation, once per fit and before any other work (M2 task
+    # 3): an unknown backend, fit_Bp with the Gordon backend, a robust
+    # backend without geometry (the CQ4 error naming theta_s), or an
+    # out-of-range robust_hybrid wavelength grid all raise here -- never
+    # mid-sampling.  rt_dict=None (a legacy convenience some callers use)
+    # validates as the default Gordon configuration.
+    rt_defs.validate_rt_dict(rt_dict if rt_dict is not None else {},
+                             models=models, geom=geom)
+    rt_backend = (rt_dict.get('rt_backend', 'gordon')
+                  if rt_dict is not None else 'gordon')
 
     Chl = pdict['Chl'][idx] if pdict['Chl'] is not None else None
     Y = pdict['Y'][idx] if pdict['Y'] is not None else None
@@ -237,6 +293,20 @@ def fit_one(items:list, models:list=None, pdict:dict=None,
     # Update the model as need be
     _ = model_utils.init_other_bits(
         models, Chl=Chl, Y=Y, Rrs=Rrs)
+
+    # Domain check on the initial guess (robust backends only): un-jitted,
+    # so robust_hybrid's DomainWarning can reach the caller before any
+    # sampling begins.  Deliberately never called for 'gordon' --
+    # robust_domain_check rejects a non-robust backend with ValueError by
+    # construction (verified empirically; see
+    # test_robust_domain_check_shares_adapter_error_paths) -- and it is a
+    # validated no-op for robust_ztt/robust_baseline (no trained domain).
+    if rt_backend != 'gordon':
+        nap = models[0].nparam
+        p0_check = np.asarray(params)
+        bing_eval.robust_domain_check(
+            models[0], p0_check[:nap], models[1], p0_check[nap:],
+            rt_dict, geom=geom, Bp=None)
 
     # Run
     print(f"idx={idx}")
@@ -247,7 +317,19 @@ def fit_one(items:list, models:list=None, pdict:dict=None,
         nburn=pdict['nburn'],
         skip_check=True,
         p0=params,
-        save_file=pdict['save_file'])
+        save_file=pdict['save_file'],
+        geom=geom)
+
+    # Domain check on the posterior median (robust backends only): the
+    # sampling itself runs jitted and can never warn (design §4), so this
+    # is where an out-of-domain landing point becomes visible.  Same
+    # aparams/bparams split as log_prob's.
+    if rt_backend != 'gordon':
+        chain = sampler.get_chain()
+        median = np.median(chain.reshape(-1, chain.shape[-1]), axis=0)
+        bing_eval.robust_domain_check(
+            models[0], median[:nap], models[1], median[nap:],
+            rt_dict, geom=geom, Bp=None)
 
     # Return
     if chains_only:
@@ -356,7 +438,8 @@ def run_emcee(models:list, Rrs, varRrs, rt_dict,
               nburn:int=1000,
               nsteps:int=20000, save_file:str=None,
               p0=None, skip_check:bool=False, ndim:int=None,
-              perturb_frac:float=1e-2, perturb_floor:float=1e-3):
+              perturb_frac:float=1e-2, perturb_floor:float=1e-3,
+              geom=None):
     """
     Run the emcee ensemble sampler for Bayesian inference.
 
@@ -397,6 +480,12 @@ def run_emcee(models:list, Rrs, varRrs, rt_dict,
         Absolute floor on that half-width, so parameters seeded at or
         near zero still get real spread. Default 1e-3. Widen both for
         badly degenerate models.
+    geom : bing.rt.geometry.ObsGeometry, optional
+        Fixed per-pixel viewing/illumination geometry, forwarded by value
+        to log_prob through emcee's ``args`` (design §3.2) -- the sampler
+        never sees it as a dimension. Required (non-None) whenever
+        rt_dict['rt_backend'] selects a robust backend; ignored by the
+        default Gordon backend.
 
     Returns
     -------
@@ -454,10 +543,13 @@ def run_emcee(models:list, Rrs, varRrs, rt_dict,
     else:
         backend = None
 
-    # Init
+    # Init.  emcee passes ``args`` purely positionally after the walker's
+    # parameter vector, so this list must mirror log_prob's signature
+    # order: (params, models, Rrs, varRrs, rt_dict, geom).  geom rides by
+    # value like Rrs/varRrs -- never a sampled dimension.
     sampler = emcee.EnsembleSampler(
         nwalkers, ndim, log_prob,
-        args=[models, Rrs, varRrs, rt_dict],
+        args=[models, Rrs, varRrs, rt_dict, geom],
         backend=backend)#, pool=pool)
 
     # Burn in
@@ -495,12 +587,18 @@ def fit_batch(models:list, pdict:dict, items:list, rt_dict:dict,
         MCMC configuration from init_mcmc(), including Chl and Y arrays
         for all spectra to be fitted.
     items : list of tuple
-        List of (Rrs, varRrs, params, idx) tuples, one per spectrum.
-        Each tuple contains:
+        List of (Rrs, varRrs, params, idx[, geom]) tuples, one per
+        spectrum. Each tuple contains:
         - Rrs : np.ndarray - Observed reflectance
         - varRrs : np.ndarray - Variance
         - params : np.ndarray - Initial parameter guess
         - idx : int - Spectrum index
+        - geom : bing.rt.geometry.ObsGeometry, optional 5th element -
+          fixed per-pixel viewing/illumination geometry (design §3.2),
+          forwarded unchanged to fit_one. Required whenever
+          rt_dict['rt_backend'] selects a robust backend; legacy
+          4-tuples remain valid (geom=None) and 4-/5-tuples may be
+          mixed in one list.
     rt_dict : dict
         Radiative transfer configuration dictionary.
     n_cores : int, optional
@@ -521,6 +619,14 @@ def fit_batch(models:list, pdict:dict, items:list, rt_dict:dict,
     - Chains are returned as float32 to reduce memory usage
     - Progress is displayed via tqdm
     - Chunk size is automatically set to len(items) // n_cores
+    - Each spectrum's fit runs fit_one's own setup validation
+      (bing.rt.defs.validate_rt_dict) in its worker: with a robust
+      rt_dict, any legacy 4-tuple in ``items`` (geom=None) raises a
+      ValueError naming theta_s, which propagates out of fit_batch;
+      fit_one's robust_hybrid domain checks (DomainWarning on the
+      initial guess / posterior median) likewise run per spectrum,
+      though warnings emitted in worker *processes* do not cross back
+      into the parent (n_cores > 1).
 
     Examples
     --------

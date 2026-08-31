@@ -40,6 +40,7 @@ from functools import partial
 from scipy.optimize import curve_fit
 
 from bing import evaluate as bing_eval
+from bing.rt import defs as rt_defs
 
 from IPython import embed
 
@@ -56,11 +57,17 @@ def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None,
     Parameters
     ----------
     items : tuple
-        Tuple containing (Rrs, varRrs, params, idx):
+        Tuple containing (Rrs, varRrs, params, idx[, geom]):
         - Rrs : np.ndarray - Observed remote sensing reflectance [sr^-1]
         - varRrs : np.ndarray - Variance of Rrs [sr^-2]
         - params : np.ndarray - Initial parameter guess
         - idx : int - Spectrum index (echoed in return for batch tracking)
+        - geom : bing.rt.geometry.ObsGeometry, optional 5th element -
+          fixed per-pixel viewing/illumination geometry (design §3.2),
+          forwarded to fit_func on every optimizer evaluation. Required
+          whenever rt_dict['rt_backend'] selects a robust backend;
+          ignored by the default Gordon backend. Legacy 4-tuples remain
+          valid and imply geom=None.
     models : list
         List of two model objects: [absorption_model, backscattering_model].
     rt_dict : dict
@@ -90,6 +97,26 @@ def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None,
     idx : int
         Input index (echoed for batch processing tracking).
 
+    Raises
+    ------
+    ValueError
+        At setup, from bing.rt.defs.validate_rt_dict -- before any
+        optimizer work: an unknown rt_backend; fit_Bp=True with the
+        Gordon backend; a robust backend without geom (the error names
+        theta_s -- it is never silently defaulted); or a robust_hybrid
+        fit whose model wavelengths fall outside the emulator's
+        [350, 750] nm training range.
+
+    Warns
+    -----
+    robust.rt.hybrid.DomainWarning
+        If the initial guess lies outside the emulator's trained domain
+        (rt_backend='robust_hybrid' only; checked un-jitted via
+        bing.evaluate.robust_domain_check before optimization). Unlike
+        fit_one there is no post-fit counterpart -- a chi-squared fit
+        has no posterior median; check the returned ``ans`` yourself if
+        needed. Warn-and-continue: the fit still runs.
+
     Notes
     -----
     The covariance matrix assumes the model is correct and residuals are
@@ -107,13 +134,38 @@ def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None,
     """
     if bounds is None:
         bounds = (-np.inf, np.inf)
-    # Unpack
-    Rrs, varRrs, params, idx = items
+    # Unpack -- either the legacy 4-tuple (Rrs, varRrs, params, idx) or
+    # the 5-tuple with a trailing ObsGeometry (design §3.2)
+    Rrs, varRrs, params, idx = items[:4]
+    geom = items[4] if len(items) > 4 else None
+
+    # Setup validation, once per fit and before any optimizer work (M2
+    # task 3): an unknown backend, fit_Bp with the Gordon backend, a
+    # robust backend without geometry (the CQ4 error naming theta_s), or
+    # an out-of-range robust_hybrid wavelength grid all raise here --
+    # never mid-optimization.
+    rt_defs.validate_rt_dict(rt_dict if rt_dict is not None else {},
+                             models=models, geom=geom)
+
+    # Domain check on the initial guess (robust backends only; there is
+    # no posterior in a chi-squared fit, hence no post-fit counterpart):
+    # un-jitted, so robust_hybrid's DomainWarning can reach the caller.
+    # Deliberately never called for 'gordon' -- robust_domain_check
+    # rejects a non-robust backend with ValueError by construction
+    # (verified empirically) -- and it is a validated no-op for
+    # robust_ztt/robust_baseline (no trained domain).
+    if (rt_dict or {}).get('rt_backend', 'gordon') != 'gordon':
+        nap = models[0].nparam
+        p0_check = np.asarray(params)
+        bing_eval.robust_domain_check(
+            models[0], p0_check[:nap], models[1], p0_check[nap:],
+            rt_dict, geom=geom, Bp=None)
 
     # Only pass maxfev when asked, so scipy's default is untouched
     kwargs = {} if maxfev is None else dict(maxfev=maxfev)
 
-    partial_func = partial(fit_func, models=models, rt_dict=rt_dict)
+    partial_func = partial(fit_func, models=models, rt_dict=rt_dict,
+                           geom=geom)
     ans, cov =  curve_fit(partial_func, None,
                           Rrs, p0=params, sigma=np.sqrt(varRrs),
                           full_output=False, bounds=bounds, **kwargs)
