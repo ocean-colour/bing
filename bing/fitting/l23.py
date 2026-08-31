@@ -296,9 +296,15 @@ def prep_one_l23(p, idx, chk:bool=False):
             # Append
             models[0].priors.add_prior(prior_dict)
 
+    # Radiative transfer configuration -- built once here, consumed by
+    # init_mcmc's ndim bookkeeping (fit_Bp adds a dimension, M3 task 3)
+    # and by the B_p p0 seed below (M3 task 2).
+    rt_dict = rt_defs.rt_dict_from_p(p)
+
     # Initialize the MCMC
-    pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn)
-    
+    pdict = bing_inf.init_mcmc(models, nsteps=p.nsteps, nburn=p.nburn,
+                               rt_dict=rt_dict)
+
     # Radiative Transfer
 
     ## Gordon coefficients
@@ -411,7 +417,7 @@ def prep_one_l23(p, idx, chk:bool=False):
     # nonzero so init_walkers' floor gives it spread).  A no-op for the
     # fixed-B_p default, and deliberately *after* the log10 loop and the
     # chk block above, both of which see model parameters only.
-    p0 = bing_inf.append_Bp_seed(p0, rt_defs.rt_dict_from_p(p))
+    p0 = bing_inf.append_Bp_seed(p0, rt_dict)
 
     # Return a dictionary
     ret_dict = {}

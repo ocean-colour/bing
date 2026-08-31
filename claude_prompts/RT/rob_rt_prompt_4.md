@@ -294,6 +294,72 @@ documents the asymmetry against `log_prob`), and `fit`'s `bounds`
 docstring tells hand-rolling callers to add the trailing slot from the
 same constants.
 
+**Q5 (task 3, Claude → JXP — decision made and clearly labeled;
+M2 Q5 itself remains OPEN).** Gate item 6 ("`fit_Bp=False` results
+identical to an M2-pinned value") had nothing to compare against: M2
+never produced a fitter-level pin (M2 Q5, still unanswered), and the
+Context section said not to pick silently but task 3 could not skip the
+item. Resolution — the Context section's own fallback, implemented
+deliberately, not silently: task 3 created a **provisional** fixed-`B_p`
+fitter-level pin, `bing/tests/files/m3_fixed_bp_pin.npz` (generator:
+`gen_m3_fixed_bp_pin.py`, run 2026-08-31 in `ocean14`), captured live
+under task-3-complete code at the point `fit_Bp=False` was first tested
+here. What it freezes: `chisq_fit.fit` best-fit params and seeded
+`fit_one` chains (nsteps=30/nburn=10/nwalkers=16,
+`np.random.seed(20260831)` — verified bit-reproducible in a fresh
+process, so emcee really draws from the global legacy `np.random`
+state) for both `gordon` and `robust_ztt` on the test module's own
+synthetic recipe. Why "identical to M2" is a fair reading: at capture
+time the M3 task-1 byte-identity tests
+(`test_fit_Bp_false_or_absent_byte_identical_to_m2`) were green, so
+these values *are* the M2 dispatch values — they had just never been
+frozen to disk. The consuming test
+(`test_fit_Bp_false_matches_provisional_pin`,
+test_evaluate_robust.py:1696) and the generator's docstring both label
+it provisional and stand-in explicitly, with a portability caveat
+(chains can drift across BLAS/emcee versions — regenerate, don't
+suspect a dispatch regression, if the byte-identity tests stay green).
+**M2 Q5 is still genuinely unresolved at the M2 level**: if JXP wants a
+true *pre-M3* pin, it has to come from a checkout of the M2 branch
+state; this fixture supersedes nothing and is superseded by that if it
+ever exists. **Q2 likewise remains open and untouched**: task 3 pinned
+only the *existing* gordon+`fit_Bp` rejection at the fitter level (Gate
+item 5) and did not extend `validate_rt_dict` to reject
+`robust_baseline`+`fit_Bp` — that is still JXP's call (nothing in task
+4 blocks on it; a notebook fit under `robust_baseline`+`fit_Bp` would
+just reproduce the prior, per Q2).
+
+**Q6 (task 3, Claude → JXP, resolved — no answer needed; two findings
+worth knowing).** (i) The spec's "`reconstruct_from_chains` strips the
+tail column ... and forwards it as `Bp`" quietly implied more than a
+strip: the function had **no robust dispatch at all** — it called
+`calc_Rrs_from_models` (Gordon) unconditionally and took no `geom`, so
+a robust-backend chain was being silently reconstructed through the
+wrong forward model (pre-existing, not an M3 regression; forwarding
+`Bp` is only meaningful in a robust call). Resolution by reading
+`log_prob`'s precedent: `reconstruct_from_chains` gained the same
+`rt_dict.get('rt_backend', 'gordon')` dispatch plus a trailing
+`geom=None` parameter (the adapter's own loud ValueError enforces geom
+for robust backends; the Gordon path is byte-identical to before, and
+the whole pre-existing suite stayed green). The `geom` threading was
+extended minimally to its two live callers that could meet a robust
+rt_dict — `io.save_fit` and `plotting.show_fits` (both `geom=None`
+passthroughs) — nothing else. (ii) The **batched per-sample `B_p`
+shape** is a real trap, verified live against robust: a `(nsamples,)`
+tail column breaks `ztt.bb_tilde`'s broadcast against
+`(nsamples, nwave)` IOPs, while `(nsamples, 1)` breaks the hybrid
+emulator's `features()` (its `B_p[..., None]` promotion makes a 3-D
+array that `broadcast_to` cannot squeeze back — robust's own
+"degenerate case" docstring note, emulator.py:436-439). The one shape
+all three backends accept is the full `(nsamples, nwave)` spectrum —
+robust's own batched-`B_p` convention (`robust/rt/validation.py:271`)
+— so `reconstruct_from_chains` forwards
+`np.broadcast_to(tail[:, None], (nsamples, nwave))`, a read-only view,
+no copy. Consequence pinned in the tests: the scalar-`B_p` and
+per-sample-`B_p` jit traces are *different XLA programs*, so the
+fixed-vs-free equivalence holds exactly for the IOPs but only to
+float32 ulp for Rrs (rtol 1e-5 in the Gate-4 test).
+
 ## Next
 
 → `rob_rt_prompt_5.md` (M4: Ed wiring and inelastic terms through `robust`).
@@ -508,3 +574,119 @@ ready for it); `reconstruct_from_chains` strips/forwards the tail;
 JXP calls wanted first: **Q2** (reject `robust_baseline`+`fit_Bp`?) and
 M2 **Q5** (where the `fit_Bp=False` fitter-level pin for Gate item 6
 comes from).
+
+### 2026-08-31 (M3 task 3 — bookkeeping)
+
+**Read before coding.** This doc in full (Q1–Q4; the Context section's
+M2-Q5/Gate-6 fallback instructions); `bing/fitting/inference.py` in full
+(post-task-2 state); `bing/evaluate.py` (`calc_stats`,
+`_build_robust_inputs`/`calc_Rrs_from_models_robust`,
+`reconstruct_from_chains`); `bing/rt/defs.py` (`validate_rt_dict`'s
+existing gordon+`fit_Bp` error, defs.py:106-110, and the task-2
+constants); `bing/io.py` `save_fit` (the `calc_stats` names caller);
+`bing/plotting.py` (`log_param_mask`, `corner_plot`);
+`bing/fitting/l23.py` `prep_one_l23`; the coding plan's M3 section and
+design §3.3; robust's `PhaseParams` (types.py:250-297), `ztt.bb_tilde`
+(ztt.py:471-495), `emulator.features` (emulator.py:403-463), and
+`validation.py:271` (the batched-`B_p` convention — see Q6). **Citation
+drift, as expected**: the task text's `inference.py:159-160` for
+`init_mcmc` was stale (found at inference.py:202 pre-change) and
+`evaluate.py:245` for `reconstruct_from_chains` was very stale (found at
+evaluate.py:683 pre-change — the Context section's re-verified citation
+was the accurate one). Trust the post-change numbers below, not either
+of those.
+
+**Implemented** (post-change line numbers):
+
+- `inference.init_mcmc` (inference.py:202): optional trailing
+  `rt_dict=None`; ndim = `sum(model.nparam)` **+1** when
+  `rt_dict.get('fit_Bp', False)` (inference.py:256-259), and the dict
+  now also carries the computed `'ndim'` key (inference.py:260) so the
+  Gate-2 bookkeeping is directly testable — `nwalkers = max(16, 2×ndim)`
+  is unchanged in form and stays 16 for the standard 5→6 case (the
+  Context section's smoke-fit expectation, confirmed).
+- `inference.prior_bounds` (inference.py:467): optional `rt_dict=None`;
+  under `fit_Bp` the (low, high) arrays gain the trailing slot from
+  `rt_defs.BP_PRIOR_PMIN`/`PMAX` (inference.py:509-513 — the constants,
+  never a re-typed literal).
+- `inference.init_walkers` (inference.py:516): optional `rt_dict=None`
+  forwarded into `prior_bounds` (inference.py:585); `run_emcee` passes
+  its own `rt_dict` through (inference.py:693-695). Verified live per
+  Q3's prediction: the existing `nclip = min(...)` logic now really
+  clips the tail column — a 0.0045 seed with the 1e-3 floor throws
+  walkers below 0.004 without the extension and clips them into
+  [0.004, 0.05] with it, model columns bit-identical either way.
+- `evaluate.reconstruct_from_chains` (evaluate.py:717): under `fit_Bp`
+  the flattened chain's trailing column is stripped *before* the
+  aparams/bparams split and forwarded as `Bp` (evaluate.py:800-812) —
+  as a `(nsamples, nwave)` broadcast view, the one batched shape all
+  three robust backends accept (Q6ii); plus the backend dispatch and
+  trailing `geom=None` the spec's "forwards it as Bp" turned out to
+  require (evaluate.py:817-828; Q6i — the function was Gordon-only
+  before). Gordon path byte-identical to before.
+- Naming: new helper `evaluate.chain_param_names(models, rt_dict=None)`
+  (evaluate.py:102) — concatenated model `pnames` + trailing `'B_p'`
+  under `fit_Bp`; consumed by `io.save_fit` (io.py:129, which also
+  gained the `geom=None` passthrough, io.py:76/134) and
+  `plotting.corner_plot` (plotting.py:539). `plotting.log_param_mask`
+  (plotting.py:57) appends the `B_p` entry as **False** (linear —
+  the debug-priors trap, dodged on purpose); `corner_plot`
+  (plotting.py:465) gained `rt_dict=None` and labels the extra column
+  `'B_p'`, never log10-wrapped/exponentiated; `show_fits`
+  (plotting.py:105) gained the `geom=None` passthrough (plotting.py:215).
+- `l23.prep_one_l23`: builds `rt_dict` once (l23.py:302), feeds it to
+  `init_mcmc` (l23.py:305-306) and reuses it for task 2's
+  `append_Bp_seed` (l23.py:420).
+- `validate_rt_dict` itself **untouched** (Q2 honored — no
+  `robust_baseline` rejection added); its existing gordon+`fit_Bp`
+  error is now pinned at the fitter level (Gate 5).
+- Gate 6: the provisional pin `bing/tests/files/m3_fixed_bp_pin.npz` +
+  generator `gen_m3_fixed_bp_pin.py` (see Q5 for the full reasoning and
+  labeling; verified bit-reproducible in a fresh process before
+  committing to the approach). **Commit note for JXP**: the repo's
+  blanket `.gitignore` `*.npz` rule catches the new fixture — it needs
+  `git add -f bing/tests/files/m3_fixed_bp_pin.npz`, exactly as
+  `l23_gordon_fixture.npz` evidently was (it is tracked despite the
+  same rule).
+
+**Round-trip result (Gate 1, real numbers).** Synthetic `robust_ztt`
+Rrs at `B_p=0.02` (truth `_THREAD_TRUTH`, 61-band 400–700 nm grid,
+0.5% assumed error, θs=30°), fit with `fit_Bp=True` seeded at the 0.01
+default, `np.random.seed(1234)`, nsteps=800/nburn=200/nwalkers=16
+(~3 s): **posterior median B_p = 0.0205, 5–95% CI [0.0177, 0.0240]** —
+truth inside, median inside its own CI, both prior edges (0.004/0.05)
+comfortably excluded. (At 2% assumed error the posterior is much
+broader — CI [0.0053, 0.0429], still edge-free — which is why the test
+uses 0.5%; worth remembering for M4's fix-or-free call: with realistic
+noise B_p is only weakly constrained by a single spectrum.)
+
+**Tested.** Ten new tests in `bing/tests/test_evaluate_robust.py`
+(new "M3 task 3" section at test_evaluate_robust.py:1409; module
+docstring extended): `test_init_mcmc_fit_Bp_adds_dimension` (:1426),
+`test_prior_bounds_fit_Bp_appends_slot` (:1452),
+`test_init_walkers_clips_Bp_tail_into_prior` (:1472),
+`test_fit_Bp_roundtrip_recovers_Bp` (:1498, Gates 1+2),
+`test_chain_param_names_and_calc_stats_end_in_B_p` (:1551, Gate 3),
+`test_corner_plot_B_p_column_linear_label` (:1575, labels read back off
+rendered axes per test_plotting's recipe),
+`test_reconstruct_from_chains_fit_Bp_shapes_and_tail_flows` (:1609,
+Gate 4 — IOPs exactly equal fixed-vs-free, Rrs to float32 ulp, see
+Q6ii), `test_fit_one_gordon_fit_Bp_raises_at_setup` (:1660) and
+`test_chisq_fit_gordon_fit_Bp_raises_at_setup` (:1680) (Gate 5, with
+run_emcee/curve_fit bombed to prove "at setup"), and
+`test_fit_Bp_false_matches_provisional_pin` (:1696, Gate 6 via Q5's
+provisional pin). Full suite in `ocean14`: **260 passed, 2 skipped,
+2 failed** vs task 2's 250/2/2 — +10 for exactly the ten new tests,
+and the 2 failures are the same pre-existing `test_l23_inelastic.py`
+missing-fixture failures (M0/Q10), not a regression. Also smoke-checked
+the `l23`/`io`/`plotting` imports and new signatures live (the suite
+does not import l23's heavy deps).
+
+**Next.** Task 4, the explainer notebook `nb/RT/rob_rt_coding_4.ipynb`:
+the synthetic round-trip with the corner plot's `B_p` column (pass
+`rt_dict` to `plotting.corner_plot`, and note `thin_burn_chains`/
+`corner_plot` both hard-code a 7000-step burn — the notebook needs
+nsteps comfortably above that, or its own flattening as the round-trip
+test does), plus the why-linear-space section. Q2 remains the one open
+JXP call (nothing in task 4 blocks on it); M2 Q5 remains open at the
+M2 level, with Q5's provisional pin covering M3's Gate 6 meanwhile.

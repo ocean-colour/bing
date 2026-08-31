@@ -54,7 +54,7 @@ from bing import evaluate
 from IPython import embed
 
 # ############################################################
-def log_param_mask(models:list):
+def log_param_mask(models:list, rt_dict:dict=None):
     """
     Which fitted parameters are log10 amplitudes, for display purposes.
 
@@ -64,16 +64,27 @@ def log_param_mask(models:list):
     which values to exponentiate before printing and which axis labels
     to wrap in log10(...).
 
+    When ``rt_dict['fit_Bp']`` is True (M3 task 3, design §3.3) the
+    fitted vector carries a trailing B_p element, whose entry here is
+    **False**: B_p is a *linear-space* ratio (like the slopes), a
+    deliberate plan choice among the log10 amplitudes -- it must be
+    neither exponentiated nor log10-labelled.
+
     Parameters
     ----------
     models : list
         One or more model objects, in parameter order (typically
         [a_model, bb_model]).  A bare model is also accepted.
+    rt_dict : dict, optional
+        Radiative transfer configuration. Only 'fit_Bp' (default False)
+        is consulted; None is the fixed-B_p default (mask over the model
+        parameters only, exactly as before).
 
     Returns
     -------
     list of bool
-        One entry per parameter, concatenated across the models.
+        One entry per parameter, concatenated across the models, plus a
+        trailing False for B_p when rt_dict['fit_Bp'] is True.
     """
     if not isinstance(models, (list, tuple)):
         models = [models]
@@ -84,6 +95,10 @@ def log_param_mask(models:list):
             mask += [True]*model.nparam
         else:
             mask += list(declared)
+    # Free B_p rides as the trailing element of the fitted vector and is
+    # linear-space by construction (its prior flavor is 'uniform').
+    if rt_dict is not None and rt_dict.get('fit_Bp', False):
+        mask.append(False)
     return mask
 
 
@@ -100,7 +115,8 @@ def show_fits(models:list, inputs:np.ndarray, rt_dict:dict,
              perc:tuple=(5,95),
              log_Rrs:bool=True,
              show:bool=False,
-             log_abb:bool=False):
+             log_abb:bool=False,
+             geom=None):
     """
     Create multi-panel figure showing Rrs, absorption, and backscattering fits.
 
@@ -157,6 +173,11 @@ def show_fits(models:list, inputs:np.ndarray, rt_dict:dict,
         Default is False.
     show : bool, optional
         Display the figure interactively. Default is False.
+    geom : bing.rt.geometry.ObsGeometry, optional
+        Fixed per-pixel viewing/illumination geometry, forwarded to
+        evaluate.reconstruct_from_chains. Required whenever
+        rt_dict['rt_backend'] selects a robust backend; ignored by the
+        default Gordon backend.
 
     Returns
     -------
@@ -191,7 +212,7 @@ def show_fits(models:list, inputs:np.ndarray, rt_dict:dict,
     else:
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\
             model_Rrs, sigRs = evaluate.reconstruct_from_chains(
-            models, chains, rt_dict, perc=perc)
+            models, chains, rt_dict, perc=perc, geom=geom)
         # Generate params just in case
         params = np.median(chains, axis=[0,1])
         #embed(header='show_fit 70')
@@ -443,7 +464,8 @@ def show_anw_fits(models:list, prep_chains:np.ndarray,
 
 def corner_plot(chains, models:list=None,
            outfile:str=None,
-           show:bool=True, show_log:bool=True):
+           show:bool=True, show_log:bool=True,
+           rt_dict:dict=None):
     """
     Create corner plot showing MCMC posterior distributions.
 
@@ -454,7 +476,9 @@ def corner_plot(chains, models:list=None,
     Parameters
     ----------
     chains : np.ndarray
-        MCMC chains with shape (nsteps, nwalkers, nparam).
+        MCMC chains with shape (nsteps, nwalkers, nparam). Under
+        ``rt_dict['fit_Bp']`` (M3 task 3, design §3.3) nparam includes
+        the trailing B_p column.
     models : list, optional
         List of two model objects for parameter naming. If None, generic
         labels are used.
@@ -465,6 +489,12 @@ def corner_plot(chains, models:list=None,
     show_log : bool, optional
         Show parameters in log10 space (as fitted). If False, converts
         to linear space. Default is True.
+    rt_dict : dict, optional
+        Radiative transfer configuration. Only 'fit_Bp' (default False)
+        is consulted: when True, the trailing chain column is labeled
+        ``'B_p'`` and treated as linear-space (never log10-wrapped or
+        exponentiated -- its ``log_params`` semantics are False). None
+        is the fixed-B_p default, exactly the pre-M3 behavior.
 
     Returns
     -------
@@ -486,11 +516,15 @@ def corner_plot(chains, models:list=None,
     coeff = chains[burn::thin, :, :].reshape(-1, chains.shape[-1])
 
     # Which columns are log10 amplitudes?  Slopes/exponents are linear,
-    # so they must be neither exponentiated nor log10-labelled.
+    # so they must be neither exponentiated nor log10-labelled -- and so
+    # is a free B_p tail (rt_dict['fit_Bp']; log_param_mask appends its
+    # False entry).
     if models is not None:
-        is_log = log_param_mask(models)
+        is_log = log_param_mask(models, rt_dict=rt_dict)
     else:
         is_log = [True]*coeff.shape[-1]
+        if rt_dict is not None and rt_dict.get('fit_Bp', False):
+            is_log[-1] = False
 
     if not show_log:
         coeff = coeff.copy()
@@ -502,7 +536,7 @@ def corner_plot(chains, models:list=None,
 
     # Labels
     if models is not None:
-        clbls = models[0].pnames + models[1].pnames
+        clbls = evaluate.chain_param_names(models, rt_dict=rt_dict)
         # Add log 10, but only for the parameters that are in log10
         clbls = [r'$\log_{10}('+f'{clbl}'+r')$' if (kk_log and show_log)
                  else clbl

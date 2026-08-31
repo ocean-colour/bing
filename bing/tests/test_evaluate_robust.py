@@ -81,6 +81,20 @@ rt_dict['Bp_value'] (default 0.01 -- nonzero and inside the prior) only
 under ``fit_Bp``. The chi-squared path deliberately has no in-``fit_func``
 range check -- B_p bounds ride curve_fit's ``bounds`` like every model
 parameter (built in l23.fit_with_LM from the same rt_defs constants).
+
+M3 task 3: the chain bookkeeping (design §3.3) -- ``init_mcmc``'s optional
+``rt_dict`` (+1 ndim under ``fit_Bp``; the 'ndim' key), the
+``prior_bounds``/``init_walkers`` B_p clip slot (from the rt_defs
+constants), the synthetic ``robust_ztt`` round-trip at B_p=0.02 (Gate
+items 1-2: extra chain column, posterior median/CI recover the truth,
+prior edges excluded), ``chain_param_names``/``calc_stats`` names ending
+in 'B_p' (Gate 3), ``reconstruct_from_chains``'s tail strip + backend
+dispatch + Bp forwarding (Gate 4, pinned by task-1-style equivalence),
+corner-plot 'B_p' labeling with ``log_param_mask`` semantics False
+(linear), the fitter-level gordon+``fit_Bp`` setup rejection (Gate 5),
+and Gate 6's fixed-B_p regression against the **provisional** pin
+``files/m3_fixed_bp_pin.npz`` (M2 Q5 never made a real one; see the
+fixture generator's docstring).
 """
 import numpy as np
 
@@ -1390,3 +1404,337 @@ def test_append_Bp_seed_noop_without_fit_Bp():
                     {'Bp_value': 0.02}, {}, None]:
         out = bing_inf.append_Bp_seed(p0, rt_dict)
         assert np.array_equal(out, p0)
+
+
+# ===== M3 task 3: chain bookkeeping (ndim/walkers/bounds/names/recon) =====
+#
+# The bookkeeping that makes a real fit_Bp=True MCMC run first-class
+# (design §3.3): init_mcmc's ndim (+1 under fit_Bp), the
+# prior_bounds/init_walkers B_p clip slot (per M3-Q3 this upgrades an
+# *unclipped* tail column to a clipped one, not a crash fix),
+# reconstruct_from_chains' tail strip + backend dispatch, the 'B_p'
+# naming for calc_stats/corner plots (linear -- log_params False), the
+# fitter-level gordon+fit_Bp setup rejection, and the Gate's synthetic
+# round-trip.  Gate item 6's "identical to an M2-pinned value" is
+# satisfied with a **provisional** pin (files/m3_fixed_bp_pin.npz) --
+# M2 Q5 never produced one; see the fixture generator's docstring and
+# prompt-4 Q&A Q6.
+
+_ROUNDTRIP_BP_TRUE = 0.02
+
+
+def test_init_mcmc_fit_Bp_adds_dimension(threading_setup):
+    """Gate item 2 (setup side): ndim = sum(nparam) + 1 under fit_Bp,
+    nwalkers = max(16, 2*ndim) accounts for it automatically; rt_dict
+    None / fit_Bp False leave both exactly as before."""
+    models = threading_setup['models']
+    nmodel = sum(model.nparam for model in models)
+
+    base = bing_inf.init_mcmc(models, nsteps=30, nburn=10)
+    assert base['ndim'] == nmodel
+    assert base['nwalkers'] == max(16, 2*nmodel)
+
+    fixed = bing_inf.init_mcmc(models, nsteps=30, nburn=10,
+                               rt_dict={'rt_backend': 'robust_ztt',
+                                        'fit_Bp': False})
+    assert fixed['ndim'] == base['ndim']
+    assert fixed['nwalkers'] == base['nwalkers']
+
+    free = bing_inf.init_mcmc(models, nsteps=30, nburn=10,
+                              rt_dict={'rt_backend': 'robust_ztt',
+                                       'fit_Bp': True})
+    assert free['ndim'] == nmodel + 1
+    assert free['nwalkers'] == max(16, 2*(nmodel + 1))
+    # For the standard 5-parameter pair that is still 16 walkers.
+    assert free['nwalkers'] == 16
+
+
+def test_prior_bounds_fit_Bp_appends_slot(threading_setup):
+    """prior_bounds gains the trailing B_p slot under fit_Bp, sourced
+    from the rt_defs constants (the single place the range lives); the
+    model-parameter bounds are untouched, and fit_Bp False/None rt_dicts
+    reproduce the pre-M3 arrays exactly."""
+    models = threading_setup['models']
+    low0, high0 = bing_inf.prior_bounds(models)
+
+    for rt_dict in [None, {}, {'fit_Bp': False}]:
+        low, high = bing_inf.prior_bounds(models, rt_dict=rt_dict)
+        assert np.array_equal(low, low0) and np.array_equal(high, high0)
+
+    low, high = bing_inf.prior_bounds(models, rt_dict={'fit_Bp': True})
+    assert low.size == low0.size + 1 and high.size == high0.size + 1
+    assert np.array_equal(low[:-1], low0)
+    assert np.array_equal(high[:-1], high0)
+    assert low[-1] == rt_defs.BP_PRIOR_PMIN
+    assert high[-1] == rt_defs.BP_PRIOR_PMAX
+
+
+def test_init_walkers_clips_Bp_tail_into_prior(threading_setup):
+    """M3-Q3's upgrade made real: a B_p seed near the lower prior edge
+    (0.0045) with the 1e-3 perturbation floor throws some walkers below
+    BP_PRIOR_PMIN -- without rt_dict they stay there (the pre-M3
+    unclipped-tail behavior), with rt_dict they are clipped into
+    [0.004, 0.05].  The model-parameter columns are identical either
+    way (same seed)."""
+    models = threading_setup['models']
+    p0 = bing_inf.append_Bp_seed(_THREAD_P0,
+                                 {'fit_Bp': True, 'Bp_value': 0.0045})
+
+    np.random.seed(7)
+    unclipped = bing_inf.init_walkers(p0, 200, models=models)
+    np.random.seed(7)
+    clipped = bing_inf.init_walkers(p0, 200, models=models,
+                                    rt_dict={'fit_Bp': True})
+
+    # The floor really pushes walkers out of range -- the clip is not
+    # theoretical -- and the extension pulls exactly those back in.
+    assert (unclipped[:, -1] < rt_defs.BP_PRIOR_PMIN).any()
+    assert (clipped[:, -1] >= rt_defs.BP_PRIOR_PMIN).all()
+    assert (clipped[:, -1] <= rt_defs.BP_PRIOR_PMAX).all()
+    # Model columns are untouched by the tail slot.
+    assert np.array_equal(unclipped[:, :-1], clipped[:, :-1])
+
+
+def test_fit_Bp_roundtrip_recovers_Bp(threading_setup):
+    """Gate items 1 + 2 (chain side): generate Rrs with robust_ztt at a
+    known B_p=0.02, fit with fit_Bp=True (seeded at the 0.01 default) --
+    the chain carries the extra trailing column, the posterior median of
+    B_p lies inside its own 5-95% credible interval, the interval
+    contains the truth and excludes both prior edges (the data, not the
+    prior, constrains the answer).  Deterministic seed; a 0.5% assumed
+    error keeps the posterior decisively narrower than the prior
+    (measured 2026-08-31: median 0.0205, CI [0.0177, 0.0240], ~3 s)."""
+    ts = threading_setup
+    models = ts['models']
+    wave = models[0].wave
+    geom = ObsGeometry(theta_s=30.)
+    rt_dict = dict(ts['rt_dict'], rt_backend='robust_ztt', fit_Bp=True)
+
+    # Synthetic truth: the fixture's model parameters, B_p = 0.02.
+    Rrs = chisq_fit.fit_func(wave, *_THREAD_TRUTH, _ROUNDTRIP_BP_TRUE,
+                             models=models, rt_dict=rt_dict, geom=geom)
+    varRrs = (0.005*Rrs)**2
+
+    nsteps, nburn = 800, 200
+    pdict = bing_inf.init_mcmc(models, nsteps=nsteps, nburn=nburn,
+                               rt_dict=rt_dict)
+    pdict['Chl'] = np.array([1.0])
+    pdict['Y'] = None
+    p0 = bing_inf.append_Bp_seed(_THREAD_P0, rt_dict)  # seeds at 0.01
+
+    np.random.seed(1234)
+    chains, idx = bing_inf.fit_one((Rrs, varRrs, p0, 0, geom),
+                                   models=models, pdict=pdict,
+                                   chains_only=True, rt_dict=rt_dict)
+
+    # Gate item 2: the extra trailing column, at the bookkept ndim.
+    nmodel = sum(model.nparam for model in models)
+    assert pdict['ndim'] == nmodel + 1
+    assert chains.shape == (nsteps, pdict['nwalkers'], nmodel + 1)
+    assert np.all(np.isfinite(chains))
+
+    # Gate item 1, on the flattened post-burn B_p column.
+    Bp_col = chains[nburn:, :, -1].ravel()
+    med = np.median(Bp_col)
+    p5, p95 = np.percentile(Bp_col, [5, 95])
+    assert p5 <= med <= p95                       # the Gate's literal check
+    assert p5 <= _ROUNDTRIP_BP_TRUE <= p95        # truth recovered
+    assert abs(med - _ROUNDTRIP_BP_TRUE) < 0.005  # ... and reasonably well
+    assert p5 > rt_defs.BP_PRIOR_PMIN             # prior edges excluded:
+    assert p95 < rt_defs.BP_PRIOR_PMAX            # the data did the work
+    # Every sample obeyed the B_p prior (log_prob's -inf gate + the
+    # init_walkers clip).
+    assert Bp_col.min() >= rt_defs.BP_PRIOR_PMIN
+    assert Bp_col.max() <= rt_defs.BP_PRIOR_PMAX
+
+
+def test_chain_param_names_and_calc_stats_end_in_B_p(threading_setup):
+    """Gate item 3: the fitted-vector names gain the trailing 'B_p'
+    under fit_Bp (and only then), and calc_stats carries them through
+    with one statistic per chain column."""
+    models = threading_setup['models']
+    pnames = list(models[0].pnames) + list(models[1].pnames)
+
+    for rt_dict in [None, {}, {'fit_Bp': False}]:
+        assert evaluate.chain_param_names(models, rt_dict=rt_dict) == pnames
+
+    names = evaluate.chain_param_names(models, rt_dict={'fit_Bp': True})
+    assert names == pnames + ['B_p']
+
+    # Through calc_stats on a fit_Bp-shaped chain (its internal
+    # thin_burn_chains burns 7000 steps).
+    rng = np.random.default_rng(3)
+    truth = np.append(_THREAD_TRUTH, 0.02)
+    chains = truth + 0.001*rng.standard_normal((7100, 4, truth.size))
+    stats = evaluate.calc_stats(chains, names=names)
+    assert stats['names'][-1] == 'B_p'
+    assert stats['med'].size == truth.size
+    assert abs(stats['med'][-1] - 0.02) < 0.001
+
+
+def test_corner_plot_B_p_column_linear_label(threading_setup):
+    """Corner-plot conventions for the extra column: log_param_mask
+    appends False (B_p is linear-space -- the debug-priors trap, avoided
+    deliberately), so the 'B_p' label is never log10-wrapped and the
+    column is never exponentiated by show_log=False."""
+    import matplotlib
+    matplotlib.use('Agg', force=True)
+    from bing import plotting as bing_plot
+
+    models = threading_setup['models']
+    rt_dict = {'rt_backend': 'robust_ztt', 'fit_Bp': True}
+
+    # The mask itself: model entries unchanged, trailing False.
+    assert bing_plot.log_param_mask(models, rt_dict=rt_dict) == \
+        bing_plot.log_param_mask(models) + [False]
+    assert bing_plot.log_param_mask(models, rt_dict={'fit_Bp': False}) == \
+        bing_plot.log_param_mask(models)
+
+    # Rendered labels, read back off the axes (test_plotting's recipe).
+    rng = np.random.default_rng(11)
+    truth = np.append(_THREAD_TRUTH, 0.02)
+    chains = truth + 0.01*rng.standard_normal((7200, 16, truth.size))
+    chains[..., -1] = np.clip(chains[..., -1], 0.004, 0.05)
+    n = truth.size
+    fig = bing_plot.corner_plot(chains, models=models, show=False,
+                                rt_dict=rt_dict)
+    axes = np.array(fig.axes).reshape(n, n)
+    labels = [axes[n-1, kk].get_xlabel() for kk in range(n)]
+    assert labels[-1] == 'B_p'                     # linear: no log10(...)
+    assert r'\log_{10}' in labels[0]               # Adg still log-labelled
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+
+
+def test_reconstruct_from_chains_fit_Bp_shapes_and_tail_flows(threading_setup):
+    """Gate item 4: reconstruct_from_chains on a fit_Bp chain returns
+    correctly-shaped, finite IOPs/Rrs -- the trailing B_p column is
+    stripped before the model split and forwarded as the adapter's Bp.
+    Pinned by the M3 task-1 equivalence style: a chain with a constant
+    B_p tail of 0.02 under fit_Bp=True reconstructs like the same chain
+    without the tail under Bp_value=0.02 -- exactly for the IOPs (which
+    never see B_p), and to float32 ulp for Rrs (the scalar-B_p and
+    per-sample-B_p jit traces are different XLA programs, so exact
+    bitwise equality is not guaranteed there) -- and not like the 0.01
+    default: the tail really flowed."""
+    ts = threading_setup
+    models = ts['models']
+    nwave = len(models[0].wave)
+    geom = ObsGeometry(theta_s=30.)
+    base = dict(ts['rt_dict'], rt_backend='robust_ztt')
+
+    # A synthetic chain long enough for the internal 7000-step burn.
+    rng = np.random.default_rng(5)
+    model_cols = (_THREAD_TRUTH
+                  + 0.005*rng.standard_normal((7010, 4, _THREAD_TRUTH.size)))
+    tail = np.full((7010, 4, 1), 0.02)
+    chains_tailed = np.concatenate([model_cols, tail], axis=-1)
+
+    out = evaluate.reconstruct_from_chains(
+        chains=chains_tailed, models=models,
+        rt_dict=dict(base, fit_Bp=True), geom=geom)
+    assert len(out) == 8
+    for arr in out:
+        assert np.shape(arr) == (nwave,)
+        assert np.all(np.isfinite(arr))
+
+    out_fixed = evaluate.reconstruct_from_chains(
+        models, model_cols, dict(base, fit_Bp=False, Bp_value=0.02),
+        geom=geom)
+    out_default = evaluate.reconstruct_from_chains(
+        models, model_cols, dict(base, fit_Bp=False), geom=geom)  # 0.01
+
+    # IOP outputs (a/bb medians and bands, indices 0-5) never see B_p:
+    # exactly equal.  Rrs/sigRs (indices 6-7) do -- equal to float32 ulp.
+    for free, fixed in zip(out[:6], out_fixed[:6]):
+        assert np.array_equal(free, fixed)
+    for free, fixed in zip(out[6:], out_fixed[6:]):
+        np.testing.assert_allclose(free, fixed, rtol=1e-5)
+    # ... and the 0.01 default gives genuinely different Rrs (the tail
+    # flowed), while the IOPs stay put.
+    assert not np.allclose(out[6], out_default[6])
+    assert np.array_equal(out[0], out_default[0])   # a median unchanged
+    assert np.array_equal(out[1], out_default[1])   # bb median unchanged
+
+
+def test_fit_one_gordon_fit_Bp_raises_at_setup(threading_setup, monkeypatch):
+    """Gate item 5 (MCMC side): fit_Bp=True + rt_backend='gordon' raises
+    validate_rt_dict's configuration error at fit setup, before any
+    sampling work -- run_emcee is bombed to prove it is never reached.
+    (validate_rt_dict's own unit pin is
+    test_validate_rt_dict_rejects_fit_Bp_with_gordon, M0.)"""
+    ts = threading_setup
+
+    def bomb(*args, **kwargs):
+        raise AssertionError('run_emcee must not be reached')
+    monkeypatch.setattr(bing_inf, 'run_emcee', bomb)
+
+    rt_dict = dict(ts['rt_dict'], rt_backend='gordon', fit_Bp=True)
+    p0 = bing_inf.append_Bp_seed(_THREAD_P0, rt_dict)
+    with pytest.raises(ValueError, match='fit_Bp'):
+        bing_inf.fit_one((ts['Rrs'], ts['varRrs'], p0, 0),
+                         models=ts['models'], pdict=ts['pdict'],
+                         chains_only=True, rt_dict=rt_dict)
+
+
+def test_chisq_fit_gordon_fit_Bp_raises_at_setup(threading_setup, monkeypatch):
+    """Gate item 5 (chi-squared side): the same configuration error
+    through chisq_fit.fit, before any optimizer work."""
+    ts = threading_setup
+
+    def bomb(*args, **kwargs):
+        raise AssertionError('curve_fit must not be reached')
+    monkeypatch.setattr(chisq_fit, 'curve_fit', bomb)
+
+    rt_dict = dict(ts['rt_dict'], rt_backend='gordon', fit_Bp=True)
+    p0 = bing_inf.append_Bp_seed(_THREAD_P0, rt_dict)
+    with pytest.raises(ValueError, match='fit_Bp'):
+        chisq_fit.fit((ts['Rrs'], ts['varRrs'], p0, 0),
+                      ts['models'], rt_dict)
+
+
+def test_fit_Bp_false_matches_provisional_pin(threading_setup):
+    """Gate item 6, via the **provisional** pin (see
+    files/gen_m3_fixed_bp_pin.py): fixed-B_p (fit_Bp False) fitter
+    results -- chisq_fit.fit params and seeded fit_one chains, gordon
+    and robust_ztt -- match the values captured live under
+    task-3-complete code on 2026-08-31.  M2 Q5 (a true pre-M3 pin) is
+    still open; this fixture stands in for it and freezes the dispatch
+    behavior the M3 task-1 byte-identity tests verified against M2, so
+    any *future* change to the fixed-B_p path fails here.  If this test
+    ever fails on a new environment (BLAS/emcee version) while
+    test_fit_Bp_false_or_absent_byte_identical_to_m2 stays green,
+    regenerate the fixture rather than suspecting a regression."""
+    import os
+    ts = threading_setup
+    models = ts['models']
+    pin = np.load(os.path.join(os.path.dirname(__file__), 'files',
+                               'm3_fixed_bp_pin.npz'))
+
+    # The fixture recipe is threading_setup's: same truth, p0, and
+    # observation (guards against the two drifting apart).
+    np.testing.assert_allclose(ts['Rrs'], pin['Rrs'], rtol=0, atol=0)
+    assert np.array_equal(pin['truth'], _THREAD_TRUTH)
+    assert np.array_equal(pin['p0'], _THREAD_P0)
+
+    geom = ObsGeometry(theta_s=30.)
+    for backend in ('gordon', 'robust_ztt'):
+        rt = dict(ts['rt_dict'], rt_backend=backend)   # fit_Bp False
+        items = ((pin['Rrs'], pin['varRrs'], _THREAD_P0.copy(), 0)
+                 if backend == 'gordon' else
+                 (pin['Rrs'], pin['varRrs'], _THREAD_P0.copy(), 0, geom))
+
+        ans, _, _ = chisq_fit.fit(items, models, rt)
+        np.testing.assert_allclose(ans, pin[f'chisq_{backend}'],
+                                   rtol=1e-6, atol=1e-12)
+
+        pdict = bing_inf.init_mcmc(models, nsteps=int(pin['nsteps']),
+                                   nburn=int(pin['nburn']), rt_dict=rt)
+        pdict['Chl'] = np.array([1.0])
+        pdict['Y'] = None
+        np.random.seed(int(pin['seed']))
+        chains, _ = bing_inf.fit_one(items, models=models, pdict=pdict,
+                                     chains_only=True, rt_dict=rt)
+        assert chains.shape == pin[f'chain_{backend}'].shape
+        np.testing.assert_allclose(chains, pin[f'chain_{backend}'],
+                                   rtol=1e-6, atol=1e-12)

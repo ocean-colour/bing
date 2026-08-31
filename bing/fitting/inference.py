@@ -199,13 +199,16 @@ def log_prob(params, models:list, Rrs:np.ndarray,
     else:
         return prob + a_prior + b_prior + Bp_prior
 
-def init_mcmc(models:list, nsteps:int=10000, nburn:int=1000):
+def init_mcmc(models:list, nsteps:int=10000, nburn:int=1000,
+              rt_dict:dict=None):
     """
     Initialize MCMC configuration dictionary.
 
     Creates a configuration dictionary with parameters needed for emcee
     ensemble sampling. The number of walkers is automatically set based
-    on the total number of model parameters.
+    on the total number of parameters -- the model parameters, plus one
+    for the free B_p tail when ``rt_dict['fit_Bp']`` is True (M3 task 3,
+    design §3.3).
 
     Parameters
     ----------
@@ -216,11 +219,19 @@ def init_mcmc(models:list, nsteps:int=10000, nburn:int=1000):
         Number of MCMC steps to run after burn-in. Default is 10000.
     nburn : int, optional
         Number of burn-in steps (discarded). Default is 1000.
+    rt_dict : dict, optional
+        Radiative transfer configuration. Only 'fit_Bp' (default False)
+        is consulted: when True, ndim -- and therefore the walker count
+        -- accounts for the extra trailing B_p dimension of the sampled
+        vector ``[a_params..., bb_params..., B_p]``. None (the default)
+        is the fixed-B_p case and leaves both exactly as before.
 
     Returns
     -------
     dict
         MCMC configuration dictionary with keys:
+        - 'ndim' : int - Total sampled dimensions (sum of model nparam,
+          +1 when rt_dict['fit_Bp'] is True)
         - 'nwalkers' : int - Number of ensemble walkers (max(16, 2×ndim))
         - 'nsteps' : int - Steps after burn-in
         - 'nburn' : int - Burn-in steps
@@ -232,7 +243,8 @@ def init_mcmc(models:list, nsteps:int=10000, nburn:int=1000):
     -----
     The number of walkers must be at least 2×ndim for emcee. We use
     max(16, 2×ndim) to ensure adequate sampling even for low-dimensional
-    problems.
+    problems. For the standard 5-parameter models, fit_Bp takes ndim
+    5 -> 6 and nwalkers stays at 16.
 
     Examples
     --------
@@ -241,7 +253,11 @@ def init_mcmc(models:list, nsteps:int=10000, nburn:int=1000):
     16
     """
     pdict = {}
-    ndim = np.sum([model.nparam for model in models])
+    ndim = int(np.sum([model.nparam for model in models]))
+    # Free B_p (M3, design §3.3): one extra trailing dimension.
+    if rt_dict is not None and rt_dict.get('fit_Bp', False):
+        ndim += 1
+    pdict['ndim'] = ndim
     pdict['nwalkers'] = max(16,ndim*2)
     pdict['nsteps'] = nsteps
     pdict['nburn'] = nburn
@@ -448,7 +464,7 @@ def append_Bp_seed(p0, rt_dict:dict):
     return np.asarray(p0)
 
 
-def prior_bounds(models:list):
+def prior_bounds(models:list, rt_dict:dict=None):
     """
     Lower/upper parameter bounds taken from the models' priors.
 
@@ -456,15 +472,28 @@ def prior_bounds(models:list):
     or a prior flavor that has no pmin/pmax (e.g. gaussian) -- come back
     as -inf/+inf so they are simply left alone by any clipping.
 
+    When ``rt_dict['fit_Bp']`` is True (M3 task 3, design §3.3) the
+    sampled vector carries a trailing B_p element, so the bounds gain a
+    matching trailing slot: BP_PRIOR's own
+    [rt_defs.BP_PRIOR_PMIN, rt_defs.BP_PRIOR_PMAX] = [0.004, 0.05] --
+    the same single source of truth log_prob's B_p prior and
+    l23.fit_with_LM's curve_fit bounds use, so sampling, clipping, and
+    optimization can never disagree on the range.
+
     Parameters
     ----------
     models : list
         Model objects in parameter order, typically [a_model, bb_model].
+    rt_dict : dict, optional
+        Radiative transfer configuration. Only 'fit_Bp' (default False)
+        is consulted. None (the default) is the fixed-B_p case: bounds
+        for the model parameters only, exactly as before.
 
     Returns
     -------
     tuple of np.ndarray
-        (lower, upper), each of length sum(model.nparam).
+        (lower, upper), each of length sum(model.nparam), plus one when
+        rt_dict['fit_Bp'] is True.
     """
     lows, highs = [], []
     for model in models:
@@ -476,11 +505,17 @@ def prior_bounds(models:list):
                 pmax = getattr(priors.priors[kk], 'pmax', None)
             lows.append(-np.inf if pmin is None else float(pmin))
             highs.append(np.inf if pmax is None else float(pmax))
+    # Free-B_p tail slot (M3 task 3) -- from the defs constants, never a
+    # re-typed literal.
+    if rt_dict is not None and rt_dict.get('fit_Bp', False):
+        lows.append(float(rt_defs.BP_PRIOR_PMIN))
+        highs.append(float(rt_defs.BP_PRIOR_PMAX))
     return np.array(lows), np.array(highs)
 
 
 def init_walkers(p0:np.ndarray, nwalkers:int, models:list=None,
-                 frac:float=1e-2, floor:float=1e-3, rng=None):
+                 frac:float=1e-2, floor:float=1e-3, rng=None,
+                 rt_dict:dict=None):
     """
     Build the initial ball of walker positions for emcee.
 
@@ -521,6 +556,16 @@ def init_walkers(p0:np.ndarray, nwalkers:int, models:list=None,
         Anything providing ``uniform(low, high, size)``. Defaults to the
         legacy ``np.random`` module, so ``np.random.seed`` still governs
         reproducibility (see bing.fitting.l23.batch_fit).
+    rt_dict : dict, optional
+        Radiative transfer configuration, forwarded to prior_bounds.
+        When ``rt_dict['fit_Bp']`` is True (and models is not None) the
+        clip bounds gain the trailing B_p slot
+        ([rt_defs.BP_PRIOR_PMIN, rt_defs.BP_PRIOR_PMAX]), so a tailed p0's
+        B_p column is clipped into its prior like every model parameter
+        -- the perturbation floor (1e-3) is a substantial fraction of
+        the [0.004, 0.05] range, so this clipping is not theoretical.
+        None (the default) leaves any tail column unclipped, the pre-M3
+        behavior.
 
     Returns
     -------
@@ -537,7 +582,7 @@ def init_walkers(p0:np.ndarray, nwalkers:int, models:list=None,
 
     # Keep every walker inside the priors
     if models is not None:
-        low, high = prior_bounds(models)
+        low, high = prior_bounds(models, rt_dict=rt_dict)
         nclip = min(walkers.shape[1], low.size)
         walkers[:, :nclip] = np.clip(walkers[:, :nclip],
                                      low[:nclip], high[:nclip])
@@ -641,10 +686,13 @@ def run_emcee(models:list, Rrs, varRrs, rt_dict,
         # Replicate for nwalkers and perturb into a ball.  The scale is
         # floored and the result clipped into the priors -- see
         # init_walkers for why a purely multiplicative perturbation
-        # silently freezes any parameter seeded at 0.
+        # silently freezes any parameter seeded at 0.  rt_dict rides
+        # along so a fit_Bp p0's trailing B_p column is clipped into its
+        # own prior slot too (M3 task 3).
         ndim = len(p0)
         p0 = init_walkers(p0, nwalkers, models=models,
-                          frac=perturb_frac, floor=perturb_floor)
+                          frac=perturb_frac, floor=perturb_floor,
+                          rt_dict=rt_dict)
 
     # Set up the backend
     # Don't forget to clear it in case the file already exists

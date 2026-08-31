@@ -99,6 +99,40 @@ def calc_stats(chains, names:list=None,
 
     return stats
 
+def chain_param_names(models:list, rt_dict:dict=None):
+    """
+    Parameter names for one fitted vector / chain column each.
+
+    The single place the fitted-vector naming convention lives (M3 task
+    3): the concatenated model ``pnames`` (absorption first, then
+    backscattering), plus a trailing ``'B_p'`` when ``rt_dict['fit_Bp']``
+    is True -- matching the sampled layout
+    ``[a_params..., bb_params..., B_p]`` (design §3.3). Use it wherever
+    chain columns get labeled: `calc_stats` ``names`` (see
+    bing.io.save_fit) and corner-plot labels
+    (bing.plotting.corner_plot). ``'B_p'`` is a *linear-space* parameter
+    (its ``log_params`` semantics are False -- see
+    bing.plotting.log_param_mask), so it is never log10-wrapped.
+
+    Parameters
+    ----------
+    models : list
+        List of two model objects: [absorption_model, backscattering_model].
+    rt_dict : dict, optional
+        Radiative transfer configuration. Only 'fit_Bp' (default False)
+        is consulted; None is the fixed-B_p default.
+
+    Returns
+    -------
+    list of str
+        One name per fitted parameter, ending in ``'B_p'`` when
+        rt_dict['fit_Bp'] is True.
+    """
+    names = list(models[0].pnames) + list(models[1].pnames)
+    if rt_dict is not None and rt_dict.get('fit_Bp', False):
+        names.append('B_p')
+    return names
+
 def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params, 
         rt_dict:dict, debug:bool=False, full_return:bool=False):
     """
@@ -681,7 +715,7 @@ def robust_domain_check(a_model, a_params, bb_model, bb_params,
 
 
 def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
-                            perc=(5,95)):
+                            perc=(5,95), geom=None):
     """
     Reconstruct IOPs and Rrs with uncertainties from MCMC chains.
 
@@ -689,17 +723,37 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
     to compute posterior distributions of IOPs and Rrs, then summarizes with
     median and percentile statistics.
 
+    Dispatches on ``rt_dict['rt_backend']`` exactly like the fitters
+    (inference.log_prob / chisq_fit.fit_func): 'gordon' (also the value
+    when the key is absent) keeps the legacy calc_Rrs_from_models call
+    byte-for-byte unchanged; a robust backend evaluates the same chain
+    through calc_Rrs_from_models_robust (which requires ``geom``). When
+    ``rt_dict['fit_Bp']`` is True (M3 task 3, design §3.3) the chain
+    carries B_p as its trailing column: it is stripped off *before* the
+    aparams/bparams split -- so the model-parameter evaluation and the
+    IOP credible bands are untouched by the extra column -- and forwarded
+    as the adapter's ``Bp``, per-sample (broadcast across wavelength,
+    robust's batched B_p convention; robust.rt.validation uses the same
+    ``(sample, wave)`` layout).
+
     Parameters
     ----------
     models : list
         List of two model objects: [absorption_model, backscattering_model].
     chains : np.ndarray
-        MCMC chains with shape (nsteps, nwalkers, nparam).
+        MCMC chains with shape (nsteps, nwalkers, nparam). Under
+        rt_dict['fit_Bp'], nparam includes the trailing B_p column.
     rt_dict : dict
         Radiative transfer configuration dictionary.
     perc : tuple, optional
         Percentiles for credible interval bounds. Default is (5, 95),
         giving a 90% credible interval.
+    geom : bing.rt.geometry.ObsGeometry, optional
+        Fixed per-pixel viewing/illumination geometry -- the same object
+        the fit itself used. Required (non-None) whenever
+        rt_dict['rt_backend'] selects a robust backend (the adapter
+        raises otherwise; theta_s is never silently defaulted); ignored
+        by the default Gordon backend.
 
     Returns
     -------
@@ -741,18 +795,39 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
     # Burn/thin the chains
     chains = thin_burn_chains(chains)
 
+    # B_p tail strip (M3 task 3, design §3.3): under fit_Bp the chain's
+    # trailing column is the sampled B_p, not a model parameter -- peel
+    # it *before* the aparams/bparams split, exactly as log_prob does.
+    # Broadcast per-sample across wavelength (a read-only view, no copy):
+    # the (nsamples, nwave) layout is robust's own batched-B_p convention
+    # (robust/rt/validation.py) and the one shape all three robust
+    # backends accept.  Bp stays None otherwise (the adapter falls back
+    # to rt_dict['Bp_value'] -- the fixed-B_p case).
+    if rt_dict.get('fit_Bp', False):
+        Bp = np.broadcast_to(chains[:, -1:],
+                             (chains.shape[0], len(models[0].wave)))
+        chains = chains[:, :-1]
+    else:
+        Bp = None
+
     # Split parameters once
     aparams = chains[..., :models[0].nparam]
     bparams = chains[..., models[0].nparam:]
 
     # Forward-model Rrs through the shared helper so the elastic, Raman,
     # G0/Gb, and fluorescence branches stay defined in a single place
-    # (also used by inference.log_prob and chisq_fit.fit_func).
+    # (also used by inference.log_prob and chisq_fit.fit_func) --
+    # dispatched on the RT backend (design §3.4) like the fitters.
     #embed(header='287 of evaluate.py')
-    Rrs, a, bb = calc_Rrs_from_models(models[0], aparams,
-                               models[1], bparams, rt_dict,
-                               full_return=True)
-                               #debug=True)
+    if rt_dict.get('rt_backend', 'gordon') == 'gordon':
+        Rrs, a, bb = calc_Rrs_from_models(models[0], aparams,
+                                   models[1], bparams, rt_dict,
+                                   full_return=True)
+                                   #debug=True)
+    else:
+        Rrs, a, bb = calc_Rrs_from_models_robust(models[0], aparams,
+                                   models[1], bparams, rt_dict,
+                                   geom=geom, Bp=Bp, full_return=True)
 
     # Stats over the Rrs posterior
     sigRs = np.std(Rrs, axis=0)
