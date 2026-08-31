@@ -360,6 +360,39 @@ per-sample-`B_p` jit traces are *different XLA programs*, so the
 fixed-vs-free equivalence holds exactly for the IOPs but only to
 float32 ulp for Rrs (rtol 1e-5 in the Gate-4 test).
 
+**Q7 (task 4, Claude → JXP, resolved — no answer needed; three measured
+findings that matter for M4's fix-or-free call and for anyone rerunning
+the Gate test at higher nsteps).** The notebook's own long-chain fits
+(nsteps=8000/nburn=1000/16 walkers — nsteps forced above `corner_plot`'s
+hard-coded 7000-step burn, as the task-3 log predicted) exposed three
+things the 800-step Gate test could not see. (i) **Noise, not the
+likelihood surface, dominates the `B_p` interval**: on the Gate recipe,
+noiseless data (0.5% assumed error) gives CI [0.0181, 0.0263] — task 3's
+800-step measurement ([0.0177, 0.0240]) confirmed at 10x the chain
+length — while a *single* seeded 0.5% noise draw more than doubles the
+width to [0.0058, 0.0245] (median still 0.0202). (ii) **The noisy CI's
+low edge is one stuck emcee walker, not posterior structure**: walker 6
+sits pinned at `B_p`≈0.006 with compensating shifts in every other
+parameter at log-prob −1288 vs the main mode's −37 (so not a genuine
+second mode), holding exactly 1/16 = 6.25% of the samples — which is why
+the 5th percentile lands inside it; the main 15-walker mode gives
+[0.0175, 0.0246], and rerunning at nsteps=12,000 moves the full-sample
+CI by <0.001 ([0.0058, 0.0254] — the walker stays stuck). Consequence
+worth remembering: with 16 walkers, any 5th-percentile assertion is one
+stuck walker away from moving — the Gate test passes at nsteps=800
+(walkers haven't wandered yet), but if it is ever rerun at long nsteps
+its `p5 > BP_PRIOR_PMIN` margin will narrow for exactly this reason.
+(iii) **Clear water constrains `B_p` weakly even at optimistic noise**:
+the identical round trip built on L23 idx=170's own initial-guess vector
+(truth `B_p`=0.02, 0.5% noise, `Bnw`≈−3.5 — ~30x lower bb than the Gate
+recipe) gives CI [0.0160, 0.0437] — 60% of the prior range, with samples
+brushing the 0.05 prior edge (max sample 0.0500, the clip boundary).
+Together with task 3's 2%-noise finding (prior nearly filled), the
+notebook's recommendation for M4 is `fit_Bp=False` as the default for
+single-spectrum inelastic fits, reserving the free tail for bb-bright
+water or multi-spectrum constraints. No answer needed; recorded here
+because these numbers are the empirical basis for that M4 default.
+
 ## Next
 
 → `rob_rt_prompt_5.md` (M4: Ed wiring and inelastic terms through `robust`).
@@ -690,3 +723,166 @@ nsteps comfortably above that, or its own flattening as the round-trip
 test does), plus the why-linear-space section. Q2 remains the one open
 JXP call (nothing in task 4 blocks on it); M2 Q5 remains open at the
 M2 level, with Q5's provisional pin covering M3's Gate 6 meanwhile.
+
+### 2026-08-31 (M3 task 4 — round-trip notebook)
+
+**Read before coding.** This doc in full (Q1–Q6, the task-3 log's two
+notebook-specific warnings: pass `rt_dict` to `corner_plot`, and clear
+the hard-coded 7000-step burn); the `plot-bing-fit` and `debug-priors`
+skills; the Gate test `test_fit_Bp_roundtrip_recovers_Bp` and the
+`threading_setup` fixture (test_evaluate_robust.py:752-778, 1498-1548 —
+the recipe the notebook reuses); `plotting.corner_plot`/`show_fits`/
+`log_param_mask`, `evaluate.reconstruct_from_chains`/`thin_burn_chains`/
+`chain_param_names`, `inference.init_mcmc`/`append_Bp_seed`/`BP_PRIOR`,
+`l23.prep_one_l23`/`load_one_l23`, `rt_defs.rt_dict_from_p`; and
+M1/M2's notebooks (`rob_rt_coding_2/3.ipynb`) for house style. One
+style decision, explained in the notebook's own Setup cell: the
+*primary* round trip uses the Gate test's synthetic recipe (truth
+`[-1.0, 0.015, -0.7, -2.0, 1.0]` + `B_p=0.02`, 61-band 400–700 nm
+grid, θs=30°) rather than M1/M2's L23 idx=170 anchor, because a round
+trip needs a parameter-space truth and bb bright enough to constrain
+`B_p`; the L23 spectrum returns in section 6 where the clear-water
+contrast is itself the point.
+
+**Built and executed** `nb/RT/rob_rt_coding_4.ipynb` (27 cells, 11 code;
+executed top-to-bottom in `ocean14` via
+`jupyter nbconvert --to notebook --execute --inplace`, ~80 s):
+
+- **Setup + §1–2**: models/`rt_dict` construction with `fit_Bp=True`
+  (`rt_backend='robust_ztt'`); truth Rrs generated through
+  `chisq_fit.fit_func` with the *tailed* truth vector (the same forward
+  call the sampler uses), one seeded 0.5% multiplicative Gaussian noise
+  draw added (`default_rng(1234)`), `varRrs=(0.005·Rrs_true)²`; the
+  fit: `init_mcmc(..., rt_dict=...)` books ndim 5→6 / 16 walkers,
+  `append_Bp_seed` tails p0 at the 0.01 default, seeded `fit_one`
+  (`np.random.seed(1234)`, nsteps=8000/nburn=1000 — nsteps chosen to
+  clear the 7000-step corner-plot burn) returns finite (8000, 16, 6)
+  chains in ~25 s.
+- **§3 (the round-trip numbers, all freshly measured by the notebook's
+  own run)**: flattened with the same burn=7000 the corner plot uses
+  (16,000 samples) — **B_p posterior median 0.0202 vs truth 0.02, 5–95%
+  CI [0.0058, 0.0245]**; truth inside, both prior edges (0.004/0.05)
+  excluded, every sample inside the prior (range [0.0057, 0.0312]),
+  χ²ν(median model)=1.40, rough τ(B_p)≈167 steps (~42τ discarded). A
+  `B_p`-marginal figure shows posterior vs truth vs prior edges.
+  Two companion measurements: the **noiseless** rerun (identical
+  otherwise) gives median 0.0211, CI [0.0181, 0.0263] — task 3's
+  800-step numbers confirmed at 10x chain length — and a
+  `diagnose-mcmc` per-walker check shows the noisy CI's odd low edge is
+  **one stuck walker** (walker 6 at B_p≈0.006, log-prob −1288 vs the
+  main mode's −37, exactly 1/16=6.25% of samples; main mode
+  [0.0175, 0.0246]). See Q7 for all three findings and the M4
+  implication.
+- **§4**: `plotting.corner_plot(chains, models=models, rt_dict=rt_free)`
+  — the full 6-parameter posterior with the `B_p` column labeled plain
+  `B_p` (linear) among `log10(...)` amplitude labels and linear slopes;
+  blue 5/95 lines match §3's printed CI.
+- **§5**: `show_fits` three-panel on the free-`B_p` robust chain
+  (`geom` passed through; truth overlays evaluated from the models at
+  truth) — exercising task 3's `reconstruct_from_chains` robust
+  dispatch + tail strip + `(nsamples, nwave)` `Bp` broadcast live
+  (χ²ν=1.32 shown on the Rrs panel).
+- **§6**: the identical round trip on L23 idx=170's own
+  `prep_one_l23` init-guess vector as truth (+`B_p=0.02`, same noise
+  and sampler settings): median 0.0257, **CI [0.0160, 0.0437] — 60% of
+  the prior range**, samples brushing the 0.05 edge (max 0.0500). The
+  clear-water weak-constraint finding that feeds M4's fix-or-free call.
+- **§7 + bottom line**: the why-linear-space section — the live-printed
+  prior table (log_uniform [-6,5] amplitudes vs uniform slopes vs
+  uniform [0.004, 0.05] `B_p`; 10^11 vs 12.5x dynamic range), the
+  `debug-priors` log10-vs-linear trap and why the
+  `flavor.startswith('log')` p0 loop makes the linear `B_p` consistent
+  by construction, and a "Measured bottom line" summary of M3 in the
+  notebook's own numbers. Q2's `robust_baseline`+`fit_Bp` combination
+  is not touched by the notebook (still JXP's open call).
+
+**Output verification (the recurring-defect check, done deliberately).**
+Smoke-tested the exact fit recipe standalone in `ocean14` *before* the
+notebook run (three variants: noisy, noiseless, L23 — plus a
+12,000-step convergence check and the per-walker stuck-walker
+diagnosis, all in scratch scripts); then, after `nbconvert --execute`,
+re-read the saved .ipynb and confirmed execution_counts 1–11 sequential
+with no nulls, every code cell carrying real stream/image outputs
+(three image/png figures present), `nbformat.validate` clean; then
+re-diffed **every** numeric claim in the markdown against the printed
+outputs. That re-diff caught three prose errors, fixed by
+markdown-only patches (no outputs invalidated): "Bnw pinned to a
+fraction of a percent" (the table shows ~4% full-sample), "median 30%
+above truth" (0.0257/0.02 = ~29%), "~26 s" (cell prints 25.3 s) — plus
+one physics-claim fix, `b_bnw=10^-2` quoted at 400 nm when the `Pow`
+pivot is 600 nm (verified in bbnw.py:608).
+
+**Next.** Task 5: update `rob_rt_prompt_5.md` (M4) with what M3
+established — the chain-shape/bookkeeping contracts M4's tests will
+reuse (tailed `[a..., bb..., B_p]` layout; `init_mcmc`'s
+`pdict['ndim']`; `chain_param_names`/`log_param_mask` trailing entries;
+`reconstruct_from_chains`' tail strip + `(nsamples, nwave)` broadcast;
+the `BP_PRIOR` constants), and the round-trip's constraint verdict for
+the fix-or-free decision: `B_p` is recovered decisively on bb-bright
+synthetic data at 0.5% noise (median 0.0202 vs truth 0.02) but is
+weakly identified on a real clear-water spectrum (CI spanning 60% of
+the prior at 0.5% noise; prior nearly filled at 2%) — i.e. M4's
+inelastic fits should default to `fit_Bp=False` (Q7). Q2 and M2 Q5
+remain the open JXP calls.
+
+### 2026-08-31 (M3 task 5 — handing off to `rob_rt_prompt_5.md`)
+
+**M3 is now fully complete (all 5 tasks done).** This task updated
+`rob_rt_prompt_5.md` (M4) only — no source, test, or notebook changes.
+
+**Read before writing.** This doc in full (Q1–Q7, all four task logs);
+`rob_rt_prompt_5.md` in full (M4's Tasks/Gate are JXP's plan — its scope
+is the Ed/Raman/fluorescence seam and nowhere mentions `fit_Bp`, which
+is exactly why the hand-off facts go in its Context, not its Tasks);
+and, per this series' recurring citation-drift lesson, every line number
+written into the new Context bullets was re-verified against live source
+first (`BP_PRIOR` inference.py:64, `init_mcmc` :202, `append_Bp_seed`
+:427, `prior_bounds` :467, `init_walkers` :516; `BP_PRIOR_PMIN`/`PMAX`
+defs.py:31-32; `chain_param_names` evaluate.py:102,
+`reconstruct_from_chains` :717 with the tail strip/broadcast at
+:806-811; `log_param_mask`/`show_fits`/`corner_plot`
+plotting.py:57/105/465 — all matched the task-3 log's post-change
+numbers, no drift since). The full-suite baseline was re-measured live
+rather than assumed: `pytest bing/tests/ -q` in `ocean14` gives
+**260 passed, 2 skipped, 2 failed** in ~2.5 min — identical to the
+task-3 count (tasks 4–5 added no tests), the 2 failures the same
+pre-existing `test_l23_inelastic.py` missing-fixture pair (M0/Q10).
+
+**What `rob_rt_prompt_5.md` got** (Context section's "Previous prompt"
+bullet expanded into four sub-bullets, matching the terse citation style
+the M2→M3 hand-off used in this doc's own Context; plus the same
+one-line Working-agreements branch correction `_2`/`_3`/`_4` carry —
+`rob_rt`, not `rob-rt-backend`; Tasks/Gate/Q&A/Logs untouched):
+
+1. **The fix-or-free verdict (Q7)**, with the measured numbers
+   (synthetic median 0.0202 vs truth 0.02; noiseless [0.0181, 0.0263]
+   vs one 0.5%-noise draw's [0.0058, 0.0245]; L23 idx=170's
+   [0.0160, 0.0437] = 60% of the prior) and the explicit
+   recommendation that M4 task 4's robust-vs-BING Raman/fluorescence
+   comparisons keep `fit_Bp=False` so the inelastic comparison is not
+   smeared by `B_p` posterior noise — plus Q7's stuck-walker
+   5th-percentile artifact so it is not mistaken for a regression.
+2. **The chain-shape/bookkeeping contracts** M4's tests can reuse
+   (tailed layout, `pdict['ndim']`, the `BP_PRIOR` constants,
+   `chain_param_names`, linear `'B_p'` labeling), with the re-verified
+   citations above.
+3. **The batched-`B_p` shape trap (Q6)** — `(nsamples, nwave)` is the
+   only shape all three backends accept — with
+   `reconstruct_from_chains`'s `np.broadcast_to(chains[:, -1:], ...)`
+   named as the reference implementation, and the note that the
+   function gained its robust dispatch only in M3 (Gordon-only before).
+4. **The open threads**, one line: Q2 (`robust_baseline`+`fit_Bp`
+   rejection) and M2 Q5 (the provisional
+   `m3_fixed_bp_pin.npz` stand-in, regenerate-don't-suspect caveat) —
+   JXP's calls, not M4's problem.
+
+**State handed to M4.** The `B_p` machinery works end-to-end — tail
+peel in both fitters and all three setup-time domain checks, the linear
+[0.004, 0.05] prior gating `log_prob`, p0 seeding, ndim/walker/naming
+bookkeeping, `reconstruct_from_chains` tail strip with the robust
+dispatch it had been missing, and corner-plot labeling — with the
+`fit_Bp=False` path pinned byte-identical to M2 throughout. Empirically,
+`B_p` is only weakly constrained by a single real spectrum at realistic
+noise, so M4's inelastic fits should default to `fit_Bp=False` and
+treat the free tail as a bb-bright/multi-spectrum tool. Q2 and M2 Q5
+remain open JXP calls; neither blocks M4.

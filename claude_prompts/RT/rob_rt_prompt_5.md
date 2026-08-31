@@ -21,9 +21,13 @@ updated in M5), `fit-l23-spectrum`, `run-bing-fit`, `code-review`.
 
 ### Working agreements
 
-Per the working agreements in `rob_rt_prompt_1.md` (git by JXP on
-`rob-rt-backend`; `ocean14`; CQ1–CQ4 binding; scope discipline;
-pytest-gated; Fable; log). Milestone-specific emphasis:
+Per the working agreements in `rob_rt_prompt_1.md` (git by JXP; `ocean14`;
+CQ1–CQ4 binding; scope discipline; pytest-gated; Fable; log) — **one
+correction, carried over from `rob_rt_prompt_2.md`–`rob_rt_prompt_4.md`**:
+the branch is JXP's existing **`rob_rt`**, not `rob-rt-backend` as the
+coding plan suggested; all of M0–M3 landed there, with JXP reviewing and
+committing after each task — assume the same cadence. Milestone-specific
+emphasis:
 
 - **CQ2 lands here**: `set_raman_Ed` stashes the raw pair verbatim,
   backward-compatibly — no signature change, `Ed_ratio_raman` bit-identical,
@@ -45,8 +49,59 @@ pytest-gated; Fable; log). Milestone-specific emphasis:
 
 Read before coding:
 
-- **Previous prompt** — `rob_rt_prompt_4.md` (M3: chain bookkeeping, how
-  well `B_p` was constrained) and its Logs.
+- **Previous prompt** — `rob_rt_prompt_4.md` (M3, **complete**: all 5
+  tasks done; full-suite baseline entering M4 is **260 passed, 2 skipped,
+  2 failed** — the same 2 pre-existing `test_l23_inelastic.py`
+  missing-fixture failures diagnosed in M0/Q10, not a regression;
+  re-measured live 2026-08-31 in `ocean14`). Its Q&A/Logs are the record;
+  the load-bearing facts for this milestone:
+  - **`fit_Bp=False` is the recommended default for M4's inelastic fits
+    (M3 Q7 — measured in `nb/RT/rob_rt_coding_4.ipynb`)**: the free-`B_p`
+    machinery works end-to-end, but noise, not the likelihood surface,
+    dominates the posterior — on bb-bright synthetic data truth is
+    recovered decisively (median 0.0202 vs truth 0.02; noiseless CI
+    [0.0181, 0.0263]) yet a *single* 0.5%-noise draw more than doubles the
+    interval ([0.0058, 0.0245]), and on a **real clear-water L23 spectrum**
+    (idx=170, 0.5% noise) the CI is [0.0160, 0.0437] — **60% of the prior
+    range**, samples brushing the 0.05 edge. Task 4's robust-vs-BING
+    Raman/fluorescence comparisons on L23 should keep `B_p` fixed (the
+    default) so the inelastic-term comparison is not smeared by `B_p`
+    posterior noise; reserve `fit_Bp=True` for bb-bright water or
+    multi-spectrum constraints. (Also from Q7: at long chain lengths one
+    stuck emcee walker can own the 5th-percentile edge — exactly 1/16 of
+    the samples with 16 walkers — a documented artifact, not a dispatch
+    regression.)
+  - **Chain-shape/bookkeeping contracts M4's tests can reuse** (line
+    numbers re-verified against live source 2026-08-31): the tailed layout
+    is `[a_params..., bb_params..., B_p]` whenever `rt_dict['fit_Bp']` is
+    True; `init_mcmc(..., rt_dict=None)` (inference.py:202) adds 1 to ndim
+    and records `pdict['ndim']`; `prior_bounds`/`init_walkers`
+    (inference.py:467/516) extend the clip window from
+    `rt_defs.BP_PRIOR_PMIN`/`PMAX` (defs.py:31-32); the module-level
+    `UniformPrior` `BP_PRIOR` (inference.py:64) gates `log_prob`;
+    `append_Bp_seed` (inference.py:427) tails p0 at `Bp_value` (0.01);
+    `chain_param_names(models, rt_dict)` (evaluate.py:102) and
+    `plotting.log_param_mask`/`corner_plot` (plotting.py:57/465) append a
+    **linear** `'B_p'` (`log_params` False).
+  - **The batched-`B_p` shape trap (M3 Q6 — watch for it in any
+    per-sample/batched robust forwarding M4 adds)**: the *only* batched
+    shape all three robust backends accept is the `(nsamples, nwave)`
+    broadcast view — `(nsamples,)` breaks `ztt.bb_tilde`'s broadcast,
+    `(nsamples, 1)` breaks the hybrid emulator's `features()`. The correct
+    reference implementation is `reconstruct_from_chains`
+    (evaluate.py:717): `np.broadcast_to(chains[:, -1:], (nsamples, nwave))`
+    — the tail column broadcast read-only across wavelength
+    (evaluate.py:806-811). Note that function gained its
+    `rt_backend` dispatch + trailing `geom=None` only in M3 (Q6i — it was
+    Gordon-only before, silently wrong for robust chains); `io.save_fit`
+    and `plotting.show_fits` are the geom-passthrough callers.
+  - **Two threads remain open, neither M4's to solve**: M3 Q2 (should
+    `validate_rt_dict` reject `robust_baseline`+`fit_Bp=True`? — JXP's
+    call) and M2 Q5 (no true M2-level fitter pin exists;
+    `bing/tests/files/m3_fixed_bp_pin.npz` is an explicitly **provisional**
+    stand-in — portable but fragile across BLAS/emcee versions: if the
+    byte-identity tests stay green but its exact values drift, regenerate
+    via `gen_m3_fixed_bp_pin.py` rather than suspecting a regression).
 - **Coding plan** — `docs/coding_plan/rob_rt_coding_plan.md` **M4** section.
 - **Design** — `docs/design/rob_rt_design.md` §3.5 (inelastic terms; the
   `Geometry.Ed` seam), §7.4 (the Ed-wiring open item this milestone closes).
