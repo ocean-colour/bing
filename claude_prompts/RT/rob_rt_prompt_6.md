@@ -293,6 +293,40 @@ other consideration should dominate)? Q1 itself remains open and
 unanswered; this entry does not close it, only carries it forward through
 task 2's execution.
 
+**Q3 (task 3, Claude → JXP). Informational finding, not a decision
+needed — flagged per this doc's own instruction to log genuine findings
+in Q&A.** `dev/rob_rt/benchmark_backends.py`'s freshly-measured
+first-call/JIT-compile costs for `robust_ztt`/`robust_hybrid` (~0.18-0.19 s
+each, three repeat runs) come in well under M2's smoke-fit figure
+(`rob_rt_prompt_3.md`: ztt ~0.35 s, hybrid ~1.1 s, the latter "Flax
+emulator load dominating"). Root cause, as best determined without
+further instrumentation: the two measurements are of genuinely different
+things under genuinely different process states, not a contradiction —
+M2 timed a full tiny end-to-end `fit_one` MCMC run's first step in
+whatever process state that smoke-fit script started in (plausibly a
+colder one: first-ever JAX call in that process, cold OS disk cache for
+the packaged Flax emulator weights file), while this benchmark isolates
+just the first `log_prob` call in a process that has already imported
+`jax`/`robust` for other work in the same script (the `gordon` backend is
+benchmarked first) and, on this machine across repeat runs, benefits from
+a warm OS file-cache for the emulator weights. Manually confirmed the
+order effect is small on this machine (a variant benchmarking
+`robust_hybrid` as the very first robust call in a fresh process still
+measured ~0.32 s, not ~1.1 s) — so process-freshness alone doesn't fully
+explain the gap; OS disk-cache state for the emulator weights file is the
+remaining, most likely explanation, but wasn't independently isolated
+(e.g. by dropping the OS page cache between runs, which needs
+privileges this session doesn't have). **Not something this task should
+resolve or paper over**: both numbers are real, reproducible
+measurements under their own stated conditions, and the design-doc
+question this benchmark exists to inform (§7.1's accept/optimize call on
+`robust_hybrid`) turns on warm-path throughput, not this first-call
+figure, so the discrepancy doesn't change this task's headline finding.
+Recorded here in case a future cold-process measurement (e.g. the very
+first `fit_batch` worker on a machine with a cold disk cache) is needed
+and someone wants to reconcile the two numbers rather than rediscover the
+gap.
+
 ## Next
 
 This is the **last milestone** — there is no `rob_rt_prompt_7.md`.
@@ -509,3 +543,111 @@ benchmark_backends.py` suggested), timing `log_prob` through each backend
 at MCMC-realistic batch shapes, reporting calls/s vs. `gordon` and the
 per-`fit_batch`-worker JIT-compile cost — evidence reported, not
 thresholded, per this prompt's explicit instruction.
+
+### 2026-08-31 (M5 task 3 — throughput benchmark)
+
+**Read/verified first.** `bing/fitting/inference.py`'s `log_prob`
+signature (`params, models, Rrs, varRrs, rt_dict, geom=None`) and its full
+body (B_p tail peel, model + B_p prior evaluation, dispatch to
+`calc_Rrs_from_models`/`calc_Rrs_from_models_robust`, Gaussian likelihood
+reduction) — confirmed the prior/likelihood overhead around the forward
+call is real and small, so benchmarking `log_prob` itself (not the bare
+forward call) is the faithful per-step MCMC cost. `run_emcee`
+(inference.py) builds `emcee.EnsembleSampler(nwalkers, ndim, log_prob,
+args=[models, Rrs, varRrs, rt_dict, geom])` with **no** `pool=` (commented
+out) — confirmed against emcee's own default serial-map behavior that this
+calls `log_prob` once per walker per step with a single 1-D `params`
+vector, never a batch of walkers in one call. This settles "MCMC-realistic
+batch shape" concretely: unbatched, single-walker calls, exactly what the
+prompt's Context section anticipated but did not itself resolve. Also read
+`fit_one`/`fit_batch` to confirm nothing upstream ever batches walkers
+before calling `log_prob`.
+
+**Script**: `dev/rob_rt/benchmark_backends.py` (new file, `dev/rob_rt/`
+directory created). Builds one ExpBricaud+Pow model pair on a 61-band
+400-700 nm grid (robust_hybrid-legal), a noiseless synthetic
+`(Rrs, varRrs)` pair from the Gordon forward model, and
+`geom=ObsGeometry(theta_s=30.)` — the same recipe
+`test_evaluate_robust.py`'s `robust_models`/`threading_setup` fixtures
+use, not a new ad-hoc setup. For each of the four `rt_defs.RT_BACKENDS`
+values it: (1) clears `evaluate._robust_forward_jit`'s `lru_cache` (robust
+backends only) and times one call to `log_prob` as the first-call/
+JIT-compile cost; (2) times `N_WARM=2000` further calls, each with a tiny
+(0.1% of the parameter value) random jitter on the length-5 `params`
+vector so the loop resembles a sampler walking nearby posterior values
+without ever changing shape/dtype (no JAX retrace risk), and reports
+calls/s. No `assert`, no threshold, no exit-code-based pass/fail anywhere
+in the script — printed evidence only, per the working agreement quoted
+in this prompt's Goals/Working-agreements sections.
+
+**Measured numbers** (`ocean14`, this script, three repeat runs agreeing
+to within a few percent; canonical run transcribed in the script's own
+header docstring):
+
+| backend | warm calls/s | vs gordon | first-call cost (s) |
+|---|---|---|---|
+| gordon | 38936 | 1.000x | 0.0001 (no JIT) |
+| robust_ztt | 5991 | 0.154x | 0.182 |
+| robust_hybrid | 5667 | 0.146x | 0.181 |
+| robust_baseline | 7274 | 0.187x | 0.019 |
+
+All three robust backends land at roughly **15-19% of gordon's per-call
+throughput** (~5.3-6.9x slower per `log_prob` call) at this batch shape.
+Notably, `robust_hybrid` (0.146x) is not dramatically worse than
+`robust_ztt`/`robust_baseline` (0.154x/0.187x) — the learned-emulator
+correction is not the dominant extra cost among the robust backends; the
+~5-7x gap vs. `gordon` looks like a property of dispatching through
+JAX/robust.rt at all (device dispatch + per-call trace overhead, even
+post-compilation) rather than something specific to the hybrid emulator.
+Per the working agreement, this is reported as evidence for JXP's
+accept/optimize call, not treated as a problem this task should fix.
+
+**First-call/JIT-compile cost, measured fresh here** (not just cited from
+M2): ztt/hybrid ~0.18-0.19 s, baseline ~0.019 s — all comfortably small in
+absolute terms. This is noticeably lower than M2's smoke-fit figure for
+hybrid (`rob_rt_prompt_3.md`: ~1.1 s, "Flax emulator load dominating").
+Investigated (not left unexplained): a variant run measuring
+`robust_hybrid` as the very first robust-backend call in a fresh process
+(rather than after `gordon`/`robust_ztt` in the same script) still only
+measured ~0.32 s — so process order alone doesn't explain the gap. Most
+likely explanation, not independently isolated (would need to drop the OS
+page cache, which this session can't do): M2's number was measured in a
+colder process state (first-ever JAX call, cold disk cache for the
+packaged Flax emulator weights file) than this benchmark's repeat-run
+environment. Both numbers are legitimate under their own conditions;
+recorded as **Q3** in the Q&A section above as an informational finding,
+not a contradiction needing resolution — the design question this
+benchmark exists to inform (§7.1's hybrid accept/optimize call) turns on
+warm-path throughput, which both this script and M2 agree is the number
+that matters, not the first-call figure.
+
+**Per-worker `fit_batch` JIT-compile-cost note** (included in the script's
+docstring and as a printed message, per the task spec): `fit_batch` uses a
+`ProcessPoolExecutor`, and each worker process gets its own fresh,
+initially-empty `_robust_forward_jit` module-level `lru_cache` — caches
+are process-local and never shared via `ProcessPoolExecutor`'s pickling.
+So a `fit_batch(n_cores=N)` robust-backend run pays the first-call
+JIT-compile cost measured above **N times over, once per worker process**,
+not once for the whole batch. Stated as a fact for JXP's awareness only —
+the script does not attempt to pre-warm workers, share a compilation cache
+across processes, or otherwise work around this, per the task's explicit
+instruction that this is not something to fix here.
+
+**Tested** (`ocean14`, `pytest bing/tests/ -q`): **266 passed, 2 skipped, 2
+failed** — identical to the M5 entering baseline and to tasks 1-2's exit
+state. The 2 failures are the same pre-existing `test_l23_inelastic.py`
+missing-fixture failures (M0/Q10), not a regression. This is a `dev/`
+script, not test code, and adds no pytest tests; confirmed importing/
+running it has no import-time side effects on the suite (ran the full
+suite once after adding the script, from a clean process).
+
+**Gate item satisfied**: "The benchmark script runs and its numbers are
+recorded (for the PR description)" — `dev/rob_rt/benchmark_backends.py`
+runs cleanly end-to-end, prints the table above, and the same numbers are
+written into the script's own header docstring (not placeholder text) so
+they're readable without re-running it.
+
+**Next**: task 4 — the `RT_correction`/`rt_backend` grep sweep, the stale
+line-number check on the design doc's citations, and the full-suite gate
+run (already reconfirmed 266/2/2 as part of this task, but task 4 owns the
+formal gate check).
