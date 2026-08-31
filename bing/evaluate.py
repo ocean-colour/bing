@@ -402,10 +402,14 @@ def _build_robust_inputs(a_model, a_params, bb_model, bb_params,
     (design §3.4's mapping table): parameter evaluation via
     ``a_model.eval_a``/``bb_model.eval_bb`` (identical to the Gordon path),
     the ``IOPs.from_total_bb`` split, ``PhaseParams(B_p=...)`` with the
-    free-``Bp`` override, ``geom.to_robust()`` (no ``Ed`` -- M4's job), and
-    the inelastic flags. Also owns the three argument-validity errors
+    free-``Bp`` override, ``geom.to_robust()`` -- with the a-model's stashed
+    raw ``(wave_Ed_raw, Ed_raw)`` pair routed into ``Geometry.Ed`` when
+    Raman is requested and a pair is stashed (M4 task 2; see
+    `calc_Rrs_from_models_robust`'s Notes) -- and the inelastic flags.
+    Also owns the four argument-validity errors
     (missing ``geom``, a non-robust ``rt_backend``, ``robust_baseline`` +
-    inelastic), so a direct call to either consumer fails identically.
+    inelastic, fluorescence without ``a_model.a_ph`` -- M4 task 3), so a
+    direct call to either consumer fails identically.
 
     Parameters and error semantics are exactly those documented on
     `calc_Rrs_from_models_robust`; see its docstring.
@@ -449,7 +453,23 @@ def _build_robust_inputs(a_model, a_params, bb_model, bb_params,
 
     # Fluorescence source term (full spectrum on a_model.wave -- see
     # calc_Rrs_from_models_robust's Notes; not sliced at a_model.i_Chl_ex
-    # like calc_Rrs_from_models' aph_ex).
+    # like calc_Rrs_from_models' aph_ex). Guard the a_ph requirement
+    # eagerly, with the fix named (M4 task 3): without it the
+    # multiplication below dies with a bare TypeError ('float' * NoneType)
+    # -- and robust's own fluorescence_kernel ValueError would only fire
+    # later, at jit trace time. Checked after eval_a on purpose: Bricaud
+    # models with free Chl (e.g. aNWExpBricaud) set a_ph implicitly inside
+    # eval_anw, so at this point a_ph is genuinely available or genuinely
+    # missing.
+    if include_fl and a_model.a_ph is None:
+        raise ValueError(
+            "rt_dict['include_Chl_fl']=True requires the a-model's "
+            "phytoplankton absorption, but a_model.a_ph is None -- the "
+            "fluorescence source term is phi_C * a_ph, and bulk absorption "
+            "cannot stand in for the phytoplankton component. Call "
+            "a_model.set_aph(Chl) first (Bricaud-family models), or "
+            "disable include_Chl_fl if the a-model has no phytoplankton "
+            "component.")
     a_ph = (10**a_params[..., -1:]) * a_model.a_ph if include_fl else None
 
     iops = robust_rt.IOPs.from_total_bb(a, bb, wave=a_model.wave, a_ph=a_ph)
@@ -457,7 +477,22 @@ def _build_robust_inputs(a_model, a_params, bb_model, bb_params,
     B_p = Bp if Bp is not None else rt_dict['Bp_value']
     phase_params = robust_rt.PhaseParams(B_p=B_p)
 
-    geometry = geom.to_robust()
+    # Ed routing (M4 task 2): when Raman is on and the a-model carries the
+    # raw (wave_Ed, Ed) pair stashed by set_raman_Ed (M4 task 1, CQ2), pass
+    # it through into robust's Geometry.Ed seam -- robust builds the
+    # Ed(lambda')/Ed(lambda) ratio internally (robust/rt/ed.py). With no
+    # stash (or Raman off) the geometry carries Ed=None and robust falls
+    # back to its packaged L23 spectra interpolated in theta_s, its
+    # documented default -- BING's flat-Ed fallback is deliberately NOT
+    # replicated here. Note robust's fluorescence kernel reads Geometry.Ed
+    # too, so when include_Raman and include_Chl_fl are both on the two
+    # terms share the stashed sky (robust guarantees numerator and
+    # denominator come from one sky by construction); a fluorescence-only
+    # call keeps the packaged default (M4 Q4).
+    if include_raman and a_model.wave_Ed_raw is not None:
+        geometry = geom.to_robust(Ed=(a_model.wave_Ed_raw, a_model.Ed_raw))
+    else:
+        geometry = geom.to_robust()
 
     emission_shape = ('double' if rt_dict.get('double_gaussian', True)
                       else 'single')
@@ -514,7 +549,10 @@ def calc_Rrs_from_models_robust(a_model, a_params, bb_model, bb_params,
           'robust_baseline' (see bing.rt.defs.RT_BACKENDS). 'gordon' is a
           caller error here -- dispatch to calc_Rrs_from_models instead.
         - 'include_Raman', 'include_Chl_fl', 'phi_C', 'double_gaussian' :
-          same meaning as for calc_Rrs_from_models.
+          same meaning as for calc_Rrs_from_models. When 'include_Raman'
+          is True and the a-model carries the raw Ed pair stashed by
+          aNWModel.set_raman_Ed, that pair is routed into robust's
+          Geometry.Ed (see Notes, "Ed routing").
         - 'Bp_value' : float - constant B_p when Bp is not given.
     geom : bing.rt.geometry.ObsGeometry, optional
         Fixed per-pixel viewing/illumination geometry. Required (non-None)
@@ -541,10 +579,13 @@ def calc_Rrs_from_models_robust(a_model, a_params, bb_model, bb_params,
     ------
     ValueError
         If geom is None; if rt_dict['rt_backend'] is not a robust backend;
-        or if rt_dict['rt_backend'] == 'robust_baseline' while Raman or
+        if rt_dict['rt_backend'] == 'robust_baseline' while Raman or
         chlorophyll fluorescence is requested (robust.rt.baselines.Rrs_gordon
         takes no `inelastic` argument -- it is elastic-only by
-        construction, see Notes).
+        construction, see Notes); or if rt_dict['include_Chl_fl'] is True
+        but the a-model has no a_ph spectrum set after eval_a (the
+        fluorescence source term is phi_C * a_ph -- call a_model.set_aph
+        first; M4 task 3).
 
     Notes
     -----
@@ -560,6 +601,19 @@ def calc_Rrs_from_models_robust(a_model, a_params, bb_model, bb_params,
     passed as the *full* spectrum on a_model.wave, not pre-sliced at
     a_model.i_Chl_ex -- robust.rt.inelastic.fluorescence_kernel interpolates
     onto its own fixed 370-690 nm excitation grid internally.
+
+    **Ed routing (M4 task 2).** When rt_dict['include_Raman'] is True and
+    the a-model carries the raw downwelling-irradiance pair stashed by
+    `aNWModel.set_raman_Ed` (``a_model.wave_Ed_raw is not None``), the
+    robust geometry is built with ``Ed=(wave_Ed_raw, Ed_raw)`` --
+    robust.rt builds the true Ed(lambda')/Ed(lambda) Raman ratio from it
+    internally (robust.rt.ed). Otherwise (Raman off, or no pair stashed)
+    the geometry carries ``Ed=None`` and robust falls back to its packaged
+    L23 solar spectra interpolated in theta_s -- its documented default.
+    BING's own flat-Ed (ratio = 1) fallback is *not* replicated on this
+    path. robust's fluorescence kernel reads Geometry.Ed too, so when both
+    inelastic terms are on they share the stashed sky; a fluorescence-only
+    call (include_Raman False) keeps robust's packaged default.
 
     'robust_baseline' has no inelastic composition path at all: it dispatches
     directly to robust.rt.baselines.Rrs_gordon (elastic-only by construction,

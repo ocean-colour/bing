@@ -102,8 +102,23 @@ not a copy), the fields are None before the call, and ``Ed_ratio_raman``
 is bit-identical to the pre-change formula (recomputed independently in
 the test). No robust import needed -- this is model-level and lives here
 because it is independent of ``correct_atmosphere`` (the Gate's placement
-rule for such tests; the Ed *routing* tests are task 2/3's
-``test_evaluate_robust_ed.py``).
+rule for such tests).
+
+M4 task 2 (Gate item 3): the stashed pair is routed into robust's
+``Geometry.Ed`` by ``_build_robust_inputs`` when ``include_Raman`` is on
+(uncopied, end to end), the geometry carries ``Ed=None`` when Raman is
+off or nothing is stashed (exact pre-M4 behavior), and passing a
+physically distinct Ed pair vs ``Ed=None`` measurably changes the robust
+Raman Rrs -- the seam is live. Synthetic Ed pairs only, so these are
+independent of ``correct_atmosphere`` and live here too; the
+``correct_atmosphere``-dependent Ed tests (real zenith-0 generation,
+Gate item 2's cross-checks) are task 3's ``test_evaluate_robust_ed.py``.
+
+M4 task 3 (Gate item 4): fluorescence-on without ``a_ph`` raises the
+clear, actionable ValueError from ``_build_robust_inputs`` (naming the
+missing ``a_ph`` and the ``set_aph`` fix) instead of the pre-guard bare
+TypeError; fluorescence with ``a_ph`` set keeps working. No
+``correct_atmosphere`` (nor any Ed at all) involved, so these live here.
 """
 import numpy as np
 
@@ -1797,3 +1812,181 @@ def test_set_raman_ed_stashes_raw_pair(robust_models):
     a_model.set_raman_Ed(wave_Ed2, Ed2)
     assert a_model.wave_Ed_raw is wave_Ed2
     assert a_model.Ed_raw is Ed2
+
+
+# ===== M4 task 2: Ed routing into Geometry.Ed (Gate item 3) =====
+
+def _raman_rt_dict(**overrides):
+    """The robust_ztt + Raman rt_dict shared by the M4 task-2 tests."""
+    rt_dict = {'rt_backend': 'robust_ztt', 'include_Raman': True,
+               'include_Chl_fl': False, 'phi_C': 0.02,
+               'double_gaussian': True, 'Bp_value': 0.014}
+    rt_dict.update(overrides)
+    return rt_dict
+
+
+def test_build_robust_inputs_routes_stashed_ed_pair(robust_models):
+    """The routing condition itself: ``_build_robust_inputs`` puts the
+    stashed raw pair on ``Geometry.Ed`` -- uncopied, end to end (the very
+    array objects handed to ``set_raman_Ed``, extending task 1's verbatim
+    contract through the adapter) -- exactly when ``include_Raman`` is on
+    AND a pair is stashed. Raman-on/no-stash and Raman-off/stash both
+    leave ``Geometry.Ed`` None (robust's packaged-L23 default; the exact
+    pre-M4 geometry construction)."""
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_params, bb_params = _param_vector(ps)
+    geom = ObsGeometry(theta_s=30.)
+
+    # Raman on, nothing stashed: Ed=None (packaged-L23 fallback).
+    inp = evaluate._build_robust_inputs(
+        a_model, a_params, bb_model, bb_params, _raman_rt_dict(), geom, None)
+    assert inp.geometry.Ed is None
+
+    wave_Ed = np.arange(340., 760., 2.5)
+    Ed = np.exp((wave_Ed - 550.) / 150.)
+    a_model.set_raman_Ed(wave_Ed, Ed)
+
+    # Raman on, pair stashed: routed, and uncopied (is-identity).
+    inp = evaluate._build_robust_inputs(
+        a_model, a_params, bb_model, bb_params, _raman_rt_dict(), geom, None)
+    assert inp.geometry.Ed is not None
+    assert inp.geometry.Ed[0] is wave_Ed
+    assert inp.geometry.Ed[1] is Ed
+
+    # Raman off, pair stashed: NOT routed (the flag gates the seam).
+    inp = evaluate._build_robust_inputs(
+        a_model, a_params, bb_model, bb_params,
+        _raman_rt_dict(include_Raman=False), geom, None)
+    assert inp.geometry.Ed is None
+
+
+def test_robust_raman_ed_pair_vs_none_changes_rrs(robust_models):
+    """Gate item 3 (M4): passing an Ed pair vs ``Ed=None`` measurably
+    changes the robust Raman term -- the seam is live.
+
+    Same model, params, geometry, and rt_dict (robust_ztt + Raman)
+    computed twice: first with no stash (``Geometry.Ed=None`` -> robust's
+    packaged L23 solar spectra interpolated in theta_s), then with a
+    deliberately steep exponential Ed (e-folding 150 nm, nothing like a
+    solar spectrum) stashed via ``set_raman_Ed``. The Raman correction
+    consumes the ratio Ed(lambda')/Ed(lambda) with lambda' blueward of
+    lambda, so the steep slope suppresses it well below the solar-shape
+    ratio and the two Rrs must differ far beyond float32 ULP noise
+    (measured max relative difference ~1e-3 at these IOPs; gated at
+    > 1e-4, with float32 noise ~1e-7). Also pins the flag gating: with
+    ``include_Raman=False`` the stash must change nothing at all
+    (bitwise), so no elastic-only caller can be perturbed by a stashed
+    pair."""
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_params, bb_params = _param_vector(ps)
+    geom = ObsGeometry(theta_s=30.)
+    rt_dict = _raman_rt_dict()
+
+    # 1) No stash: robust's packaged-L23 default sky.
+    Rrs_default = evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, rt_dict, geom=geom)
+
+    # Elastic-only reference before stashing (for the gating check below).
+    rt_dict_elastic = _raman_rt_dict(include_Raman=False)
+    Rrs_elastic_pre = evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, rt_dict_elastic, geom=geom)
+
+    # 2) Stash a physically distinct sky: a steep exponential, nothing
+    # like the packaged solar shape.
+    wave_Ed = np.arange(340., 760., 2.5)
+    Ed = np.exp((wave_Ed - 550.) / 150.)
+    a_model.set_raman_Ed(wave_Ed, Ed)
+
+    Rrs_routed = evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, rt_dict, geom=geom)
+
+    assert np.all(np.isfinite(Rrs_routed)) and np.all(Rrs_routed > 0)
+    rel_diff = np.abs(Rrs_routed - Rrs_default) / np.abs(Rrs_default)
+    # Measurably different -- orders of magnitude above float32 ULP noise.
+    assert rel_diff.max() > 1e-4
+
+    # Flag gating: Raman off, the stash is inert -- bitwise identical to
+    # the pre-stash elastic call (same jit closure, same inputs).
+    Rrs_elastic_post = evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, rt_dict_elastic, geom=geom)
+    assert np.array_equal(Rrs_elastic_post, Rrs_elastic_pre)
+
+
+# ===== M4 task 3: the fluorescence a_ph guard (Gate item 4) =====
+
+def _fl_rt_dict(**overrides):
+    """The robust_ztt + fluorescence rt_dict shared by the M4 task-3 tests."""
+    rt_dict = {'rt_backend': 'robust_ztt', 'include_Raman': False,
+               'include_Chl_fl': True, 'phi_C': 0.02,
+               'double_gaussian': True, 'Bp_value': 0.014}
+    rt_dict.update(overrides)
+    return rt_dict
+
+
+def test_robust_fluorescence_without_aph_raises_clear_error():
+    """Gate item 4 (M4): fluorescence-on without ``a_ph`` raises the clear,
+    actionable ValueError from ``_build_robust_inputs`` -- not the bare
+    ``TypeError: unsupported operand type(s) for *: 'float' and 'NoneType'``
+    the a_ph multiplication used to die with (measured pre-guard), and not
+    robust's own ``fluorescence_kernel`` ValueError, which only fires later
+    at jit trace time.
+
+    Uses an ``Exp``-only a-model: a pure a_dg parameterization whose
+    ``eval_anw`` never touches ``a_ph``, so ``a_model.a_ph`` is genuinely
+    None when the adapter reads it (the fixture's ExpBricaud cannot trigger
+    the guard -- its free-Chl ``eval_anw`` sets a_ph implicitly, the
+    ``set_aph`` convention the guard's placement mirrors). The message must
+    name the missing requirement (``a_ph``) and the fix (``set_aph``)."""
+    wave = np.linspace(400., 700., 61)
+    a_model, bb_model = model_utils.init(['Exp', 'Pow'], wave)
+    assert a_model.a_ph is None
+    a_params = np.array([-1.5, 0.017])
+    bb_params = np.array([-3.0, 1.0])
+    geom = ObsGeometry(theta_s=30.)
+
+    with pytest.raises(ValueError, match=r'a_ph.*set_aph') as excinfo:
+        evaluate.calc_Rrs_from_models_robust(
+            a_model, a_params, bb_model, bb_params, _fl_rt_dict(), geom=geom)
+    # Actionable: names the flag that demanded a_ph, too.
+    assert 'include_Chl_fl' in str(excinfo.value)
+
+    # And it is the eager adapter guard, not a downstream error: the same
+    # call through _build_robust_inputs alone (no jit, no robust forward)
+    # already raises it.
+    with pytest.raises(ValueError, match=r'a_ph'):
+        evaluate._build_robust_inputs(
+            a_model, a_params, bb_model, bb_params, _fl_rt_dict(), geom, None)
+
+    # Fluorescence off, the same a_ph-less model stays fully usable
+    # (elastic robust path untouched by the guard).
+    Rrs = evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params,
+        _fl_rt_dict(include_Chl_fl=False), geom=geom)
+    assert np.all(np.isfinite(Rrs)) and np.all(Rrs > 0)
+
+
+def test_robust_fluorescence_with_aph_set_does_not_raise(robust_models):
+    """The guard's negative case (regression safety): fluorescence with
+    ``a_ph`` properly set -- the fixture's ExpBricaud after ``set_aph`` --
+    builds ``IOPs.a_ph`` and returns finite Rrs without raising. Overlaps
+    deliberately with ``test_calc_Rrs_from_models_robust_fluorescence_adds_
+    emission`` (which pins the physics); this one pins the guard's
+    pass-through and the built ``IOPs.a_ph``."""
+    a_model, bb_model = robust_models
+    ps = _PARAM_SETS[0]
+    a_model.set_aph(np.array([ps['Chl']]))
+    a_params, bb_params = _param_vector(ps)
+    geom = ObsGeometry(theta_s=30.)
+
+    inp = evaluate._build_robust_inputs(
+        a_model, a_params, bb_model, bb_params, _fl_rt_dict(), geom, None)
+    assert inp.include_fl
+    assert inp.iops.a_ph is not None
+
+    Rrs = evaluate.calc_Rrs_from_models_robust(
+        a_model, a_params, bb_model, bb_params, _fl_rt_dict(), geom=geom)
+    assert np.all(np.isfinite(Rrs)) and np.all(Rrs > 0)

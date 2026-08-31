@@ -84,7 +84,8 @@ def _module_importable(name):
 collect_ignore = []
 if not _module_importable('correct_atmosphere'):
     collect_ignore += ['test_evaluate.py', 'test_io.py',
-                       'test_l23_fitting.py']
+                       'test_l23_fitting.py',
+                       'test_evaluate_robust_ed.py']
 
 
 def _missing_data_reason(exc):
