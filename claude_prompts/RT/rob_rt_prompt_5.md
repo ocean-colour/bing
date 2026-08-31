@@ -735,3 +735,60 @@ skill-doc updates (the `inelastic-rrs` skill in particular) should say
 plainly that `bing.rt.raman`/`chl_fl` remain the higher-fidelity choice
 when the excitation-grid approximation matters, with `robust_ztt`/
 `robust_hybrid` as the not-yet-precisely-matching alternative.
+
+### 2026-08-31 (M4 task 5 — handing off to `rob_rt_prompt_6.md`)
+
+**M4 is now fully complete (all 5 tasks done).** Updated
+`rob_rt_prompt_6.md`'s **Working agreements** and **Context** sections
+only (no Q&A/Logs/Tasks/Gate/Definition-of-done touched — those stay
+JXP's plan; no source files touched).
+
+- **Working agreements**: fixed the stale `rob-rt-backend` branch
+  reference to `rob_rt`, one line, the same correction every prior prompt
+  in this series (2–5) has carried forward.
+- **Context**, added as a new lead bullet, ahead of everything else,
+  titled "READ THIS FIRST": the measured robust-vs-BING inelastic
+  agreement numbers from Q7/Q8 (Raman 11.37% max / 5.64% mean; fluorescence
+  9.18%/5.77% mismatched-Ed or 18.49%/7.21% Ed-matched), cited to
+  `nb/RT/rob_rt_coding_5.ipynb` §§3-4, stated as several orders of
+  magnitude outside `rtol <= 5e-4` and rooted in a genuine physics-
+  composition difference (excitation-grid interpolation/clamping vs true
+  parametric evaluation), not numerical noise. Made explicit that M5
+  task 2's current verbatim wording — "the robust inelastic path is now
+  the recommended one" — cannot be written as-is without accounting for
+  this gap; did **not** decide what the "recommended path" note should
+  actually say, only surfaced the number so it can't be missed.
+- **Context**, second bullet: Q1 is still open, and Q8's finding gives it
+  extra weight — even once JXP names the intended backend for Gate item 2,
+  the `5e-4` inelastic comparison is unreachable regardless of backend
+  choice, so Q1's answer alone can't close M4's Gate item 2; framed this
+  as a milestone-completion decision (relax tolerance vs. treat as
+  informational) that predates M5 and isn't M5's to silently resolve.
+- **Context**, third bullet: the elastic robust-vs-Gordon path (M1,
+  `robust_baseline`) remains solid at ~2.3e-7 relative, for contrast —
+  the problem is specifically and only the inelastic terms.
+- **Context**, fourth bullet (task-by-task): summarized M4 tasks 1-3 as
+  mechanically correct and tested — the `set_raman_Ed` stash, the
+  `Geometry.Ed` routing (gated on `include_Raman`, also feeding
+  `fluorescence_kernel` when both flags are on, per Q4), and the `a_ph`
+  guard — plus task 4's notebook as the source of every number cited
+  above.
+- **Context**: replaced the stale M3-era "260 passed, 2 skipped, 2
+  failed" full-suite baseline with a freshly re-verified **266 passed, 2
+  skipped, 2 failed** (`pytest bing/tests/ -q`, `ocean14`, run live
+  2026-08-31), matching M4 task 4's exit baseline exactly; the 2 failures
+  remain the same pre-existing `test_l23_inelastic.py` fixture gaps
+  (M0/Q10).
+- Also updated the "Previous prompt" bullet to note M4 is now fully
+  complete (all 5 tasks), keeping the rest of that bullet's wording.
+
+**Overall state handed to M5**: the Ed-wiring mechanics from M4 all work
+and are fully tested (stash, routing, guard, conftest isolation) — nothing
+here is a plumbing bug. What remains unresolved is a real accuracy gap:
+robust's Raman/fluorescence terms diverge from BING's own by 5-18% on real
+L23 data because of a structural excitation-grid approximation, not
+numerical precision, and this bears directly on how M5's documentation
+(especially the `inelastic-rrs/SKILL.md` "recommended path" note) should
+describe the robust backend's inelastic physics — plus Q1 remains open,
+now with the added weight that answering it will not, by itself, make
+M4's Gate item 2 pass at `5e-4` for the inelastic comparison.

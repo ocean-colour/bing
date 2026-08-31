@@ -21,9 +21,13 @@ targets** this milestone, so read them as they stand before changing them;
 
 ### Working agreements
 
-Per the working agreements in `rob_rt_prompt_1.md` (git by JXP on
-`rob-rt-backend`; `ocean14`; CQ1–CQ4 binding; scope discipline;
-pytest-gated; Fable; log). Milestone-specific emphasis:
+Per the working agreements in `rob_rt_prompt_1.md` (git by JXP; `ocean14`;
+CQ1–CQ4 binding; scope discipline; pytest-gated; Fable; log) — **one
+correction, carried over from `rob_rt_prompt_2.md`–`rob_rt_prompt_5.md`**:
+the branch is JXP's existing **`rob_rt`**, not `rob-rt-backend` as the
+coding plan suggested; all of M0–M4 landed there, with JXP reviewing and
+committing after each task — assume the same cadence. Milestone-specific
+emphasis:
 
 - **No code is deleted from `bing/rt/raman.py` / `chl_fl.py`** — docstring
   pointers only (design §6). They still serve the `gordon` backend.
@@ -34,9 +38,103 @@ pytest-gated; Fable; log). Milestone-specific emphasis:
 
 Read before coding:
 
-- **Previous prompt** — `rob_rt_prompt_5.md` (M4: final integration state,
-  measured inelastic agreement) and its Logs — and skim the Logs of prompts
-  1–4 for anything flagged "for M5".
+- **READ THIS FIRST — the measured robust-vs-BING inelastic agreement is
+  far outside tolerance; it directly bears on task 2's `inelastic-rrs`
+  "recommended path" note.** M4 (`rob_rt_prompt_5.md` Q7/Q8, measured live
+  in `nb/RT/rob_rt_coding_5.ipynb` §§3-4 on a real L23 spectrum, idx=170,
+  with a real production Ed on both sides) found robust-vs-BING agreement
+  on the inelastic terms of **Raman: max 11.37% / mean 5.64% (worst at
+  400 nm)**; **fluorescence: max 9.18% / mean 5.77% (mismatched-Ed case,
+  as the M4 code ships) or max 18.49% / mean 7.21% (Ed-matched case,
+  larger not smaller)** — all several **orders of magnitude** outside the
+  milestone's own `rtol <= 5e-4` working tolerance, and not shrinkable by
+  going to float64 (float32-vs-float64 alone costs ~2.3e-7 relative, four
+  orders of magnitude smaller than the gap). Root cause (M1 Q1,
+  reconfirmed by M4 Q7): a genuine **physics-composition difference**, not
+  numerical noise — `robust`'s Raman/fluorescence kernels
+  interpolate/clamp the emission-grid IOP spectrum to stand in for the
+  excitation-wavelength IOPs, rather than re-evaluating the parametric a/bb
+  models at the true excitation grid the way BING's own Gordon+Raman/
+  fluorescence path does. **Task 2's current wording — "the robust
+  inelastic path is now the recommended one" — must not be written
+  verbatim without accounting for this number; whoever executes task 2
+  needs to decide how the `inelastic-rrs/SKILL.md` "recommended path" note
+  should actually read given a 5-18% disagreement on real data, not assume
+  unqualified equivalence to BING's own Raman/fluorescence terms.** This
+  hand-off is not deciding that wording — only making sure the numbers are
+  impossible to miss going into task 2.
+- **Q1 (`rob_rt_prompt_5.md`) is still open, and now carries extra
+  weight.** M4's own Gate item 2 ("`robust_baseline`+Raman vs
+  `gordon`+Raman... agree at float32 tolerance") is impossible as literally
+  written — `_build_robust_inputs` raises `ValueError` for
+  `robust_baseline`+inelastic (an M1 decision: `Rrs_gordon` has no
+  inelastic composition path at all) — and JXP has never answered which
+  backend Gate item 2 actually meant. M4's Q8 finding above means **Q1's
+  answer alone will not make Gate item 2 pass**: even substituting the
+  intended-seeming backends (`robust_ztt`, matched Ed), the inelastic
+  comparison at `5e-4` is unreachable regardless of which backend is
+  named — the gap is structural, not a backend-choice artifact. This is an
+  unresolved **milestone-completion** question that predates M5 (it's
+  M4's Gate, not M5's scope) and needs a real decision from JXP — either
+  relax the tolerance for the inelastic comparison specifically, or treat
+  it as informational/reported rather than gating (design intent already
+  leans this way per this prompt's own "reported, not thresholded"
+  framing for the throughput benchmark, task 3) — **not something M5
+  should silently paper over by dropping the comparison or reframing it
+  as passing.**
+- **For contrast, the elastic path remains solid.** The *elastic*
+  robust-vs-Gordon agreement (via `robust_baseline`, established in M1)
+  measures ~2.3e-7 relative — comfortably inside any reasonable tolerance,
+  many orders of magnitude tighter than the inelastic gap above. The
+  problem is specifically and only the inelastic (Raman/fluorescence)
+  terms; nothing about the elastic integration is in question.
+- **What M4 built and verified — all mechanically correct, tested,
+  working; the disagreement above is about physics fidelity, not
+  plumbing bugs.** `rob_rt_prompt_5.md`'s Logs (tasks 1-4, M4 now fully
+  complete) are the record; load-bearing for M5:
+  - **Task 1 — `set_raman_Ed` stash (CQ2).** `aNWModel` gained
+    `wave_Ed_raw`/`Ed_raw` (anw.py, beside `Ed_ratio_raman`),
+    `set_raman_Ed` stashes the incoming pair verbatim (uncopied
+    references — a live alias, not a copy) before computing the ratio
+    exactly as before; `Ed_ratio_raman` verified bit-identical
+    (`np.array_equal`) pre-/post-change. Backward compatible, no
+    signature change, BING's own Raman path untouched.
+  - **Task 2 — `Geometry.Ed` routing.** `_build_robust_inputs` now
+    passes `Ed=(wave_Ed_raw, Ed_raw)` into `geom.to_robust(...)` when
+    `include_Raman` and a pair is stashed; `Ed=None` (robust's packaged
+    L23 default) otherwise. Measured live: passing a real pair vs
+    `Ed=None` changes the robust Raman term by up to ~1.5-6.3% depending
+    on sky shape (the seam is unambiguously live, five-plus orders of
+    magnitude above float32 ULP noise). **Resolved finding (Q4)**:
+    robust's `fluorescence_kernel` also consumes `Geometry.Ed`, so with
+    both `include_Raman` and `include_Chl_fl` on, the one shared
+    geometry feeds the stashed sky to fluorescence too; a
+    fluorescence-only call (`include_Raman=False`) keeps `Ed=None` by
+    design — not extended further, per Q4's reasoning.
+  - **Task 3 — fluorescence `a_ph` guard + conftest isolation.**
+    `_build_robust_inputs` now raises a clear `ValueError` (naming
+    `include_Chl_fl`, the missing `a_ph`, and the fix) when fluorescence
+    is requested but the a-model has no `a_ph` set — fires for `Exp`,
+    `ExpFix`, `Cst`, `Every`, `ExpNMF`; free-Chl Bricaud models set
+    `a_ph` implicitly and never trip it (Q6 maps the full can/cannot-fire
+    surface). `test_evaluate_robust_ed.py` (the new
+    `correct_atmosphere`-gated file) added to the `collect_ignore` list
+    (conftest.py:84-88) — verified 228 tests still collect cleanly with
+    `correct_atmosphere` shadowed absent, 270 with it present.
+  - **Task 4 — notebook.** `nb/RT/rob_rt_coding_5.ipynb` (5 sections,
+    executed with outputs) is the source of every number in this
+    hand-off's dominant finding above, plus §5's explicit "why `5e-4` and
+    not `1e-6`" note — the honest float32 floor applies to the elastic
+    path and the seam-liveness check, not to the inelastic
+    robust-vs-BING comparison.
+- **Full-suite baseline entering M5**: **266 passed, 2 skipped, 2 failed**
+  — re-verified live 2026-08-31 in `ocean14` (`pytest bing/tests/ -q`),
+  matching M4 task 4's exit baseline exactly. The 2 failures are the same
+  pre-existing `test_l23_inelastic.py` missing-fixture failures diagnosed
+  in M0/Q10, not a regression.
+- **Previous prompt** — `rob_rt_prompt_5.md` (M4, **now fully complete**:
+  all 5 tasks done) and its Logs — and skim the Logs of prompts 1–4 for
+  anything flagged "for M5".
 - **Coding plan** — `docs/coding_plan/rob_rt_coding_plan.md` **M5** section
   and the **Definition of done**.
 - **Design** — `docs/design/rob_rt_design.md` §6 (deprecations), §7.1 (the
