@@ -55,6 +55,32 @@ deliberately turbid initial guess (robust_hybrid, ``Bp_value=0.005``); the
 Gordon backend never invokes the domain check at all (it would raise --
 pinned with a bomb monkeypatch); and ``fit_batch``'s robust-raises half of
 Gate item 6.
+
+M3 task 1: the ``fit_Bp`` B_p tail peel + forward flow (design §3.3) --
+``log_prob``/``fit_func`` peel the trailing B_p off the parameter vector
+when ``rt_dict['fit_Bp']`` is True and forward it as the adapter's ``Bp``
+(pinned by exact equivalence against the fixed-``Bp_value`` path);
+``fit_Bp`` False/absent is pinned byte-identical to the M2 dispatch (same
+values, no peel); the peeled tail also reaches the setup-time
+``robust_domain_check`` calls in both fitters (p0 in both, posterior
+median in ``fit_one``); and ``robust_baseline`` accepts a free B_p but the
+value is inert (``robust.rt.baselines.Rrs_gordon`` discards
+``phase_params`` by construction). The B_p *prior* and the ndim/walker
+bookkeeping are M3 tasks 2/3, tested there.
+
+M3 task 2: the free-B_p prior + p0 seeding (plan choice, design §7.3) --
+``log_prob`` evaluates ``inference.BP_PRIOR`` (a linear-space uniform over
+the inclusive [rt_defs.BP_PRIOR_PMIN, rt_defs.BP_PRIOR_PMAX] =
+[0.004, 0.05]) on the peeled tail alongside the model priors: in-range
+tails (bounds included) reach the forward call and give a finite
+log-probability; out-of-range tails return -inf *without* the forward
+model ever being invoked (pinned with a bomb monkeypatch on the adapter);
+``fit_Bp`` False/absent never touches the B_p prior at all (bomb on
+``BP_PRIOR.calc``). ``append_Bp_seed`` tails an initial guess with
+rt_dict['Bp_value'] (default 0.01 -- nonzero and inside the prior) only
+under ``fit_Bp``. The chi-squared path deliberately has no in-``fit_func``
+range check -- B_p bounds ride curve_fit's ``bounds`` like every model
+parameter (built in l23.fit_with_LM from the same rt_defs constants).
 """
 import numpy as np
 
@@ -1042,3 +1068,325 @@ def test_fit_batch_robust_4tuple_raises_theta_s(threading_setup):
     with pytest.raises(ValueError, match='theta_s'):
         bing_inf.fit_batch(ts['models'], ts['pdict'], items, rt_dict,
                            n_cores=1)
+
+
+# ===== M3 task 1: the fit_Bp B_p tail peel + forward flow (design §3.3) =====
+#
+# When rt_dict['fit_Bp'] is True the combined vector is
+# [a_params..., bb_params..., B_p]; log_prob and chisq_fit.fit_func peel the
+# tail *before* the aparams/bparams split and forward it as the adapter's
+# ``Bp`` argument.  The pins here follow the adapter's own contract
+# (Bp overrides rt_dict['Bp_value'] when not None -- see
+# test_calc_Rrs_from_models_robust_free_Bp_changes_result): a tailed call
+# under fit_Bp=True must be *exactly* equal to the untailed call with
+# Bp_value set to the tail value, and fit_Bp False/absent must be exactly
+# the M2 dispatch (no peel, Bp=None).  Direct function calls throughout --
+# an end-to-end fit_Bp=True fit needs task 3's ndim/init_walkers
+# bookkeeping (prior_bounds has no B_p slot yet), the same precedent as
+# M2 task 1's direct-call smoke tests.  The B_p tails used here all sit
+# inside the task-2 prior range [0.004, 0.05], where the (task 2) prior
+# contributes exactly 0 -- these equivalence pins are unchanged by it.
+
+_BP_TAIL = 0.02        # a sentinel distinct from the fixture's Bp_value
+
+
+def test_log_prob_fit_Bp_peels_tail_and_forwards(threading_setup):
+    """fit_Bp=True: log_prob on [params..., B_p] equals log_prob on params
+    with rt_dict['Bp_value'] = B_p (exact -- same adapter call), and
+    differs from the fixture's own Bp_value (the tail is really used)."""
+    ts = threading_setup
+    geom = ObsGeometry(theta_s=30.)
+    base = dict(ts['rt_dict'], rt_backend='robust_ztt')   # Bp_value=0.01
+
+    tailed = np.append(_THREAD_P0, _BP_TAIL)
+    lp_free = bing_inf.log_prob(tailed, ts['models'], ts['Rrs'],
+                                ts['varRrs'], dict(base, fit_Bp=True),
+                                geom=geom)
+    lp_fixed = bing_inf.log_prob(_THREAD_P0, ts['models'], ts['Rrs'],
+                                 ts['varRrs'],
+                                 dict(base, fit_Bp=False, Bp_value=_BP_TAIL),
+                                 geom=geom)
+    lp_default = bing_inf.log_prob(_THREAD_P0, ts['models'], ts['Rrs'],
+                                   ts['varRrs'], dict(base, fit_Bp=False),
+                                   geom=geom)
+
+    assert np.isfinite(lp_free)
+    assert lp_free == lp_fixed          # exact: identical adapter inputs
+    assert lp_free != lp_default        # the tail value actually flowed
+
+
+def test_fit_func_fit_Bp_peels_tail_and_forwards(threading_setup):
+    """Same equivalence through chisq_fit.fit_func: tailed params under
+    fit_Bp=True give exactly the Rrs of the untailed call with
+    Bp_value = tail, and not the fixture-default Bp_value's Rrs."""
+    ts = threading_setup
+    geom = ObsGeometry(theta_s=30.)
+    base = dict(ts['rt_dict'], rt_backend='robust_ztt')
+    wave = ts['models'][0].wave
+
+    Rrs_free = chisq_fit.fit_func(wave, *_THREAD_P0, _BP_TAIL,
+                                  models=ts['models'],
+                                  rt_dict=dict(base, fit_Bp=True), geom=geom)
+    Rrs_fixed = chisq_fit.fit_func(wave, *_THREAD_P0, models=ts['models'],
+                                   rt_dict=dict(base, fit_Bp=False,
+                                                Bp_value=_BP_TAIL),
+                                   geom=geom)
+    Rrs_default = chisq_fit.fit_func(wave, *_THREAD_P0, models=ts['models'],
+                                     rt_dict=dict(base, fit_Bp=False),
+                                     geom=geom)
+
+    assert Rrs_free.shape == Rrs_fixed.shape == wave.shape
+    assert np.array_equal(Rrs_free, Rrs_fixed)
+    assert not np.allclose(Rrs_free, Rrs_default)
+
+
+def test_fit_Bp_false_or_absent_byte_identical_to_m2(threading_setup):
+    """The Goals section's hard constraint: fit_Bp False *or absent* takes
+    exactly the M2 path -- no peel, Bp=None -> rt_dict['Bp_value'].
+    Pinned on both backends by exact equality: (a) 'fit_Bp': False vs the
+    key deleted outright, and (b) against the un-dispatched forward calls
+    the M2 branches make (calc_Rrs_from_models / ..._robust with Bp=None)."""
+    ts = threading_setup
+    models = ts['models']
+    geom = ObsGeometry(theta_s=30.)
+    wave = models[0].wave
+    nap = models[0].nparam
+
+    for backend in ['gordon', 'robust_ztt']:
+        rt_false = dict(ts['rt_dict'], rt_backend=backend)
+        rt_false['fit_Bp'] = False
+        rt_absent = {k: v for k, v in rt_false.items() if k != 'fit_Bp'}
+        kw = {} if backend == 'gordon' else dict(geom=geom)
+
+        out_false = chisq_fit.fit_func(wave, *_THREAD_P0, models=models,
+                                       rt_dict=rt_false, **kw)
+        out_absent = chisq_fit.fit_func(wave, *_THREAD_P0, models=models,
+                                        rt_dict=rt_absent, **kw)
+        assert np.array_equal(out_false, out_absent)
+
+        # ... and both equal the M2 branch's own forward call, unchanged.
+        if backend == 'gordon':
+            direct = evaluate.calc_Rrs_from_models(
+                models[0], _THREAD_P0[:nap], models[1], _THREAD_P0[nap:],
+                rt_false)
+        else:
+            direct = evaluate.calc_Rrs_from_models_robust(
+                models[0], _THREAD_P0[:nap], models[1], _THREAD_P0[nap:],
+                rt_false, geom=geom, Bp=None)
+        assert np.array_equal(out_false, np.asarray(direct).flatten())
+
+        lp_false = bing_inf.log_prob(_THREAD_P0, models, ts['Rrs'],
+                                     ts['varRrs'], rt_false, geom=geom)
+        lp_absent = bing_inf.log_prob(_THREAD_P0, models, ts['Rrs'],
+                                      ts['varRrs'], rt_absent, geom=geom)
+        assert lp_false == lp_absent
+        assert np.isfinite(lp_false)
+
+
+def test_fit_Bp_tail_inert_for_robust_baseline(threading_setup):
+    """robust_baseline *accepts* a free B_p mechanically (the adapter
+    builds PhaseParams for every backend) but the value is inert:
+    robust.rt.baselines.Rrs_gordon discards phase_params by construction
+    (standard Gordon has no phase-function input).  Pinned so a fit_Bp
+    fit on the baseline visibly does nothing -- the posterior would just
+    return the prior.  Whether validate_rt_dict should reject the
+    combination outright is an M3 Q&A item (task 3 owns validate pins)."""
+    ts = threading_setup
+    geom = ObsGeometry(theta_s=30.)
+    rt_dict = dict(ts['rt_dict'], rt_backend='robust_baseline', fit_Bp=True)
+    wave = ts['models'][0].wave
+
+    out_lo = chisq_fit.fit_func(wave, *_THREAD_P0, 0.005,
+                                models=ts['models'], rt_dict=rt_dict,
+                                geom=geom)
+    out_hi = chisq_fit.fit_func(wave, *_THREAD_P0, 0.05,
+                                models=ts['models'], rt_dict=rt_dict,
+                                geom=geom)
+    assert np.array_equal(out_lo, out_hi)
+
+
+def _recording_domain_check(record):
+    """Replace robust_domain_check, recording (len(a), len(bb), Bp)."""
+    def recorder(a_model, a_params, bb_model, bb_params, rt_dict,
+                 geom=None, Bp=None):
+        record.append((len(a_params), len(bb_params), Bp))
+    return recorder
+
+
+def test_chisq_fit_fit_Bp_p0_tail_reaches_domain_check(
+        threading_setup, monkeypatch):
+    """chisq_fit.fit's setup-time domain check peels the same tail: a
+    tailed p0 under fit_Bp=True delivers the un-tailed aparams/bparams
+    slices plus Bp = the tail value (not Bp=None).  curve_fit is stubbed
+    (echoes p0) -- the end-to-end optimizer path is task 3's gate."""
+    ts = threading_setup
+    record = []
+    monkeypatch.setattr(evaluate, 'robust_domain_check',
+                        _recording_domain_check(record))
+    monkeypatch.setattr(chisq_fit, 'curve_fit',
+                        lambda f, x, y, p0=None, **k: (np.asarray(p0),
+                                                       np.eye(len(p0))))
+
+    rt_dict = dict(ts['rt_dict'], rt_backend='robust_ztt', fit_Bp=True)
+    tailed = np.append(_THREAD_P0, _BP_TAIL)
+    items = (ts['Rrs'], ts['varRrs'], tailed, 0, ObsGeometry(theta_s=30.))
+    ans, cov, idx = chisq_fit.fit(items, ts['models'], rt_dict)
+
+    nap = ts['models'][0].nparam
+    assert record == [(nap, _THREAD_P0.size - nap, _BP_TAIL)]
+    assert ans.size == tailed.size   # the optimizer vector keeps the tail
+
+
+def test_fit_one_fit_Bp_p0_and_median_tails_reach_domain_check(
+        threading_setup, monkeypatch):
+    """fit_one's two setup/teardown domain checks (p0 and posterior
+    median) both peel the tail under fit_Bp=True.  run_emcee is stubbed
+    with a fake sampler whose chain carries a known constant B_p column,
+    so the two recorded Bp values are distinguishable: the p0 check sees
+    the p0 tail, the median check sees the chain's tail median."""
+    ts = threading_setup
+    record = []
+    monkeypatch.setattr(evaluate, 'robust_domain_check',
+                        _recording_domain_check(record))
+
+    median_tail = 0.03
+    tailed = np.append(_THREAD_P0, _BP_TAIL)
+
+    class _FakeSampler:
+        def get_chain(self):
+            # (nsteps, nwalkers, ndim+1) -- every sample identical, with
+            # the B_p column at median_tail.
+            vec = np.append(_THREAD_P0, median_tail)
+            return np.tile(vec, (4, 3, 1))
+    monkeypatch.setattr(bing_inf, 'run_emcee',
+                        lambda *a, **k: _FakeSampler())
+
+    rt_dict = dict(ts['rt_dict'], rt_backend='robust_ztt', fit_Bp=True)
+    items = (ts['Rrs'], ts['varRrs'], tailed, 0, ObsGeometry(theta_s=30.))
+    chains, idx = bing_inf.fit_one(items, models=ts['models'],
+                                   pdict=ts['pdict'], chains_only=True,
+                                   rt_dict=rt_dict)
+
+    nap = ts['models'][0].nparam
+    nbp = _THREAD_P0.size - nap
+    assert record == [(nap, nbp, _BP_TAIL), (nap, nbp, median_tail)]
+    assert chains.shape[-1] == tailed.size   # the chain keeps the column
+
+
+# ===== M3 task 2: the free-B_p prior + p0 seeding (design §7.3) =====
+#
+# log_prob evaluates inference.BP_PRIOR -- a *linear-space* uniform over
+# the inclusive [rt_defs.BP_PRIOR_PMIN, rt_defs.BP_PRIOR_PMAX] =
+# [0.004, 0.05] (plan choice; B_p is a ratio, not a log10 amplitude) --
+# on the peeled tail, alongside the model priors and *before* the forward
+# dispatch.  In range the uniform contributes exactly 0 (the codebase's
+# UniformPrior convention -- no -log(width) normalization), so task 1's
+# exact-equivalence pins above still hold verbatim.  Out of range it
+# short-circuits to -inf with no forward-model call -- pinned here with a
+# bomb monkeypatch on the adapter, not just by the -inf value.  The
+# chi-squared path has no in-fit_func counterpart by design: bounds are
+# curve_fit's job (l23.fit_with_LM builds the B_p slot from the same
+# rt_defs constants), exactly as for the model parameters.
+
+
+def test_log_prob_Bp_prior_in_range_reaches_forward(
+        threading_setup, monkeypatch):
+    """In-range tails -- including *exactly* the inclusive bounds
+    0.004/0.05 -- pass the B_p prior, reach the forward call (recorded on
+    a pass-through wrapper), and yield a finite log-probability."""
+    ts = threading_setup
+    geom = ObsGeometry(theta_s=30.)
+    rt_dict = dict(ts['rt_dict'], rt_backend='robust_ztt', fit_Bp=True)
+
+    forwarded = []
+    real = evaluate.calc_Rrs_from_models_robust
+
+    def recording(*args, **kwargs):
+        forwarded.append(kwargs.get('Bp'))
+        return real(*args, **kwargs)
+    monkeypatch.setattr(evaluate, 'calc_Rrs_from_models_robust', recording)
+
+    for Bp in [rt_defs.BP_PRIOR_PMIN, 0.02, rt_defs.BP_PRIOR_PMAX]:
+        lp = bing_inf.log_prob(np.append(_THREAD_P0, Bp), ts['models'],
+                               ts['Rrs'], ts['varRrs'], rt_dict, geom=geom)
+        assert np.isfinite(lp)
+    assert forwarded == [rt_defs.BP_PRIOR_PMIN, 0.02, rt_defs.BP_PRIOR_PMAX]
+
+
+def test_log_prob_Bp_prior_out_of_range_short_circuits(
+        threading_setup, monkeypatch):
+    """Out-of-range tails (just past either inclusive bound, and grossly
+    out) return -inf *without* the forward model ever running: both
+    adapters are replaced with bombs, so a single forward call would
+    fail the test, not just change a value."""
+    ts = threading_setup
+    geom = ObsGeometry(theta_s=30.)
+    rt_dict = dict(ts['rt_dict'], rt_backend='robust_ztt', fit_Bp=True)
+
+    def bomb(*args, **kwargs):
+        raise AssertionError("forward model called despite out-of-range B_p")
+    monkeypatch.setattr(evaluate, 'calc_Rrs_from_models_robust', bomb)
+    monkeypatch.setattr(evaluate, 'calc_Rrs_from_models', bomb)
+
+    for Bp in [0.0039, 0.0501, 0., -0.01, 0.2]:
+        lp = bing_inf.log_prob(np.append(_THREAD_P0, Bp), ts['models'],
+                               ts['Rrs'], ts['varRrs'], rt_dict, geom=geom)
+        assert lp == -np.inf
+
+
+def test_log_prob_fit_Bp_false_never_touches_Bp_prior(
+        threading_setup, monkeypatch):
+    """fit_Bp False/absent runs no B_p prior logic at all: BP_PRIOR.calc
+    is a bomb, and the untailed vector's *last model parameter* (beta =
+    0.9, far outside [0.004, 0.05]) shows the check is not misfiring on
+    the model tail.  Pinned on both backends, False and key-absent."""
+    ts = threading_setup
+    geom = ObsGeometry(theta_s=30.)
+
+    def bomb(param):
+        raise AssertionError("BP_PRIOR.calc invoked with fit_Bp off")
+    monkeypatch.setattr(bing_inf.BP_PRIOR, 'calc', bomb)
+
+    assert not (rt_defs.BP_PRIOR_PMIN <= _THREAD_P0[-1]
+                <= rt_defs.BP_PRIOR_PMAX)
+    for backend in ['gordon', 'robust_ztt']:
+        rt_false = dict(ts['rt_dict'], rt_backend=backend, fit_Bp=False)
+        rt_absent = {k: v for k, v in rt_false.items() if k != 'fit_Bp'}
+        lp_false = bing_inf.log_prob(_THREAD_P0, ts['models'], ts['Rrs'],
+                                     ts['varRrs'], rt_false, geom=geom)
+        lp_absent = bing_inf.log_prob(_THREAD_P0, ts['models'], ts['Rrs'],
+                                      ts['varRrs'], rt_absent, geom=geom)
+        assert np.isfinite(lp_false)
+        assert lp_false == lp_absent
+
+
+def test_append_Bp_seed_appends_under_fit_Bp():
+    """fit_Bp=True: the seed rides as the tail -- rt_dict['Bp_value']
+    verbatim (0.01 default when the key is missing, matching
+    rt_dict_from_p), linear-space, inside the B_p prior (contribution
+    exactly 0), and nonzero so init_walkers' floor spreads it."""
+    p0 = np.array([-1.0, 0.015, -0.7, -2.0, 1.0])
+
+    tailed = bing_inf.append_Bp_seed(p0, {'fit_Bp': True, 'Bp_value': 0.02})
+    assert tailed.size == p0.size + 1
+    assert np.array_equal(tailed[:-1], p0)
+    assert tailed[-1] == 0.02
+
+    # Missing Bp_value falls back to rt_dict_from_p's 0.01 default
+    defaulted = bing_inf.append_Bp_seed(p0, {'fit_Bp': True})
+    assert defaulted[-1] == 0.01
+
+    # The default seed really is a legal, spreadable starting point
+    assert rt_defs.BP_PRIOR_PMIN <= defaulted[-1] <= rt_defs.BP_PRIOR_PMAX
+    assert bing_inf.BP_PRIOR.calc(defaulted[-1]) == 0
+    assert defaulted[-1] != 0.
+
+
+def test_append_Bp_seed_noop_without_fit_Bp():
+    """fit_Bp False, key absent, or rt_dict None: p0 comes back
+    unchanged -- same values, same length, no tail."""
+    p0 = np.array([-1.0, 0.015, -0.7, -2.0, 1.0])
+    for rt_dict in [{'fit_Bp': False, 'Bp_value': 0.02},
+                    {'Bp_value': 0.02}, {}, None]:
+        out = bing_inf.append_Bp_seed(p0, rt_dict)
+        assert np.array_equal(out, p0)

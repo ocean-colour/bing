@@ -17,6 +17,20 @@ RT_BACKENDS = ('gordon', 'robust_ztt', 'robust_hybrid', 'robust_baseline')
 ROBUST_HYBRID_WAVE_MIN = 350.
 ROBUST_HYBRID_WAVE_MAX = 750.
 
+#: Default prior range for a *free* B_p (rt_dict['fit_Bp']=True): a
+#: **linear-space** uniform over [BP_PRIOR_PMIN, BP_PRIOR_PMAX] -- B_p is a
+#: ratio (bb_p/b_p), like the slopes, not a log10 amplitude (plan choice,
+#: docs/design/rob_rt_design.md §7.3 -> coding-plan M3).  The range sits
+#: inside robust's PhaseParams.validate definitional (0, 1] bound.  Bounds
+#: are inclusive, matching bing.priors.priors.UniformPrior's convention.
+#: Consumers: inference.log_prob evaluates the prior (via
+#: inference.BP_PRIOR); the fitters' bounds machinery
+#: (inference.prior_bounds / init_walkers -- M3 task 3 -- and the
+#: chi-squared bounds built in l23.fit_with_LM) reuses the same numbers so
+#: sampling, clipping, and optimization all agree.
+BP_PRIOR_PMIN = 0.004
+BP_PRIOR_PMAX = 0.05
+
 
 def rt_dict_from_p(p):
     """

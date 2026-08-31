@@ -405,6 +405,14 @@ def prep_one_l23(p, idx, chk:bool=False):
         pRrs = bing_rt.calc_Rrs(ca, cbb)
         print(f'Initial Rrs guess: {np.mean((model_Rrs-pRrs)/model_Rrs)}')
 
+    # Free-B_p seed (M3 task 2, design §3.3): when p requests fit_Bp the
+    # fitting vector carries B_p as its last element, so p0 gets the
+    # linear-space Bp_value tail (default 0.01 -- inside the B_p prior,
+    # nonzero so init_walkers' floor gives it spread).  A no-op for the
+    # fixed-B_p default, and deliberately *after* the log10 loop and the
+    # chk block above, both of which see model parameters only.
+    p0 = bing_inf.append_Bp_seed(p0, rt_defs.rt_dict_from_p(p))
+
     # Return a dictionary
     ret_dict = {}
     ret_dict['odict'] = odict
@@ -626,16 +634,25 @@ def fit_with_LM(p:namedtuple, idx:int, p0:np.ndarray=None):
     if p0 is None:
         p0 = prep_dict['p0']
 
+    # Radiative transfer dict (before the bounds -- fit_Bp adds a slot)
+    rt_dict = rt_defs.rt_dict_from_p(p)
+
     # Bounds
     low_bounds, high_bounds = [], []
     low_bounds += [item['pmin'] for item in p.apriors]
     low_bounds += [item['pmin'] for item in p.bpriors]
     high_bounds += [item['pmax'] for item in p.apriors]
     high_bounds += [item['pmax'] for item in p.bpriors]
+    # B_p bounds (M3 task 2): under fit_Bp the p0 from prep_one_l23
+    # carries the B_p tail, so curve_fit's bounds need a matching
+    # trailing slot -- the same default range the MCMC prior (BP_PRIOR)
+    # enforces in log_prob.  This is the chi-squared path's *only* B_p
+    # range enforcement: like the model parameters, fit_func itself
+    # never checks bounds -- that is the optimizer's job.
+    if rt_dict.get('fit_Bp', False):
+        low_bounds.append(rt_defs.BP_PRIOR_PMIN)
+        high_bounds.append(rt_defs.BP_PRIOR_PMAX)
     bounds = (np.array(low_bounds), np.array(high_bounds))
-
-    # Radiative transfer dict
-    rt_dict = rt_defs.rt_dict_from_p(p)
 
     # Do it
     items = [(model_Rrs, model_varRrs, p0, idx)]

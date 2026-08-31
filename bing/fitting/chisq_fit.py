@@ -77,6 +77,14 @@ def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None,
     bounds : tuple, optional
         Parameter bounds as (lower_bounds, upper_bounds) where each is
         a 1D array matching the parameter vector. Default is (-inf, inf).
+        When rt_dict['fit_Bp'] is True the parameter vector (and p0)
+        carries a trailing B_p element, so finite bounds need a matching
+        trailing slot -- use the default free-B_p range
+        [bing.rt.defs.BP_PRIOR_PMIN, bing.rt.defs.BP_PRIOR_PMAX] =
+        [0.004, 0.05] to stay consistent with the MCMC prior (see
+        l23.fit_with_LM). This is the chi-squared path's only B_p range
+        enforcement: fit_func performs no bound checks of its own for
+        B_p, exactly as for the model parameters.
     maxfev : int, optional
         Maximum number of forward-model evaluations the optimizer may
         spend. Default None, i.e. leave scipy's own default in place.
@@ -157,9 +165,18 @@ def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None,
     if (rt_dict or {}).get('rt_backend', 'gordon') != 'gordon':
         nap = models[0].nparam
         p0_check = np.asarray(params)
+        # When B_p is free (fit_Bp, design §3.3) the caller's p0 carries
+        # the B_p tail -- peel it exactly as fit_func does, so the check
+        # sees the same aparams/bparams/Bp the optimizer will use.
+        # Bp=None otherwise (the adapter falls back to
+        # rt_dict['Bp_value']).
+        Bp_check = None
+        if rt_dict.get('fit_Bp', False):
+            Bp_check = float(p0_check[-1])
+            p0_check = p0_check[:-1]
         bing_eval.robust_domain_check(
             models[0], p0_check[:nap], models[1], p0_check[nap:],
-            rt_dict, geom=geom, Bp=None)
+            rt_dict, geom=geom, Bp=Bp_check)
 
     # Only pass maxfev when asked, so scipy's default is untouched
     kwargs = {} if maxfev is None else dict(maxfev=maxfev)
@@ -189,7 +206,13 @@ def fit_func(wave:np.ndarray, *params, models:list=None,
         come from model objects).
     *params : float
         Variable-length parameter tuple. First models[0].nparam values
-        are absorption parameters, remainder are backscattering parameters.
+        are absorption parameters, remainder are backscattering
+        parameters. When rt_dict['fit_Bp'] is True the tuple carries one
+        extra trailing element -- (a_params..., bb_params..., B_p)
+        (design §3.3), where B_p is the particulate backscattering ratio
+        bb_p/b_p in *linear* space; it is peeled off before the
+        aparams/bparams split, so the model parameter layout is
+        unchanged either way.
     models : list
         List of two model objects: [absorption_model, backscattering_model].
     return_full : bool, optional
@@ -200,7 +223,19 @@ def fit_func(wave:np.ndarray, *params, models:list=None,
         'rt_backend' key (default 'gordon' when absent; see
         bing.rt.defs.RT_BACKENDS) selects the forward model: 'gordon'
         keeps the legacy calc_Rrs_from_models call, any robust value
-        dispatches to bing.evaluate.calc_Rrs_from_models_robust.
+        dispatches to bing.evaluate.calc_Rrs_from_models_robust. The
+        optional 'fit_Bp' key (robust backends only; validate_rt_dict
+        rejects it for 'gordon' at fit setup): when True, B_p is a free
+        parameter riding as the last element of ``params``; it is peeled
+        off here and forwarded as the adapter's ``Bp`` argument. When
+        False/absent (the default), ``params`` is the plain model vector
+        and the adapter falls back to rt_dict['Bp_value'] (Bp=None --
+        the fixed-B_p case). Unlike inference.log_prob (which evaluates
+        the B_p prior and returns -np.inf out of range), fit_func never
+        range-checks the peeled value -- a curve_fit model function must
+        return a prediction, and bounds are the optimizer's job (pass
+        them via ``fit``'s ``bounds`` argument; the model parameters are
+        handled identically).
     geom : bing.rt.geometry.ObsGeometry, optional
         Fixed per-pixel viewing/illumination geometry. Required (non-None)
         whenever rt_dict['rt_backend'] selects a robust backend; ignored
@@ -226,6 +261,17 @@ def fit_func(wave:np.ndarray, *params, models:list=None,
     actual radiative transfer calculation.
     """
 
+    # B_p tail peel (M3 task 1, design §3.3): when rt_dict['fit_Bp'] is
+    # True the incoming tuple is (a_params..., bb_params..., B_p) -- peel
+    # the tail *first* so the aparams/bparams split below is untouched.
+    # Otherwise Bp stays None and the adapter falls back to
+    # rt_dict['Bp_value'] (the fixed-B_p case, M2 Q1).
+    if rt_dict is not None and rt_dict.get('fit_Bp', False):
+        Bp = params[-1]
+        params = params[:-1]
+    else:
+        Bp = None
+
     # Unpack for convenience
     aparams = np.array(params[:models[0].nparam])
     bparams = np.array(params[models[0].nparam:])
@@ -237,10 +283,11 @@ def fit_func(wave:np.ndarray, *params, models:list=None,
         pred = bing_eval.calc_Rrs_from_models(models[0], aparams, models[1],
             bparams, rt_dict)
     else:
-        # Bp=None -> the adapter falls back to rt_dict['Bp_value'] (the
-        # fixed-B_p case); a free/sampled Bp arrives in M3.
+        # Bp is the peeled tail when fit_Bp is True; None otherwise, which
+        # the adapter documents as "fall back to rt_dict['Bp_value']" (the
+        # fixed-B_p case).
         pred = bing_eval.calc_Rrs_from_models_robust(models[0], aparams,
-            models[1], bparams, rt_dict, geom=geom, Bp=None)
+            models[1], bparams, rt_dict, geom=geom, Bp=Bp)
 
     if return_full:
         a = models[0].eval_a(aparams)

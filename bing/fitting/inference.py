@@ -44,11 +44,26 @@ from tqdm import tqdm
 
 from bing.models import utils as model_utils
 from bing import evaluate as bing_eval
+from bing.priors import priors as bing_priors
 from bing.rt import defs as rt_defs
 
 import emcee
 
 from IPython import embed
+
+#: The free-B_p prior (M3 task 2; plan choice, design §7.3): a
+#: **linear-space** uniform over
+#: [rt_defs.BP_PRIOR_PMIN, rt_defs.BP_PRIOR_PMAX] = [0.004, 0.05] --
+#: B_p is a ratio (bb_p/b_p), like the slopes, not a log10 amplitude.
+#: Built from the same UniformPrior class as the model priors so the
+#: conventions match by construction: bounds inclusive (strict </>
+#: comparisons), in-range log-density contribution exactly 0 (posterior
+#: shape only -- this codebase's uniform priors carry no -log(width)
+#: normalization).  log_prob evaluates it on the peeled B_p tail whenever
+#: rt_dict['fit_Bp'] is True.
+BP_PRIOR = bing_priors.UniformPrior(dict(
+    flavor='uniform', pmin=rt_defs.BP_PRIOR_PMIN,
+    pmax=rt_defs.BP_PRIOR_PMAX))
 
 def log_prob(params, models:list, Rrs:np.ndarray,
              varRrs:np.ndarray, rt_dict:dict, geom=None):
@@ -63,7 +78,12 @@ def log_prob(params, models:list, Rrs:np.ndarray,
     ----------
     params : np.ndarray
         Combined parameter vector [a_params, bb_params] in model-specific
-        space (typically log10 for amplitudes, linear for slopes).
+        space (typically log10 for amplitudes, linear for slopes). When
+        rt_dict['fit_Bp'] is True the vector carries one extra trailing
+        element -- [a_params..., bb_params..., B_p] (design §3.3), where
+        B_p is the particulate backscattering ratio bb_p/b_p in *linear*
+        space. The tail is peeled off before the aparams/bparams split,
+        so the model parameter layout is unchanged either way.
     models : list
         List of two model objects: [absorption_model, backscattering_model].
         Each must have `priors` attribute and `nparam` count.
@@ -80,6 +100,18 @@ def log_prob(params, models:list, Rrs:np.ndarray,
           backends; see bing.rt.defs.RT_BACKENDS). Non-gordon values
           dispatch the forward model to
           bing.evaluate.calc_Rrs_from_models_robust.
+        - 'fit_Bp' : bool, optional - When True (robust backends only;
+          validate_rt_dict rejects it for 'gordon' at fit setup), B_p is
+          a free/sampled parameter riding as the last element of
+          ``params``; it is peeled off here, checked against its own
+          prior (BP_PRIOR: a linear-space uniform over the inclusive
+          [rt_defs.BP_PRIOR_PMIN, rt_defs.BP_PRIOR_PMAX] = [0.004, 0.05]
+          range -- out of range returns -np.inf before any forward-model
+          call; in range contributes 0, like the model uniform priors),
+          and forwarded as the adapter's ``Bp`` argument. When
+          False/absent (the default), ``params`` is the plain model
+          vector, no B_p prior is evaluated, and the adapter falls back
+          to rt_dict['Bp_value'] (Bp=None -- the fixed-B_p case).
     geom : bing.rt.geometry.ObsGeometry, optional
         Fixed per-pixel viewing/illumination geometry. Required (non-None)
         whenever rt_dict['rt_backend'] selects a robust backend; ignored
@@ -89,7 +121,9 @@ def log_prob(params, models:list, Rrs:np.ndarray,
     -------
     float
         Log-posterior probability. Returns -np.inf if parameters are
-        outside prior bounds or if calculation produces NaN.
+        outside prior bounds (including, under rt_dict['fit_Bp'], a B_p
+        tail outside BP_PRIOR's [0.004, 0.05] range -- checked before
+        the forward-model call) or if calculation produces NaN.
 
     Notes
     -----
@@ -97,7 +131,10 @@ def log_prob(params, models:list, Rrs:np.ndarray,
         log(L) = -0.5 × Σ[(Rrs_model - Rrs_obs)² / varRrs]
 
     The total log-posterior is:
-        log(P) = log(L) + log(prior_a) + log(prior_bb)
+        log(P) = log(L) + log(prior_a) + log(prior_bb) [+ log(prior_B_p)]
+
+    where the B_p term appears only under rt_dict['fit_Bp'] and, being a
+    uniform prior, is either 0 (in range) or -inf (out of range).
 
     log_prob itself performs no configuration validation -- it sits on
     the sampling hot path. fit_one / chisq_fit.fit run
@@ -109,6 +146,17 @@ def log_prob(params, models:list, Rrs:np.ndarray,
     calc_Rrs_from_models_robust -- rather than silently defaulting
     theta_s.
     """
+    # B_p tail peel (M3 task 1, design §3.3): when rt_dict['fit_Bp'] is
+    # True the sampled vector is [a_params..., bb_params..., B_p] -- peel
+    # the tail *first* so the aparams/bparams split below is untouched.
+    # Otherwise Bp stays None and the adapter falls back to
+    # rt_dict['Bp_value'] (the fixed-B_p case, M2 Q1).
+    if rt_dict.get('fit_Bp', False):
+        Bp = params[-1]
+        params = params[:-1]
+    else:
+        Bp = None
+
     # Unpack for convenience
     aparams = params[:models[0].nparam]
     bparams = params[models[0].nparam:]
@@ -117,8 +165,16 @@ def log_prob(params, models:list, Rrs:np.ndarray,
     # TODO -- allow for more complex priors
     a_prior = models[0].priors.calc(aparams)
     b_prior = models[1].priors.calc(bparams)
+    # B_p prior (M3 task 2; plan choice, design §7.3): a linear-space
+    # uniform over the inclusive [BP_PRIOR_PMIN, BP_PRIOR_PMAX] range,
+    # evaluated alongside the model priors -- an out-of-range tail
+    # short-circuits to -inf below, *before* the forward call, exactly
+    # like an out-of-range model parameter.  In range it contributes
+    # exactly 0 (UniformPrior's convention).  0. when B_p is fixed
+    # (fit_Bp False/absent), leaving that path's value untouched.
+    Bp_prior = 0. if Bp is None else BP_PRIOR.calc(Bp)
 
-    if np.any(np.isneginf([a_prior, b_prior])):
+    if np.any(np.isneginf([a_prior, b_prior, Bp_prior])):
         return -np.inf
 
     # Proceed -- dispatch on the RT backend (design §3.4).  The default
@@ -128,10 +184,11 @@ def log_prob(params, models:list, Rrs:np.ndarray,
         pred = bing_eval.calc_Rrs_from_models(models[0], aparams, models[1],
             bparams, rt_dict)
     else:
-        # Bp=None -> the adapter falls back to rt_dict['Bp_value'] (the
-        # fixed-B_p case); a free/sampled Bp arrives in M3.
+        # Bp is the peeled tail when fit_Bp is True; None otherwise, which
+        # the adapter documents as "fall back to rt_dict['Bp_value']" (the
+        # fixed-B_p case).
         pred = bing_eval.calc_Rrs_from_models_robust(models[0], aparams,
-            models[1], bparams, rt_dict, geom=geom, Bp=None)
+            models[1], bparams, rt_dict, geom=geom, Bp=Bp)
 
     # Evaluate
     eeval = (pred-Rrs)**2 / varRrs
@@ -140,7 +197,7 @@ def log_prob(params, models:list, Rrs:np.ndarray,
     if np.isnan(prob):
         return -np.inf
     else:
-        return prob + a_prior + b_prior
+        return prob + a_prior + b_prior + Bp_prior
 
 def init_mcmc(models:list, nsteps:int=10000, nburn:int=1000):
     """
@@ -304,9 +361,17 @@ def fit_one(items:list, models:list=None, pdict:dict=None,
     if rt_backend != 'gordon':
         nap = models[0].nparam
         p0_check = np.asarray(params)
+        # When B_p is free (fit_Bp, design §3.3) the caller's p0 carries
+        # the B_p tail -- peel it exactly as log_prob does, so the check
+        # sees the same aparams/bparams/Bp the sampler will use.  Bp=None
+        # otherwise (the adapter falls back to rt_dict['Bp_value']).
+        Bp_check = None
+        if rt_dict.get('fit_Bp', False):
+            Bp_check = float(p0_check[-1])
+            p0_check = p0_check[:-1]
         bing_eval.robust_domain_check(
             models[0], p0_check[:nap], models[1], p0_check[nap:],
-            rt_dict, geom=geom, Bp=None)
+            rt_dict, geom=geom, Bp=Bp_check)
 
     # Run
     print(f"idx={idx}")
@@ -327,15 +392,61 @@ def fit_one(items:list, models:list=None, pdict:dict=None,
     if rt_backend != 'gordon':
         chain = sampler.get_chain()
         median = np.median(chain.reshape(-1, chain.shape[-1]), axis=0)
+        # Same B_p tail peel as the p0 check above: with fit_Bp the chain
+        # has the extra trailing column, so the flattened median does too.
+        Bp_med = None
+        if rt_dict.get('fit_Bp', False):
+            Bp_med = float(median[-1])
+            median = median[:-1]
         bing_eval.robust_domain_check(
             models[0], median[:nap], models[1], median[nap:],
-            rt_dict, geom=geom, Bp=None)
+            rt_dict, geom=geom, Bp=Bp_med)
 
     # Return
     if chains_only:
         return sampler.get_chain().astype(np.float32), idx
     else:
         return sampler, idx
+
+def append_Bp_seed(p0, rt_dict:dict):
+    """
+    Append the B_p seed to an initial-guess vector when B_p is free.
+
+    When ``rt_dict['fit_Bp']`` is True the fitting vector carries B_p as
+    its last element -- ``[a_params..., bb_params..., B_p]`` (design
+    §3.3) -- so the initial guess needs a matching tail. This helper
+    seeds it at ``rt_dict['Bp_value']`` (default 0.01, matching
+    bing.rt.defs.rt_dict_from_p): a *linear-space* value (never log10'd
+    -- B_p is a ratio, and its prior flavor is 'uniform'), inside
+    BP_PRIOR's default [0.004, 0.05] range, and nonzero -- so
+    init_walkers' floored perturbation gives the dimension real spread
+    across walkers.
+
+    Called by the canonical p0 builders (e.g. l23.prep_one_l23, after
+    their model-parameter initial guess and log10 conversion); direct
+    callers assembling p0 by hand under fit_Bp should use it too, or
+    append the tail themselves.
+
+    Parameters
+    ----------
+    p0 : np.ndarray or sequence
+        Initial guess for the model parameters (aparams + bparams), in
+        fitting space (log10 already applied where the priors say so).
+    rt_dict : dict
+        Radiative transfer configuration. Only 'fit_Bp' (default False)
+        and 'Bp_value' (default 0.01) are consulted. None is treated as
+        the fixed-B_p default.
+
+    Returns
+    -------
+    np.ndarray
+        ``p0`` with ``Bp_value`` appended when rt_dict['fit_Bp'] is
+        True; ``np.asarray(p0)`` unchanged otherwise.
+    """
+    if rt_dict is not None and rt_dict.get('fit_Bp', False):
+        return np.append(p0, rt_dict.get('Bp_value', 0.01))
+    return np.asarray(p0)
+
 
 def prior_bounds(models:list):
     """
