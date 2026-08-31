@@ -297,6 +297,58 @@ already documents "missing set_aph" as a known trap), so hardening
 `eval_anw` itself would be a separate, backend-agnostic change outside
 task 3's adapter scope. Not blocking anything; flagged for completeness.
 
+**Q7 (task 4, Claude → JXP). Resolved finding, no answer needed — does
+Q4's fluorescence Ed-routing gap (the `include_Raman`-only condition)
+actually explain the robust-vs-BING fluorescence disagreement?** Measured
+in `nb/RT/rob_rt_coding_5.ipynb` section 4: **no, not meaningfully.** On
+L23 idx=170 (PACE grid), the "as-specced" fluorescence-only comparison
+(`include_Raman=False`, so per Q4 robust's `fluorescence_kernel` reads
+`Geometry.Ed=None` — the packaged-L23 default — while BING's own
+`init_Chl_fluorescence` uses the real zenith-0 production Ed) measured max
+relative disagreement 9.18% (mean 5.77%). Re-running with
+`include_Raman=True` too (so the Q4 routing condition fires and the
+*same* stashed sky reaches both backends' fluorescence kernels — an
+Ed-matched combined Raman+fluorescence check) measured max 18.49% (mean
+7.21%) — **larger, not smaller**. So the Ed-source mismatch Q4 flagged is
+not the dominant contributor to the fluorescence-path disagreement; the
+excitation-grid approximation gap M1's Q1 identified for Raman
+(interpolating/clamping the emission-grid spectrum, vs BING's true
+parametric evaluation at the wider excitation grid) evidently dominates
+for fluorescence too — unsurprising since `inelastic.py`'s
+`fluorescence_kernel` builds its excitation grid the same
+interpolate/clamp way. Consequence: extending Q4's routing condition to
+fluorescence-only calls (the one-line change Q4 flagged as available)
+would not, on its own, bring Gate item 2's fluorescence cross-check
+anywhere near `rtol <= 5e-4` — the real gap is the physics composition,
+not the sky source. Not blocking anything; sharpens what Q1's eventual
+answer needs to account for (a `robust_baseline`-based Gate item 2 would
+have the *same* problem, since M1's Q2 already found `Rrs_gordon` has no
+inelastic path at all — this is orthogonal to that, a fact about
+`robust_ztt`/`robust_hybrid`'s inelastic kernels specifically).
+
+**Q8 (task 4, Claude → JXP). Resolved finding, no answer needed — the
+robust-vs-BING inelastic agreement, measured on real data instead of
+synthetic fixtures.** `nb/RT/rob_rt_coding_5.ipynb` sections 3-4 are the
+first time this milestone's Raman/fluorescence cross-check has been run
+on a real L23 spectrum with a real production Ed spectrum on both sides
+(task 1-3's tests use either synthetic Ed pairs or synthetic IOP fixtures,
+never both real together). Measured, honestly, at rtol: Raman max 11.37%
+/ mean 5.64% (worst at 400 nm); fluorescence max 9.18% / mean 5.77%
+(mismatched-Ed case) or max 18.49% / mean 7.21% (Ed-matched case) — all
+many orders of magnitude outside the milestone's `rtol <= 5e-4` working
+tolerance, consistent with (and roughly the same order of magnitude as)
+M1's Q1 finding on synthetic fixtures. Nothing here changes Q1's
+open status — if anything it strengthens the case that Gate item 2 as
+literally written (whichever backend it ends up naming) cannot pass at
+`5e-4` for the inelastic terms specifically, only for the elastic path
+(which M1 already measured at ~2.3e-7, comfortably inside). Flagging so
+JXP's eventual Q1 answer can be made with this number in hand: **if the
+intent was ever for Gate item 2 to gate the inelastic comparison at
+`5e-4` too, that bar is not reachable with robust's current
+interpolated/clamped excitation-grid kernels** — only a tolerance
+specific to the physics-approximation gap (or a scope change to what
+Gate item 2 actually checks) would close it.
+
 ## Next
 
 → `rob_rt_prompt_6.md` (M5: deprecation notes, docs, throughput benchmark).
@@ -574,3 +626,112 @@ JXP's answer first** — the notebook's `robust_baseline`+Raman comparison
 as originally worded is impossible (M1's ValueError guard, still live),
 so JXP must pick the reframing (likely `robust_ztt`/`robust_hybrid` vs
 `gordon`) before that comparison and the Gate-item-2 tests are built.
+
+### 2026-08-31 (M4 task 4 — Ed seam explainer notebook)
+
+**Built** `bing/nb/RT/rob_rt_coding_5.ipynb` (5 sections, 6 code cells, 9
+markdown cells; no source files touched — this task is notebook-only).
+Per Q1's still-open status, every robust-vs-BING comparison uses
+`rt_backend='robust_ztt'` rather than `'robust_baseline'`, called out
+explicitly in the intro markdown cell rather than substituted silently.
+
+- **Section 1 (the stash).** A fresh `ExpBricaud`+`Pow` model
+  (61-band, 400-700 nm, matching the `test_evaluate_robust*.py`
+  fixtures), Chl=1 via `set_aph`. The Ed pair is BING's real zenith-0
+  production recipe (`correct_atmosphere.downwelling.downwelling_irradiance`
+  on the exact `fitting/l23.py:319-328` grid, not a synthetic
+  stand-in — `correct_atmosphere` is a fine dependency for a notebook,
+  per the doc's own suggestion). Measured: `wave_Ed_raw`/`Ed_raw` are
+  `None` before the call; after `set_raman_Ed`, both hold the *exact*
+  input array objects (`is`-identity True for both), `array_equal` also
+  True, `Ed_ratio_raman` computed to the unchanged (61,)-shape formula.
+  wv_Ed grid measured 347-705 nm (359 pts); Ed 52.65-189.55 mW cm^-2
+  um^-1 (TSIS-1 HSRS spectrum, the package's default source).
+
+- **Section 2 (pair vs `Ed=None`, seam is live).** Same IOPs
+  (`_PARAM_SETS[0]`-style: Chl=1, Adg/Sdg/Bnw/beta fixed), `robust_ztt`
+  + Raman, $\theta_s=30\degree$, computed once with a fresh unstashed
+  model (`Ed=None`, robust's packaged-L23 default) and once with
+  section 1's stashed real production Ed. **Measured max relative Rrs
+  difference 1.538e-2 (1.54%) at 505 nm, mean 4.209e-3 (0.42%), max
+  absolute 4.47e-5 sr^-1** — ~150,000x the ~1e-7 float32 ULP noise
+  floor, a fresh, independent measurement (not task 2's 6.3%
+  deliberately-steep-sky number) that happens to land close to task
+  3's own production-Ed test (1.5e-2 at 505 nm, mean 4.2e-3) — expected,
+  since both use a real zenith-0 sky at similar theta_s and IOPs; this
+  notebook's number was measured fresh, not copied.
+
+- **Section 3 (robust-vs-BING Raman on real L23, float32 tolerance).**
+  L23 idx=170 (Chl=0.1306 mg/m^3), PACE grid, via
+  `fit_l23.prep_one_l23(..., include_Raman=True)` — which itself runs
+  the production Ed recipe and stashes it on `models_l23[0]`, so BING's
+  Gordon+Raman path (`Ed_ratio_raman`) and `robust_ztt`+Raman
+  (`Geometry.Ed` routed from the same stash) consume the identical
+  sky. **Measured max relative disagreement 1.1368e-01 (11.37%) at
+  400 nm, mean 5.641e-02 (5.64%) — does NOT satisfy `rtol <= 5e-4`**,
+  reported plainly rather than reframed. Consistent with M1's Q1
+  finding: robust's excitation-grid IOPs are an interpolated/clamped
+  emission-grid spectrum, not the true parametric evaluation at
+  `wave_ex` that BING's own path does.
+
+- **Section 4 (fluorescence, matched `phi_C`).** Same L23 model/params;
+  `a_ph` already set (implicit `eval_anw` side effect for free-Chl
+  `ExpBricaud`, confirmed live — no explicit `set_aph` call needed,
+  task 3's guard never fires here); BING's `init_Chl_fluorescence`
+  fed the same zenith-0 recipe evaluated on the model grid. `phi_C=0.02`
+  matched both sides. **Mismatched-Ed case** (`include_Raman=False`,
+  so per Q4 robust's fluorescence kernel falls back to the packaged-L23
+  default while BING uses the real production Ed): max relative
+  disagreement **9.178e-02 (9.18%) at 450 nm, mean 5.770e-02 (5.77%)**
+  — does NOT satisfy `rtol <= 5e-4`. Added a second, Ed-matched check
+  (`include_Raman=True` too, so the stash reaches both kernels, per Q4):
+  max **1.849e-01 (18.49%)**, mean **7.207e-02 (7.21%)** — *larger*,
+  not smaller, showing the Q4 Ed-source mismatch is not the dominant
+  driver (new finding, logged as **Q7**); the excitation-grid
+  interpolation gap (Q1-M1) evidently dominates for fluorescence too.
+  Logged the combined real-data measurement as **Q8** for JXP's
+  eventual Q1 answer to account for.
+
+- **Section 5 (why `5e-4`, not `1e-6`).** Markdown-only, tied explicitly
+  to sections 3-4's own numbers: float32-vs-float64 alone costs only
+  ~2.3e-7 relative on the elastic path (M1's own measurement, cited from
+  `rob_rt_prompt_3.md`), four orders of magnitude below `5e-4`; the
+  actual inelastic disagreement measured above (several *percent*) is
+  overwhelmingly a physics-composition gap (M1 Q1), not numerical noise
+  — so `5e-4` is the honest float32 floor for the parts of this
+  milestone that really are float32 JAX-vs-JAX agreement (the elastic
+  path; the pair-vs-`Ed=None` seam check, whose real differences sit
+  far above `5e-4` in the other direction), not a bar that was ever
+  going to make the Raman/fluorescence robust-vs-BING cross-check pass.
+
+**Execution verified for real.** Ran
+`jupyter nbconvert --to notebook --execute --inplace` (`ocean14`); all 6
+code cells have sequential `execution_count` 1-6 and non-empty outputs,
+zero error outputs. Re-diffed every numeric claim in the 9 markdown
+cells against the executed cells' actual printed output before writing
+this log entry — sections 2-4's markdown deliberately refers to
+"the max/mean relative error printed above" rather than restating
+digits inline (avoiding the recurring prose-drift failure mode
+entirely for those cells); the one markdown cell with an explicit
+qualitative comparison ("larger magnitude, not smaller") was checked
+against the actual printed numbers (9.18%/5.77% vs 18.49%/7.21% —
+holds). Also smoke-tested every cell's logic standalone as a plain
+script before building the `.ipynb` (a fragile-import class, given
+`correct_atmosphere` and `robust_ztt` jit compilation) — full notebook
+execution then took ~3.4s wall-clock (all `robust_ztt`, no emulator
+load).
+
+**Suite unaffected** (no source files touched by this task): re-ran the
+full suite anyway as a sanity check — **266 passed, 2 skipped, 2
+failed**, identical to task 3's exit baseline, same 2 pre-existing
+`test_l23_inelastic.py` failures (M0/Q10).
+
+**Next**: task 5 — update `rob_rt_prompt_6.md` (M5) with M4's final
+state: the Ed-seam integration is complete and gated on Q1's answer for
+how Gate item 2 should be framed; the measured robust-vs-BING inelastic
+agreement (Raman ~6-11%, fluorescence ~6-18% depending on Ed matching)
+is a real physics-composition gap, not a numerical one, and M5's
+skill-doc updates (the `inelastic-rrs` skill in particular) should say
+plainly that `bing.rt.raman`/`chl_fl` remain the higher-fidelity choice
+when the excitation-grid approximation matters, with `robust_ztt`/
+`robust_hybrid` as the not-yet-precisely-matching alternative.
