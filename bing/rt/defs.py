@@ -41,7 +41,71 @@ def rt_dict_from_p(p):
 
     Args:
         p (object): Parameter object containing configuration
-            radiative transfer options
+            radiative transfer options. Recognized RT-backend attributes
+            (all optional -- missing attributes fall back to the Gordon-
+            backend defaults below, so a legacy `p` still yields a valid
+            dict):
+
+            rt_backend (str): which forward model computes Rrs from
+                (a, bb). One of the four values in RT_BACKENDS, default
+                ``'gordon'``:
+
+                - ``'gordon'`` -- BING's own Gordon (1988) elastic model
+                  (bing.rt.rrs), with Raman/fluorescence composed via
+                  bing.rt.raman / bing.rt.chl_fl when
+                  include_Raman/include_Chl_fl are set. No phase-function
+                  input, so fit_Bp=True is invalid with this backend
+                  (validate_rt_dict raises).
+                - ``'robust_ztt'`` -- retrieve-or-bust's analytic
+                  (Zaneveld/Twardowski/Tassan-style) forward model.
+                  Supports include_Raman/include_Chl_fl via
+                  robust.rt.inelastic.
+                - ``'robust_hybrid'`` -- robust_ztt plus a learned
+                  emulator correction, valid only for wavelengths inside
+                  [ROBUST_HYBRID_WAVE_MIN, ROBUST_HYBRID_WAVE_MAX] nm (its
+                  L23/HydroLight training domain; validate_rt_dict raises
+                  outside that range). Also supports
+                  include_Raman/include_Chl_fl.
+                - ``'robust_baseline'`` -- robust's Gordon-compatible
+                  refit. **Elastic only**: passing include_Raman=True or
+                  include_Chl_fl=True with this backend raises ValueError
+                  in calc_Rrs_from_models_robust (robust.rt.baselines.
+                  Rrs_gordon has no `inelastic` argument by construction)
+                  -- use 'robust_ztt'/'robust_hybrid' for an inelastic fit
+                  on the robust side.
+
+                See docs/design/rob_rt_design.md §3.1 and
+                bing/CLAUDE.md's rt-subpackage bullet. NOTE: as of M4/M5,
+                robust's inelastic (Raman/fluorescence) terms are wired
+                and tested but measured to diverge from BING's own
+                Gordon+Raman/fluorescence physics by ~5-18% on real L23
+                data (bing/.claude/skills/inelastic-rrs/SKILL.md has the
+                full numbers and caveats) -- 'robust_ztt'/'robust_hybrid'
+                are a real, selectable alternative for the elastic terms
+                (agreement ~2.3e-7 relative to 'gordon' via
+                'robust_baseline'), not yet a validated equivalent
+                replacement for the inelastic ones.
+            fit_Bp (bool): whether B_p (the backscattering-ratio /
+                phase-function parameter robust's forward models take)
+                is a free MCMC parameter (True) or held fixed at
+                Bp_value (False, the default). Only meaningful for a
+                robust backend; requires rt_backend != 'gordon'
+                (validate_rt_dict raises otherwise). When True, B_p is
+                sampled linearly (not log10) over
+                [BP_PRIOR_PMIN, BP_PRIOR_PMAX] = [0.004, 0.05] (see
+                BP_PRIOR_PMIN/BP_PRIOR_PMAX module constants).
+            Bp_value (float): the fixed/seed value for B_p, used
+                whenever fit_Bp is False (B_p held fixed) and as the
+                walker-ball seed when fit_Bp is True. Default 0.01.
+
+    Returns:
+        dict: rt_dict with keys 'variable_Gordon', 'variable_Gordon_G0',
+            'variable_Gordon_bbp', 'include_Raman', 'include_Chl_fl',
+            'phi_C', 'double_gaussian' (each taken verbatim from `p`, or
+            None if `p` lacks the attribute), plus 'rt_backend',
+            'fit_Bp', 'Bp_value' (each taken from `p` if present, else
+            the Gordon-backend defaults 'gordon' / False / 0.01
+            documented above).
     """
 
     rt_dict = {}

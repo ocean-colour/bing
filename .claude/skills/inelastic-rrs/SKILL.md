@@ -22,6 +22,69 @@ description: Add Raman scattering and/or chlorophyll fluorescence to the BING Rr
 
 The MCMC pipeline uses the first form. Whether Raman is included is controlled by `rt_dict['include_Raman']`.
 
+This page describes BING's own (`rt_backend='gordon'`) inelastic wiring —
+`bing.rt.raman` / `bing.rt.chl_fl`, composed via `calc_Rrs`. As of M4/M5 of
+the `rob_rt` integration, that is not the only inelastic path available.
+
+## Alternative inelastic path: `robust.rt.inelastic`
+
+An alternative inelastic (Raman + fluorescence) forward model now exists in
+the sibling `robust` package (`robust.rt.inelastic`), reachable from BING by
+setting `rt_dict['rt_backend'] = 'robust_ztt'` or `'robust_hybrid'` (not
+`'robust_baseline'`, which is elastic-only and raises `ValueError` if
+combined with `include_Raman`/`include_Chl_fl` — see
+[run-bing-fit](../run-bing-fit/SKILL.md#rt-backend-selection)). It is wired
+end-to-end and exercised by the test suite (M0-M4 of the `rob_rt`
+integration).
+
+**This is a real, selectable alternative — not (yet) a validated
+equivalent replacement for BING's own Raman/fluorescence physics.**
+Measured on real L23 data (`nb/RT/rob_rt_coding_5.ipynb` §§3-4, a real
+production `Ed` on both sides), the robust-vs-BING agreement is:
+
+- **Raman**: max 11.4% / mean 5.6% (worst at 400 nm)
+- **Fluorescence**: max 9.2% / mean 5.8% (mismatched-`Ed` case, as M4
+  ships) to max 18.5% / mean 7.2% (`Ed`-matched case — larger, not
+  smaller)
+
+Both are several **orders of magnitude** outside this project's working
+tolerance for cross-backend agreement (`rtol <= 5e-4`), and the gap is not
+numerical noise — float32-vs-float64 alone costs ~2.3e-7 relative, four
+orders of magnitude smaller than the measured disagreement. The root cause
+is a genuine physics-composition difference: `robust`'s Raman/fluorescence
+kernels interpolate/clamp the emission-grid IOP spectrum to stand in for
+the excitation-wavelength IOPs, rather than re-evaluating the parametric
+`a`/`bb` models at the true excitation grid the way BING's own
+Gordon+Raman/fluorescence path does. For contrast, the *elastic* path
+agrees tightly (`robust_baseline` vs `gordon`, ~2.3e-7 relative) — the
+disagreement above is specific to the inelastic terms.
+
+Given that, this note does **not** recommend one inelastic path over the
+other. What can be said factually:
+
+- If you need the most physically faithful Raman/fluorescence terms BING
+  can currently produce, `rt_backend='gordon'` (this page's wiring) is the
+  measured-accurate choice.
+- If you are already using `robust_ztt`/`robust_hybrid` for the *elastic*
+  terms (e.g. for their own physics reasons — see
+  `docs/design/rob_rt_design.md` §3.1), composing the inelastic terms from
+  the same backend keeps the forward model internally consistent, at the
+  cost of the ~5-18% inelastic disagreement documented above. Whether that
+  tradeoff is worth it depends on the fit and is not something this doc
+  resolves.
+- Do not treat `robust`'s inelastic path as a drop-in, more-accurate
+  substitute for `bing.rt.raman`/`bing.rt.chl_fl` — the measured evidence
+  does not support that framing.
+
+*(Provenance note: an earlier draft of the M5 task spec that produced this
+section said the robust inelastic path "is now the recommended one." That
+wording is not used here — it would overstate what M4's measurements
+support. This section applies the same conservative framing already
+adopted for the `bing/rt/raman.py`/`chl_fl.py` module docstrings (M5 task
+1), for consistency within the milestone; whether this framing is in fact
+what JXP intended is an open question — see Q1/Q2 in
+`claude_prompts/RT/rob_rt_prompt_6.md`.)*
+
 ## Turning Raman on for a fit
 
 1. Set `include_Raman=True` in your `standard.*` parameters:

@@ -83,7 +83,7 @@ Fitted IOPs + Uncertainties
 - `rrs.py`: Gordon elastic model (`calc_Rrs(a, bb)`), wavelength-dependent Gordon coefficients, fluorescence-aware Rrs builders, and `A_Rrs=0.52`/`B_Rrs=1.7` conversion constants
 - `raman.py`: Raman scattering coefficients/redistribution + `calc_Rrs_with_raman`
 - `chl_fl.py`: Low-level chlorophyll fluorescence emission (`calc_R_fluorescence`, `calc_fluorescence_line_height`, `fluorescence_backscattering_coeff`)
-- `defs.py`: Shared definitions/constants for the subpackage
+- `defs.py`: Shared definitions/constants for the subpackage, including `rt_dict_from_p`'s `rt_dict['rt_backend']` knob (`'gordon'` / `'robust_ztt'` / `'robust_hybrid'` / `'robust_baseline'`) that selects the forward model computing `Rrs` from `(a, bb)`
 
 **[bing/fitting/](bing/fitting/)** - Parameter estimation algorithms
 - `inference.py` (~427 lines): MCMC sampling with emcee (`log_prob`, `run_emcee`, `fit_one`, `fit_batch`, `init_mcmc`)

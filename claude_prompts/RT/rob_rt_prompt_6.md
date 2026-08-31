@@ -223,7 +223,75 @@ untouched — pytest-green in `ocean14`, benchmarked, documented, on the
 
 ## Q&A
 
-_(none yet — this prompt has not been executed)_
+**Q1 (task 1, Claude → JXP). REAL OPEN QUESTION — needs your confirmation
+before task 2 writes the `inelastic-rrs/SKILL.md` "recommended path" note.**
+Task 1's literal wording says `raman.py`/`chl_fl.py` "are no longer the
+recommended inelastic path" and should "point to `robust.rt.inelastic`."
+Read at face value and written unqualified, that phrasing endorses
+`robust.rt.inelastic` as the *preferred* inelastic path over BING's own —
+but M4's measured evidence (Q7/Q8, `rob_rt_prompt_5.md`, this prompt's own
+"READ THIS FIRST" Context bullet) shows the opposite on accuracy: robust's
+Raman/fluorescence terms diverge from BING's own Gordon+Raman/fluorescence
+physics by ~11% max/~6% mean (Raman) and ~9-18% max/~6-7% mean
+(fluorescence) on real L23 data — many orders of magnitude outside the
+project's `rtol <= 5e-4` tolerance, and root-caused (not a numerics
+artifact) to robust interpolating/clamping the emission-grid IOP spectrum
+for excitation wavelengths rather than re-evaluating the true parametric
+a/bb models at the real excitation grid. Writing an unqualified "no longer
+recommended, use robust instead" would misstate the actual state of
+validation. **What I did**: implemented the letter of the task — both
+module docstrings now carry a factual "Backend note" pointing to
+`robust.rt.inelastic` via `rt_dict['rt_backend'] = 'robust_ztt'` /
+`'robust_hybrid'` (not `'robust_baseline'`, which has no inelastic
+composition path) — but worded it as "a wired, selectable alternative,"
+not a validated or endorsed replacement, and included the measured
+disagreement numbers so a future reader isn't steered toward the
+less-validated path without the caveat attached. **What I did not do**: I
+did not invent a project decision either way — I did not write robust's
+inelastic path as discouraged, and I did not leave the docstrings
+unqualified/unchanged contrary to the task spec. **Needs your
+confirmation**: is this conservative framing the right call, or did you
+intend "no longer recommended" to be read as literally as written (i.e.
+robust genuinely preferred despite the accuracy gap, perhaps because the
+gap is expected to close later, or because some other consideration
+outweighs the measured divergence)? This same tension applies with higher
+stakes to task 2's `inelastic-rrs/SKILL.md` update, which is user-facing
+guidance rather than an internal module docstring — please confirm before
+that task is executed.
+
+**Q2 (task 2, Claude → JXP). Carries Q1 forward — Q1 is still unanswered,
+this is not a resolution of it.** JXP gave direct instruction to proceed
+with task 2 despite Q1 (above) having no `>A.` response anywhere in this
+doc. Per that instruction, task 2 was executed — but its wording tension is
+the same as Q1's, at higher stakes: the task spec's literal text says
+`inelastic-rrs/SKILL.md` should state "the robust inelastic path is now the
+recommended one," and that skill doc is user-facing guidance a person reads
+to choose a backend, not an internal module docstring. Writing that
+sentence unqualified would tell a reader to prefer the less-accurate path
+on the strength of a claim the M4 numbers don't support. **What I did**:
+applied task 1's already-established conservative framing to
+`inelastic-rrs/SKILL.md` consistently — not a new, independent judgment
+call, and not the literal spec wording. The new section states the robust
+alternative exists and is wired/selectable (`rt_backend='robust_ztt'`/
+`'robust_hybrid'`), gives the measured disagreement numbers (Raman ~11%
+max/~6% mean; fluorescence ~9-18% max/~6-7% mean, both far outside
+`rtol<=5e-4`, root-caused to the excitation-grid interpolation issue), and
+explicitly declines to write an unqualified recommendation — offering
+instead the two factual, situational considerations (accuracy favors
+`gordon`; internal consistency with an already-robust elastic backend is a
+different, non-accuracy argument for the robust inelastic path) without
+manufacturing a verdict between them. A provenance note in the skill doc
+itself says why this wording departs from the task spec's literal text and
+points back to Q1/Q2 here. **What I did not do**: I did not silently adopt
+the literal "now the recommended one" wording just because Q1 had gone
+unanswered for a full task cycle, and I did not invent a new resolution
+independent of task 1's — I treated task 1's framing as the controlling
+precedent for this milestone. **Needs your confirmation**: same question as
+Q1 — is this the framing you intended, or did you mean "recommended"
+literally (e.g. because the accuracy gap is expected to close, or some
+other consideration should dominate)? Q1 itself remains open and
+unanswered; this entry does not close it, only carries it forward through
+task 2's execution.
 
 ## Next
 
@@ -243,4 +311,201 @@ Record work in the Logs section below, format:
 
 ## Logs
 
-_(none yet)_
+### 2026-08-31 (M5 task 1 — raman/chl_fl deprecation docstrings)
+
+**Read/verified first.** `bing/rt/raman.py`'s module docstring (lines 1-19
+pre-edit) documents the Bartlett/Walrafen/Desiderio/Mobley references and
+the Ocean Optics Web Book link; `bing/rt/chl_fl.py`'s (lines 1-37 pre-edit)
+documents the Gordon/Maritorena/Behrenfeld references plus a "Theory"
+section on emission peaks/quantum yield. Neither had any existing note
+about backend selection. Confirmed `bing.rt.defs.RT_BACKENDS = ('gordon',
+'robust_ztt', 'robust_hybrid', 'robust_baseline')` (defs.py:12) and, in
+`evaluate.py`'s `_build_robust_inputs`, that `rt_backend == 'robust_baseline'`
+combined with `include_Raman`/`include_Chl_fl` raises `ValueError`
+(evaluate.py:442-447) — i.e. only `robust_ztt`/`robust_hybrid` actually
+carry an inelastic composition path, matching M1's Q2 and this milestone's
+Q1 framing. Confirmed `robust.rt.inelastic` is a real, importable module at
+`/Users/xavier/Oceanography/python/retrieve-or-bust/robust/rt/inelastic.py`
+(read-only reference repo, not edited).
+
+**Read the Context "READ THIS FIRST" bullet and the M4 numbers before
+writing anything**, per this prompt's own instruction — the elastic
+robust-vs-Gordon agreement (~2.3e-7 relative) is essentially exact, but the
+inelastic agreement (Raman: 11.4% max/5.6% mean; fluorescence: 9.2-18.5%
+max/5.8-7.2% mean, both on real L23 data) is several orders of magnitude
+outside the project's `rtol <= 5e-4` tolerance and is a genuine physics-
+composition difference (robust interpolates/clamps the emission-grid IOP
+spectrum for excitation wavelengths instead of re-evaluating the true
+parametric a/bb models at the real excitation grid), not a numerical
+artifact.
+
+**Implemented** (bing repo, `rob_rt` branch; 2 files, purely additive,
+docstring-only — confirmed via `git diff --stat`: `bing/rt/chl_fl.py` +19,
+`bing/rt/raman.py` +18, no other lines touched, no code/signature/behavior
+changes):
+
+- `bing/rt/raman.py` — appended a "Backend note" section to the module
+  docstring, after the existing "References" section (new lines ~19-36).
+  States: (a) this module implements BING's own Raman physics and serves
+  the `gordon` `rt_backend`; (b) an alternative exists via
+  `robust.rt.inelastic`, selectable via `rt_dict['rt_backend'] =
+  'robust_ztt'`/`'robust_hybrid'` (explicitly not `'robust_baseline'`,
+  which has no inelastic path); (c) that alternative's excitation-grid
+  approximation was measured on real L23 data to disagree with this
+  module's Raman term by up to ~11% max/~6% mean, well outside `rtol <=
+  5e-4`; (d) this module remains the physics implementation in active use
+  for `gordon` — the robust alternative is "a wired, selectable option,
+  not a validated equivalent replacement."
+- `bing/rt/chl_fl.py` — same structure and placement (new lines ~35-53),
+  substituting the fluorescence-specific numbers (~9-18% max/~6-7% mean
+  depending on sky-irradiance case) and "fluorescence" for "Raman"
+  throughout.
+
+**Why the conservative framing, not the task's literal "no longer
+recommended" wording**: written unqualified, "no longer the recommended
+inelastic path, point to `robust.rt.inelastic`" reads as an endorsement of
+robust's inelastic path as more correct/preferred — but the measured
+evidence shows the opposite on accuracy (elastic: essentially exact;
+inelastic: real, large, structural disagreement, per this prompt's own
+"READ THIS FIRST" framing). I was explicitly told not to resolve this
+tension by inventing new project direction in either direction (not
+silently downgrading robust's status beyond what's measured, and not
+leaving the docstrings as the unqualified spec literally states). So the
+docstring note states the alternative exists and is wired/selectable (a
+true, verified fact — M4 landed it) without characterizing it as
+"recommended" or superior, and attaches the actual measured numbers so a
+reader can judge for themselves. Flagged as Q1 above — this is a real
+open question for JXP, not a decision I made unilaterally.
+
+**Tested** (`ocean14`, `pytest bing/tests/ -q`): **266 passed, 2 skipped, 2
+failed** — identical to the M5 entering baseline recorded in this
+prompt's Context section (266/2/2), exit code non-zero only because of the
+2 pre-existing `test_l23_inelastic.py` failures (missing
+`l23_inelastic_fixture.npz`, diagnosed in M0/Q10, not a regression). Zero
+tests added, zero outcomes changed — consistent with a pure docstring
+edit.
+
+**Next**: task 2 — `rt_dict_from_p` docstring, `run-bing-fit/SKILL.md`,
+`inelastic-rrs/SKILL.md`, and `bing/CLAUDE.md`'s rt-subpackage bullet. The
+same "recommended path" wording tension applies there, at higher stakes:
+`inelastic-rrs/SKILL.md` is user-facing guidance a person reads to decide
+which path to use, not an internal module docstring, so the task-2 note
+needs the same accuracy caveat attached at least as prominently — pending
+JXP's confirmation on Q1 above before that wording is finalized.
+
+### 2026-08-31 (M5 task 2 — docs and skill updates)
+
+**Proceeded under direct instruction despite Q1 still open.** No `>A.`
+response to Q1 appears anywhere in this doc. JXP instructed proceeding with
+task 2 anyway; per that instruction this task applied task 1's already-
+established conservative framing to every piece touching the "recommended
+path" wording, rather than treating the passage of time as implicit
+sanction of the task spec's literal wording. Logged as Q2 above — Q1 itself
+is left untouched/unresolved.
+
+**Piece 1 — `rt_dict_from_p` docstring (`bing/rt/defs.py`).** Read the
+current function (lines 35-69 pre-edit) and the surrounding module: exact
+current keys/defaults confirmed by reading the code, not recalled from
+memory. `RT_BACKENDS = ('gordon', 'robust_ztt', 'robust_hybrid',
+'robust_baseline')` (defs.py:12). `rt_dict_from_p` builds `rt_dict['rt_backend']
+= getattr(p, 'rt_backend', 'gordon')`, `rt_dict['fit_Bp'] = getattr(p,
+'fit_Bp', False)`, `rt_dict['Bp_value'] = getattr(p, 'Bp_value', 0.01)`
+(defs.py:64-66) — confirmed exact key names, types (str/bool/float), and
+defaults directly from source, not guessed. Cross-checked
+`calc_Rrs_from_models_robust` in `bing/evaluate.py` (lines 420-448) for the
+exact `robust_baseline`+inelastic raise (`ValueError`, message quoting
+`robust.rt.baselines.Rrs_gordon` takes no `inelastic` argument) and
+`validate_rt_dict` (defs.py:72-125) for the `fit_Bp`+`'gordon'`,
+missing-`geom`, and `robust_hybrid` wavelength-range raises. **Wrote**: a
+full `Args:`/`Returns:` docstring rewrite documenting all four
+`rt_backend` values (what each does, which support
+`include_Raman`/`include_Chl_fl`, `robust_baseline`'s elastic-only
+restriction and its exact raise condition), `fit_Bp` (bool, requires a
+non-`'gordon'` backend, linear-space sampling range via
+`BP_PRIOR_PMIN`/`BP_PRIOR_PMAX` = [0.004, 0.05]), and `Bp_value` (float,
+default 0.01, fixed value or walker-ball seed). Also folded in one
+paragraph under the `rt_backend` docs carrying the same M4 accuracy numbers
+(Raman ~11% max/~6% mean; fluorescence ~9-18% max/~6-7% mean; elastic
+~2.3e-7) with a pointer to `inelastic-rrs/SKILL.md`, so a reader who only
+opens this docstring still sees the caveat rather than a bare list of
+values. Purely additive — no code/behavior/signature changes.
+
+**Piece 2 — `.claude/skills/run-bing-fit/SKILL.md`.** Verified the doc's
+own line citations (38-41/110/157) against the file as it stands: line 41
+is `rt_dict = rt_defs.rt_dict_from_p(p)` in the canonical script, line 110
+is the `**kwargs` common-keys list under "Picking a standard combination,"
+line 157 is the `rt_dict missing` pitfall — all three still accurate, no
+drift since M0-M4 (this file was untouched by them, matching the spec's
+"may still be accurate" hedge). **Wrote**: a new "### RT backend
+selection" subsection immediately after the common-keys line, with a
+table (`rt_backend`/`fit_Bp`/`Bp_value` — type, default, meaning), a short
+code example showing them passed into `standard.expb_pow(...)`, a note
+that robust backends require `geom=ObsGeometry(...)` (citing
+`validate_rt_dict`'s raise), and a pointer to `inelastic-rrs/SKILL.md` for
+the accuracy caveat rather than duplicating it (per this task's own
+instruction to keep this file operational/mechanical, not a second copy
+of the accuracy framing). Added five new pitfalls: `robust_baseline` +
+inelastic raises; missing `geom` raises; `fit_Bp=True` with `'gordon'`
+raises; `robust_hybrid`'s first-call JIT-compile cost (~1s) and the
+per-`fit_batch`-worker compile-cache note from the Context section;
+`robust_hybrid`'s wavelength-range restriction (350-750 nm). Kept this
+file free of "recommended"/accuracy-comparison language, per the task's
+explicit instruction that this tension belongs in `inelastic-rrs/SKILL.md`
+instead.
+
+**Piece 3 — `.claude/skills/inelastic-rrs/SKILL.md` (highest stakes).**
+Read the file in full (152 lines pre-edit) — confirmed it describes only
+the `gordon`-backend wiring (`bing.rt.raman`/`bing.rt.chl_fl`,
+`calc_Rrs`/`calc_Rrs_with_raman`/`calc_Rrs_with_fluorescence`), with no
+existing mention of `rt_backend` or the robust alternative anywhere in the
+file. **Wrote**, immediately after the three-forward-model table (before
+"Turning Raman on for a fit"): one sentence framing the existing content
+as the `gordon`-backend path specifically, then a new "## Alternative
+inelastic path: `robust.rt.inelastic`" section stating (a) the alternative
+exists, is reachable via `rt_dict['rt_backend'] = 'robust_ztt'`/
+`'robust_hybrid'` (not `'robust_baseline'`, which raises), and is wired/
+tested by M0-M4; (b) the measured numbers verbatim from this prompt's
+Context section (Raman 11.4% max/5.6% mean; fluorescence 9.2%/5.8% mean to
+18.5%/7.2% mean depending on Ed-matching; elastic ~2.3e-7 for contrast);
+(c) the root cause (excitation-grid interpolation/clamping vs. true
+parametric re-evaluation); (d) an explicit statement that this note does
+**not** recommend one path over the other, followed by two factual,
+situational bullets (accuracy favors `gordon`; internal consistency with
+an already-robust elastic backend is a different, non-accuracy argument
+for the robust inelastic path) with no manufactured verdict between them;
+(e) an explicit line telling the reader not to treat robust's inelastic
+path as a drop-in more-accurate substitute. Closed with a provenance note
+(italicized) stating this wording departs from the task spec's literal
+"now the recommended one" text, why, and pointing to Q1/Q2 in this doc.
+This is the section that most directly answers the "how does the
+`inelastic-rrs/SKILL.md` note actually read" question this prompt's Context
+section raised — logged in full above rather than paraphrased, since the
+exact wording is the consequential artifact of this task.
+
+**Piece 4 — `bing/CLAUDE.md`'s rt-subpackage bullet.** Found the bullet
+under "Module Organization" → `bing/rt/` (the `defs.py` line item, "Shared
+definitions/constants for the subpackage"). **Wrote**: extended that single
+line to also name the `rt_dict['rt_backend']` knob and its four values,
+staying to one line/one bullet as the task spec's own sizing calls for —
+no accuracy claims here, per instruction (that belongs in the skill docs).
+
+**Tested** (`ocean14`, `pytest bing/tests/ -q`): **266 passed, 2 skipped, 2
+failed** — identical to the M5 entering baseline and to task 1's exit
+state. The 2 failures are the same pre-existing `test_l23_inelastic.py`
+missing-fixture failures (M0/Q10), not a regression. Zero tests
+added/changed, consistent with a doc-only task across four files (one
+Python docstring, two Markdown skill files, one Markdown CLAUDE.md).
+
+**Why the conservative framing again, not the task's literal wording**:
+same reasoning as task 1's Q1 entry, now applied to user-facing skill
+documentation rather than an internal docstring — the measured M4 evidence
+does not support an unqualified "robust is now recommended" claim for the
+inelastic terms, and task 2 was explicitly instructed to apply task 1's
+resolution consistently rather than make an independent call. Logged as Q2
+above; Q1 remains open.
+
+**Next**: task 3 — the throughput benchmark script (`dev/rob_rt/
+benchmark_backends.py` suggested), timing `log_prob` through each backend
+at MCMC-realistic batch shapes, reporting calls/s vs. `gordon` and the
+per-`fit_batch`-worker JIT-compile cost — evidence reported, not
+thresholded, per this prompt's explicit instruction.
