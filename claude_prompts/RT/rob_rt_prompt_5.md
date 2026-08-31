@@ -194,7 +194,47 @@ Existing suite green throughout.
 
 ## Q&A
 
-_(none yet — this prompt has not been executed)_
+**Q1 (task 1, Claude → JXP). REAL OPEN QUESTION — needs your answer before
+the Gate-item-2 tests are written (task 2/3) and before task 4's notebook.**
+This milestone's **Gate item 2 as literally written is currently impossible
+to satisfy**: it asks that "`robust_baseline`+Raman vs `gordon`+Raman on L23
+agree at float32 tolerance", but M1's Q2 (`rob_rt_prompt_2.md`, Q2) found
+`robust.rt.baselines.Rrs_gordon` takes **no `inelastic` argument at all**
+and resolved it by making the adapter raise. Verified live against current
+source: `_build_robust_inputs` (evaluate.py:438-444) still raises
+`ValueError` ("...'robust_baseline' has no inelastic composition path...")
+whenever `rt_backend == 'robust_baseline'` is combined with `include_Raman`
+or `include_Chl_fl` — nothing in M2/M3 touched that guard. So
+`robust_baseline`+Raman produces an immediate `ValueError`, not a
+comparable Rrs. **What did Gate item 2 intend?** Most likely candidates:
+(a) it should read `robust_ztt` (and/or `robust_hybrid`) + Raman vs
+`gordon`+Raman — the backends that *do* have the `Inelastic` composition
+path; or (b) the M1 guard itself is to be revisited in M4 (e.g. compose
+inelastic terms around `Rrs_gordon` BING-side). I did **not** guess: the
+guard is untouched and no Gate-item-2 test exists yet. This does not block
+task 1 (the stash is independent of backend dispatch, done below) and
+likely not task 2's routing either, but it gates how the milestone's
+cross-check tests and the task-4 notebook comparisons are framed.
+
+**Q2 (task 1, Claude → JXP).** Minor citation drift, resolved, no answer
+needed: the doc's "BING's own Raman path (evaluate.py:167)" points into
+`calc_Rrs_from_models`' docstring in current source; the actual
+`Ed_ratio_raman` consumption is evaluate.py:209 (the `getattr` + flat-Ed
+fallback warning) feeding the `calc_Rrs(..., Ed_ratio=...)` call at
+evaluate.py:239. That path is untouched by task 1 (git diff confirms
+`evaluate.py` unmodified). The anw.py citations (254-260, 480-511) and
+l23.py citations (319-322, :356 — the `calc_Rrs` call consuming
+`Ed_ratio_raman` is actually l23.py:358) were accurate at the pre-edit
+state.
+
+**Q3 (task 1, Claude → JXP).** "Verbatim" implemented as **uncopied
+references**: `set_raman_Ed` stores the caller's own array objects on
+`wave_Ed_raw`/`Ed_raw` (`is`-identity, no `np.asarray`, no copy), matching
+the spec's wording and the cheapest contract for task 2's pass-through into
+`Geometry.Ed`. Consequence: a caller mutating its Ed array in place after
+the call mutates the stash (but *not* `Ed_ratio_raman`, computed eagerly) —
+same aliasing behavior as elsewhere in BING (e.g. `set_aph`), so no answer
+needed; flagging only so task 2 knows the stash is a live reference.
 
 ## Next
 
@@ -210,4 +250,64 @@ Record work in the Logs section below, format:
 
 ## Logs
 
-_(none yet)_
+### 2026-08-31 (M4 task 1 — set_raman_Ed stash)
+
+**Read/verified first.** The doc's anw.py citations were still accurate at
+the pre-edit state (`Ed_ratio_raman` field block anw.py:254-260;
+`set_raman_Ed` anw.py:480-511 — first M4 file, untouched by M1-M3, so no
+drift), as were l23.py:319-322/:356 (zenith-0° generation; the
+`Ed_ratio=models[0].Ed_ratio_raman` consumption is l23.py:358) and
+conftest.py:84-87 (`collect_ignore`). The evaluate.py:167 citation drifted
+into a docstring — actual Raman-path consumption is evaluate.py:209/239
+(Q2). Cross-read M1's Q2 in `rob_rt_prompt_2.md` and current
+`_build_robust_inputs`: **the `robust_baseline`+inelastic `ValueError`
+guard is still live at evaluate.py:438-444, which makes this milestone's
+Gate item 2 as literally written impossible — flagged as Q1, needs JXP
+before the Gate-item-2 tests/notebook comparisons are built.**
+
+**Implemented** (bing repo, `rob_rt` branch, 93 insertions, 2 files, both
+purely additive; `evaluate.py`, `l23.py`, robust untouched):
+
+- `bing/models/anw.py` — two new `aNWModel` fields directly beside
+  `Ed_ratio_raman`: `wave_Ed_raw` (anw.py:262) and `Ed_raw` (anw.py:270),
+  both `None`-defaulted with docstrings matching the existing field style.
+  `set_raman_Ed` (now anw.py:496) stashes the incoming pair verbatim —
+  uncopied references, Q3 — at anw.py:539-540, *before* the ratio
+  computation, which is byte-identical to before (anw.py:541-545; the
+  spec's "store before computing" order means a `bounds_error` raise from
+  a too-narrow Ed grid leaves the stash set but `Ed_ratio_raman` not —
+  same partial-state behavior class as any mid-method raise, accepted as
+  the spec's literal instruction). No signature change. Docstring gained a
+  stash paragraph and a Sets section.
+
+- `bing/tests/test_evaluate_robust.py` — new section "M4 task 1" with
+  `test_set_raman_ed_stashes_raw_pair` (test file line 1754) covering Gate
+  item 1: fields `None` on a fresh model; after `set_raman_Ed` the exact
+  input arrays are stored (`is`-identity, stronger than `array_equal`);
+  `Ed_ratio_raman` bit-identical (`np.array_equal`, not `allclose`) to an
+  independent inline recomputation of the unchanged formula (linear
+  `interp1d`, `bounds_error=True`); a second call replaces the stash.
+  Placed here, not the future `test_evaluate_robust_ed.py`, because it
+  needs neither `correct_atmosphere` nor even `robust` — the Gate
+  preamble's "additions to `test_evaluate_robust.py` where independent"
+  rule. Module docstring's coverage list extended accordingly.
+
+**Bit-identity verified empirically, not just by inspection**: captured
+`Ed_ratio_raman` from the *pre-edit* code via (a) the production-style
+zenith-0° path (`correct_atmosphere.downwelling.downwelling_irradiance`
+on the l23.py:325-327 grid recipe, `ExpBricaud`+`Pow` on a 61-point
+400-700 nm grid) and (b) a synthetic 3-point pair; re-ran post-edit:
+`np.array_equal` **True for both**, and the stashed arrays are the very
+objects passed in (`is` → True twice).
+
+**Tests** (`ocean14`): `test_evaluate_robust.py` alone 80 passed. Full
+suite **261 passed, 2 skipped, 2 failed** vs the M3-exit baseline of 260
+passed, 2 skipped, 2 failed — exactly +1 (the new test), and the 2
+failures are the same pre-existing `test_l23_inelastic.py` missing-fixture
+failures (M0/Q10), not a regression.
+
+**Next**: task 2 — route the stashed pair into `Geometry.Ed` in
+`calc_Rrs_from_models_robust`/`_build_robust_inputs` (`Ed=(wave_Ed_raw,
+Ed_raw)` when stashed and `include_Raman`; `Ed=None` fallback to robust's
+packaged spectra). Nothing consumes the new fields yet. JXP's Q1 answer
+shapes the Gate-item-2 cross-check tests that follow.

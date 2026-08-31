@@ -95,6 +95,15 @@ corner-plot 'B_p' labeling with ``log_param_mask`` semantics False
 and Gate 6's fixed-B_p regression against the **provisional** pin
 ``files/m3_fixed_bp_pin.npz`` (M2 Q5 never made a real one; see the
 fixture generator's docstring).
+
+M4 task 1 (Gate item 1, CQ2): ``set_raman_Ed`` stashes the raw
+``(wave_Ed, Ed)`` pair verbatim on ``wave_Ed_raw``/``Ed_raw`` (identity,
+not a copy), the fields are None before the call, and ``Ed_ratio_raman``
+is bit-identical to the pre-change formula (recomputed independently in
+the test). No robust import needed -- this is model-level and lives here
+because it is independent of ``correct_atmosphere`` (the Gate's placement
+rule for such tests; the Ed *routing* tests are task 2/3's
+``test_evaluate_robust_ed.py``).
 """
 import numpy as np
 
@@ -1738,3 +1747,53 @@ def test_fit_Bp_false_matches_provisional_pin(threading_setup):
         assert chains.shape == pin[f'chain_{backend}'].shape
         np.testing.assert_allclose(chains, pin[f'chain_{backend}'],
                                    rtol=1e-6, atol=1e-12)
+
+
+# ===== M4 task 1: the set_raman_Ed raw-pair stash (CQ2, Gate item 1) =====
+
+def test_set_raman_ed_stashes_raw_pair(robust_models):
+    """Gate item 1 (M4): after ``set_raman_Ed``, the raw ``(wave_Ed, Ed)``
+    pair is stored verbatim and ``Ed_ratio_raman`` is bit-identical to the
+    pre-change value.
+
+    Verbatim means the *same array objects* land on the model
+    (``is``-identity, stronger than ``array_equal`` -- no copy, no cast),
+    and both fields are None on a fresh model. Bit-identity of the ratio
+    is checked against an independent recomputation of the unchanged
+    formula (linear ``interp1d``, ``bounds_error=True``) with
+    ``array_equal`` (exact, not ``allclose``); the stash is purely
+    additive code *before* that computation, and this pins it so. The
+    same bit-identity was also confirmed against a pre-change baseline of
+    the production zenith-0 generation (fitting/l23.py's
+    ``downwelling_irradiance`` path) when this change landed.
+    """
+    from scipy.interpolate import interp1d
+
+    a_model, _ = robust_models
+
+    # Fresh model: nothing stashed yet.
+    assert a_model.wave_Ed_raw is None
+    assert a_model.Ed_raw is None
+    assert a_model.Ed_ratio_raman is None
+
+    # A synthetic Ed pair covering wave_ex (~352 nm) through the red edge.
+    wave_Ed = np.arange(340., 720., 2.5)
+    Ed = 1.0 + 0.5 * np.sin(wave_Ed / 40.)
+
+    a_model.set_raman_Ed(wave_Ed, Ed)
+
+    # Stored verbatim: the exact input arrays, not copies.
+    assert a_model.wave_Ed_raw is wave_Ed
+    assert a_model.Ed_raw is Ed
+
+    # Ed_ratio_raman bit-identical to the unchanged formula.
+    f_Ed = interp1d(wave_Ed, Ed, kind='linear', bounds_error=True)
+    expected = f_Ed(a_model.wave_ex) / f_Ed(a_model.wave)
+    assert np.array_equal(a_model.Ed_ratio_raman, expected)
+
+    # A second call replaces the stash (no stale pair survives).
+    wave_Ed2 = np.array([350., 750.])
+    Ed2 = np.array([1.0, 1.0])
+    a_model.set_raman_Ed(wave_Ed2, Ed2)
+    assert a_model.wave_Ed_raw is wave_Ed2
+    assert a_model.Ed_raw is Ed2
