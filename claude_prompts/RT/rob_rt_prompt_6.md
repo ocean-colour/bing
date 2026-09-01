@@ -167,6 +167,8 @@ Read before coding:
    numbers) in the Logs below, and note that the integration is ready for
    JXP's final review and merge. Use Fable if you can. Log your work.
 
+7. I have issued a PR on GitHub.  Please see the comments and address them.  Also, attempt to reconcile the CI failures.  Use Fable if you can. Log your work.
+
 ## M5
 
 ### Tasks
@@ -964,3 +966,177 @@ wording, now surfaced three times — tasks 1, 2, and this notebook's §3),
 **Q4** (design-doc line-number citation drift, informational), and this
 task's own **Q5** (informational, notes the third surfacing of Q1/Q2) —
 none of which block task 6's confirmation itself.
+
+### 2026-09-01 (M5 closing — Definition of Done confirmation)
+
+**Q1/Q2/Q5 answered by JXP.** JXP's `>A.` answers now appear above: Q1 —
+"Leave that original code as is and we will discourage the community from
+using it"; Q2 — "Don't worry about the old code."; Q5 — "We will trust and
+adopt the `robust` code going forward. But let's be clear about the
+differences in the BING docs." These supersede the conservative
+"no-verdict" framing tasks 1, 2, and 5 applied to the three doc surfaces
+below — the framing is now an actual recommendation, not a declined one,
+while the measured accuracy-gap numbers stay exactly as they were measured
+(per Q5, not softened, shortened, or removed).
+
+**Piece (a) — doc-wording revision, three surfaces.** No code was changed
+in any of the three; no numbers were changed, added, or removed — only the
+verdict language around them.
+
+- **`bing/rt/raman.py` / `bing/rt/chl_fl.py`** module docstrings: the
+  "Backend note" section was rewritten from "a wired, selectable
+  alternative, not a validated or endorsed replacement" to a "legacy
+  module, kept for the `gordon` backend only" framing — states plainly
+  that this module is BING's own **legacy** Raman/fluorescence physics,
+  that the project has adopted `robust.rt.inelastic` (via
+  `rt_dict['rt_backend'] = 'robust_ztt'`/`'robust_hybrid'`) as the
+  recommended path going forward, that new work should use `robust`
+  instead, and that this module is retained unmodified only for backward
+  compatibility with existing `gordon`-backend code (per Q1/Q5, cited by
+  section reference in the docstring itself). The measured disagreement
+  numbers (Raman ~11% max/~6% mean; fluorescence ~9-18% max/~6-7% mean)
+  are carried over verbatim, now framed as "documented for transparency,
+  not as a reason to prefer this module." No code deleted, per Q1's
+  explicit instruction — confirmed via `git diff --stat`: docstring-only
+  changes in both files, no other lines touched.
+- **`.claude/skills/inelastic-rrs/SKILL.md`**: the "Alternative inelastic
+  path" section (task 2) is now "Recommended inelastic path" — opens by
+  stating the project has adopted `robust.rt.inelastic` as recommended
+  going forward and that new work should prefer `robust_ztt`/
+  `robust_hybrid` over the legacy `gordon`-backend modules. The full
+  measured-numbers paragraph (Raman 11.4%/5.6%; fluorescence
+  9.2%/5.8%-18.5%/7.2%; elastic ~2.3e-7 contrast; root-cause explanation)
+  is unchanged, word-for-word, from the pre-existing text — only the
+  surrounding "does not recommend one path over the other" / situational
+  bullets were replaced with "what this means in practice" guidance that
+  actually recommends `robust_ztt`/`robust_hybrid`, while still telling
+  the reader plainly not to expect the inelastic terms to match BING's
+  legacy physics to the project's usual tolerance. The obsolete provenance
+  note (explaining why the wording departed from the task spec) was
+  removed — it no longer applies, since the wording now matches an actual
+  recommendation.
+- **`nb/RT/rob_rt_coding_6.ipynb` §3 ("How to choose a backend")**: read
+  the cell's markdown source directly via `json.load` on the `.ipynb`
+  (cell index 20, a plain-string `source` field, no list-of-lines
+  wrapping) — confirmed every specific number the section cites (Rrs/IOP
+  agreement percentages, throughput ratios, JIT-compile costs) is quoted
+  from sections 1c/1d/2 earlier in the *same* notebook, computed and
+  printed in code cells that execute *before* this markdown cell, not
+  computed inside it — so no re-execution was needed, only a markdown-text
+  rewrite. Replaced the "No single verdict" closing subsection and the
+  "still-open Q1/Q2 tension" framing throughout with a "The recommendation"
+  subsection reflecting JXP's actual decision: `robust_ztt`/`robust_hybrid`
+  as the default recommendation for new work, `gordon` as a legacy,
+  actively-discouraged-but-not-removed default, `robust_baseline` as a
+  parity-check tool. Every measured number (Rrs agreement, IOP-retrieval
+  differences, throughput ratios, JIT-compile costs, the inelastic
+  accuracy-gap percentages) was left byte-for-byte identical to the
+  original text — only rewrote the surrounding verdict language.
+  **Verification the edit is valid**: after writing the new cell 20
+  `source` via a `json.load`/`json.dump` round-trip, re-loaded the file
+  with `json.load` (parses cleanly, `nbformat=4`, `nbformat_minor=5`, 22
+  cells) and confirmed all 10 code cells retain their original sequential
+  `execution_count`s (1-10) and original `outputs` (`n_outputs` unchanged
+  per cell, e.g. cell 5 still carries 47 outputs) — nothing about the
+  executed state was disturbed. Also ran
+  `jupyter nbconvert --to notebook --stdout` on the file (`ocean14`) as an
+  independent parse/structure check — completed without error.
+
+**Piece (b) — Definition of Done confirmation, item by item, verified live
+against the current repo state (not against the Logs' claims):**
+
+1. **All four `rt_backend` values fit end-to-end through
+   `fit_one`/`fit_batch`/`chisq_fit.fit`** — confirmed: `robust_baseline`,
+   `robust_ztt`, and `robust_hybrid` all appear in
+   `bing/tests/test_evaluate_robust.py` and
+   `bing/tests/files/gen_m3_fixed_bp_pin.py`; task 4's fixture-generation
+   fix (`l23_inelastic_fixture.npz`, regenerated from
+   `gen_l23_inelastic_fixture.py`) is present on disk
+   (`bing/tests/files/l23_inelastic_fixture.npz`) and its two dependent
+   tests are part of the green suite below. **Satisfied.**
+2. **Geometry threaded** — confirmed: `bing/evaluate.py:493-495` passes
+   `geom.to_robust(Ed=(a_model.wave_Ed_raw, a_model.Ed_raw))` /
+   `geom.to_robust()` into the robust dispatch, matching M2/M4's
+   observation-tuple/`geom` threading. **Satisfied.**
+3. **`theta_s` required** — confirmed: `bing/rt/defs.py:153,179` raise a
+   setup-validation error naming `theta_s`/`geom=` explicitly when a robust
+   backend is selected without it ("theta_s is never silently defaulted").
+   **Satisfied.**
+4. **Free-or-fixed `B_p`** — confirmed: `bing/rt/defs.py` defines
+   `BP_PRIOR_PMIN`/`BP_PRIOR_PMAX` (lines 31-32), `rt_dict_from_p` sets
+   `rt_dict['fit_Bp']`/`rt_dict['Bp_value']` (lines 129-130), and
+   `validate_rt_dict` raises on `fit_Bp=True` with `rt_backend='gordon'`
+   (lines 170-172) — the free/fixed `B_p` bookkeeping machinery from M3 is
+   live. **Satisfied.**
+5. **Robust-side inelastic fed by BING's solar spectrum** — confirmed:
+   `bing/models/anw.py:496` defines `set_raman_Ed`, storing
+   `wave_Ed_raw`/`Ed_raw` verbatim; `bing/evaluate.py:481-495` routes that
+   stashed pair into `geom.to_robust(Ed=...)`, which is `Geometry.Ed` on
+   the robust side. This is a mechanical routing fact, confirmed true
+   independent of the accuracy gap (which is a separate, already-documented
+   caveat, not conflated here). **Satisfied.**
+6. **`RT_correction` gone** — confirmed live:
+   `grep -rn "RT_correction" bing/` returns exactly the same 6 hits M1/M5
+   task 4 already identified and accepted
+   (`test_evaluate_robust.py:38,722,724-725,743`,
+   `test_evaluate.py:305,335`, `gen_l23_gordon_fixture.py:10,13`) — all
+   comments, test names, or generator docstrings describing the deletion,
+   zero live code. **Satisfied.**
+7. **Gordon path otherwise regression-pinned untouched** — confirmed:
+   `bing/tests/files/l23_gordon_fixture.npz` exists on disk and is
+   referenced by both `test_evaluate.py` and `test_evaluate_robust.py`.
+   **Satisfied.**
+8. **pytest-green in `ocean14`** — ran `pytest bing/tests/ -q` live, just
+   now, in `ocean14`: **268 passed, 2 skipped, 0 failed, exit code 0**
+   (148.93s) — identical to M5 task 4's recorded exit state; piece (a)'s
+   doc-only edits changed no test outcome, confirmed directly rather than
+   assumed. **Satisfied.**
+9. **Benchmarked** — `dev/rob_rt/benchmark_backends.py` exists, runs, and
+   its header docstring records the canonical numbers (verified present in
+   the file, lines ~91-95): gordon 38936 calls/s (1.000x, first-call
+   0.0001s); robust_ztt 5991 (0.154x, first-call 0.182s); robust_hybrid
+   5667 (0.146x, first-call 0.181s); robust_baseline 7274 (0.187x,
+   first-call 0.019s) — all three robust backends at roughly 15-19% of
+   `gordon`'s warm-path throughput, reported as evidence per the working
+   agreement, not thresholded. **Satisfied.**
+10. **Documented** — piece (a) above confirms all three doc surfaces
+    (`raman.py`/`chl_fl.py` docstrings, `inelastic-rrs/SKILL.md`, and the
+    notebook's §3) now accurately reflect JXP's actual Q1/Q2/Q5 decision;
+    tasks 1-2's other doc surfaces (`rt_dict_from_p` docstring,
+    `run-bing-fit/SKILL.md`, `CLAUDE.md`'s rt bullet) were untouched by
+    this closing task because they carry no "recommended path" language
+    needing revision (confirmed by their own task-2 Log entries, which
+    explicitly kept those files free of accuracy/recommendation framing).
+    **Satisfied.**
+11. **On the correct branch, ready for review/merge** —
+    `git branch --show-current` returns **`rob_rt`** (not
+    `rob-rt-backend`, the coding plan's stale original name — this
+    discrepancy is cosmetic and already-known per every milestone's
+    Working-agreements correction, not a gap). Checked twice during this
+    closing task, since JXP was working concurrently: the first check
+    showed the expected pre-commit state (`bing/rt/chl_fl.py`,
+    `bing/rt/raman.py`, `.claude/skills/inelastic-rrs/SKILL.md` modified,
+    `nb/RT/rob_rt_coding_6.ipynb` untracked). By the second check, JXP had
+    committed that state (`git log`: commit `68c41bb "wip"`, `git show
+    --stat`: exactly those four files plus `claude_prompts/RT/
+    rob_rt_prompt_6.md`) — confirmed via `git show HEAD:<path>` that the
+    committed content is byte-identical to what this task wrote (the
+    "legacy module" backend-note heading in both `raman.py`/`chl_fl.py`,
+    the "Recommended inelastic path" heading in `SKILL.md`, and the
+    notebook's §3 "The recommendation" text and its 10 code cells'
+    original sequential `execution_count`s, all present in the committed
+    blob). The only remaining uncommitted change at the time of writing
+    this entry is this Logs entry itself, appended to
+    `claude_prompts/RT/rob_rt_prompt_6.md` after JXP's commit — expected,
+    since JXP commits, not Claude. **Satisfied.**
+
+**Definition of Done — all 11 items confirmed satisfied, live, against the
+current repo state on the `rob_rt` branch.** No gaps found beyond the
+already-documented, already-accepted caveats (the inelastic accuracy gap,
+now affirmatively documented rather than hedged; the design-doc
+line-number citation drift, filed as Q4, informational; the
+`rob-rt-backend`/`rob_rt` branch-name discrepancy, cosmetic).
+
+**The `rob_rt` branch integration is ready for JXP's final review and
+merge.** This closes M5 and the whole `rob_rt` coding-plan series — per
+the doc's own "Next" section, there is no `rob_rt_prompt_7.md`.
