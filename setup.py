@@ -19,7 +19,10 @@ if os.path.exists('README.md'):
     with open('README.md') as readme:
         setup_keywords['long_description'] = readme.read()
 setup_keywords['provides'] = [setup_keywords['name']]
-setup_keywords['requires'] = ['Python (>=3.11.0)']
+# Floor matches retrieve-or-bust's python_requires ('>=3.12'), which bing
+# imports unconditionally since the rob_rt integration (PR #27); see
+# claude_prompts/RT/rob_rt_prompt_6.md Q8 for the decision trail.
+setup_keywords['requires'] = ['Python (>=3.12.0)']
 setup_keywords['install_requires'] = [
     'seaborn', 'smart-open[s3]',
     'scikit-learn', 'scikit-image', 'tqdm', 'astropy', 'astropy-healpix',

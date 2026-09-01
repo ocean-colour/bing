@@ -171,6 +171,8 @@ Read before coding:
 
 8. I have answered the questions in the Q&A section below.  Please see the comments and address them.  Use Fable if you can. Log your work.
 
+9. Please modify the CI tests to only include Python 3.12 and greater.  And add a new 3.14 test.  Use Fable if you can. Log your work.
+
 ## M5
 
 ### Tasks
@@ -1551,3 +1553,102 @@ and this doc (Q8, this entry). No source or test code changed.
 **Open item for JXP**: Q8 (reconcile the bing >=3.11 / retrieve-or-bust
 >=3.12 Python floors; then drop the workflow's
 `--ignore-requires-python`).
+
+### 2026-09-01 (CI matrix: drop 3.11, add 3.14)
+
+Prompts item 9 — JXP's resolution of Q8, option (b): "Please modify the
+CI tests to only include Python 3.12 and greater. And add a new 3.14
+test." Q8 is now closed; no new Q&A entry was needed, because Python
+3.14 was verified to genuinely work (measurements below) rather than
+needing a decision.
+
+**Workflow changes** (`.github/workflows/tests.yml`, tests job):
+
+- Matrix: `['3.11', '3.12', '3.13']` → `['3.12', '3.13', '3.14']`, with
+  the matrix comment updated to point at the reconciled >=3.12 floor
+  instead of the old ">= 3.11 / `X | Y` annotations" note.
+- `--ignore-requires-python` removed from the
+  `pip install --no-deps -e ../retrieve-or-bust` line, exactly as Q8's
+  closing note prescribed — with the matrix floor now at 3.12, every
+  job satisfies retrieve-or-bust's `python_requires '>=3.12'` and the
+  override is dead weight. Its long explanatory comment block is
+  replaced by a short note recording that the floors now match and that
+  the flag briefly existed (pointer to Q8 for the history), so the
+  trail survives without stale instructions. The docs job never had the
+  flag (its single Python is pinned to 3.12, which always satisfied the
+  floor) and is untouched.
+- Header block: the jax-0.10.2-on-3.11 backtracking note (jax >=0.11 /
+  flax >=0.12.9 require >=3.12, so 3.11 resolved older versions) is
+  gone with the 3.11 job; in its place the header records that bing's
+  own floor is now >=3.12 to match retrieve-or-bust's, per Q8.
+
+**Version-floor statements updated elsewhere** (from a repo-wide grep
+for "3.11", touching only genuine requirement statements):
+
+- `setup.py:22`: `'Python (>=3.11.0)'` → `'Python (>=3.12.0)'`, with a
+  comment tying the floor to retrieve-or-bust's `python_requires` and
+  pointing at Q8. No classifiers or other Python-floor references exist
+  in setup.py.
+- `readthedocs.yaml`: build Python `"3.11"` → `"3.12"` (RTD builds a
+  package whose stated floor is now 3.12).
+- `docs/contributing.rst` and `docs/changelog.rst`: "Python 3.11-3.13"
+  → "Python 3.12-3.14" in the CI descriptions.
+
+**Python 3.14 verification — fresh, CI-faithful, not inferred from
+ocean14.** ocean14 itself runs 3.14.6 with a working jax 0.11.0 / flax
+0.12.8 stack, which is encouraging but not probative (its packages were
+not resolved by a fresh pip on a bare env). So: new conda env
+`ci-repro-py314` (Python 3.14.6), clean `git archive HEAD` export
+overlaid with this session's edited files (i.e. the tree as it will be
+committed, tests.yml flag already removed), install steps run verbatim:
+
+- The curated stack resolves entirely from cp314 wheels: numpy 2.5.2,
+  scipy 1.18.1, pandas 3.0.5, matplotlib 3.11.1, xarray 2026.7.0,
+  h5py 3.16.0, emcee 3.1.6, scikit-learn 1.9.0, pytest 9.1.1;
+  `pip install jax flax jaxtyping` resolves jax 0.11.1 / flax 0.12.9 /
+  jaxtyping 0.3.11. No source builds, no failures.
+- `pip install --no-deps -e ../retrieve-or-bust` (fresh `cdom-rt`
+  clone) succeeds **without** `--ignore-requires-python`, as it must
+  now that 3.14 satisfies '>=3.12'. ocpy and bing editable installs
+  succeed as before. (The ocpy clone was a pre-existing scratch copy;
+  verified equal to origin/main HEAD `3aed28a` before trusting it.)
+- All four "Show environment" import checks pass (numpy/scipy/xarray/
+  emcee/jax versions print; `ocpy`, `robust.rt`, `bing.evaluate` all
+  import).
+- CI-equivalent suite (no `$OS_COLOR`, `MPLBACKEND=Agg`): **84 passed,
+  151 skipped, 0 failed** (9.6 s) — identical to the 3.12/3.13 pattern
+  and to Q8's prior measurements.
+- GitHub-runner side (separate concern from local reproducibility):
+  actions/python-versions' manifest lists stable **3.14.7** with
+  linux-24.04-x64 binaries, so `actions/setup-python@v5` with `'3.14'`
+  resolves on ubuntu-latest.
+
+**3.12/3.13 sanity check after removing the flag.** The only changed
+install line is the retrieve-or-bust one, so the check targets it: in
+fresh `ci-repro-py312` (3.12.14) and `ci-repro-py313` (3.13.15) envs,
+`pip install --no-deps -e ../retrieve-or-bust` without the flag
+succeeds on both, as does the bing editable install. (Full-suite
+behavior on 3.12/3.13 is unchanged by construction — the flag only
+relaxes pip's Requires-Python check, which those versions always
+satisfied — and was measured at 84/151 in the two prior entries.)
+
+**ocean14 full suite on the final tree: 281 passed, 2 skipped,
+0 failed** (180.1 s) — byte-for-byte the last-recorded baseline, as
+expected for a change touching only CI config, packaging metadata, and
+docs text.
+
+**One environment side effect to know about**: an early verification
+command was meant for `ci-repro-py314` but landed in ocean14 (the shell
+profile keeps ocean14 first on PATH, so `conda activate` alone does not
+redirect `python`; all subsequent work used explicit
+`envs/ci-repro-*/bin/python` paths). Net effect on ocean14: pip
+upgraded to 26.2.1 and wheel to 0.48.0; setuptools was briefly at
+84.0.0, then deliberately set to 81.0.0 to satisfy torch 2.12.1's
+`setuptools<82` constraint. `pip check` reports no broken requirements,
+torch imports, and the full-suite baseline above was run after this —
+ocean14 is consistent, just with a newer pip/wheel than before.
+
+**Files changed this round**: `.github/workflows/tests.yml`,
+`setup.py`, `readthedocs.yaml`, `docs/contributing.rst`,
+`docs/changelog.rst`, and this doc (this entry). No source or test
+code changed. Q8 is resolved; no open items from this round.

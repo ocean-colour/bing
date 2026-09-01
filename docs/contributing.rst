@@ -42,7 +42,7 @@ of 180 tests skip in that state.
 Continuous integration
 ----------------------
 
-``.github/workflows/tests.yml`` runs the suite on Python 3.11-3.13 and
+``.github/workflows/tests.yml`` runs the suite on Python 3.12-3.14 and
 builds these docs. CI has no data tree, so it exercises the
 data-independent tests; the reasons for each skip are printed in the log.
 
