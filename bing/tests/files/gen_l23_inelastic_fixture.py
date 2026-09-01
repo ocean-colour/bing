@@ -17,7 +17,9 @@ Run once (ocean14) on a machine with the L23 store:
 
     python gen_l23_inelastic_fixture.py
 
-Writes l23_inelastic_fixture.npz next to this script (~150 kB; committed).
+Writes l23_inelastic_fixture.npz next to this script (~69 kB; committed --
+note the file needs the ``!bing/tests/files/l23_inelastic_fixture.npz``
+exception in .gitignore, whose blanket ``*.npz`` would otherwise drop it).
 """
 
 import os

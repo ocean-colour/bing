@@ -15,6 +15,12 @@ leave the two-flow formulation limits to retrieve-or-bust. Clean break (no
 legacy flags). True-Ed is the default when available; warn on flat-Ed
 fallback. Add L23-anchored regression tests.
 
+## PR
+
+1. There is an open PR on GitHub.  Please see the comments and address them.  Also, attempt to reconcile the CI failures.  Use Fable if you can. Log your work.  If you have any questions, ask me in the Q&A section below.
+
+## Q&A
+
 ## Logs
 
 ### 2026-08-18 (1/pi fluorescence normalization; true-Ed Raman ratio; per-lambda_em Ed; L23 regression tests)
@@ -127,3 +133,75 @@ geometry (high-sun red-band Raman underestimate of ~25–45 %; residual
 ±13 % zenith trend and trophic-state growth of the fluorescence amplitude)
 — these are formulation-level and are being addressed in the
 retrieve-or-bust forward-model redesign, not in BING.
+
+### 2026-09-01 (CI reconciliation)
+
+**PR comments: nothing actionable.** PR ocean-colour/bing#26
+(`inelastic-fixes` → `develop`, head `850000b`) has exactly one issue
+comment — JXP's own `@cursor review` trigger — and one review, from
+`cursor[bot]`: "Bugbot reviewed your changes and found no new issues!"
+Zero inline review comments (`review_comments: 0` per the API). So
+"address the comments" reduces to the CI failures.
+
+**CI status.** `Tests (Python 3.11/3.12/3.13)` all **failure** on both
+check-suite runs of this head commit (run ids 32378423207 and
+33250594483); `Docs build` and `Cursor Bugbot` pass. The jobs API shows
+every failing job died at the **Run tests** step (install, ocpy clone,
+and import smoke-tests all succeeded), but the actual pytest output is
+behind GitHub's auth wall (`gh` not logged in here; raw log download is
+403 even for public repos), so the failure was reproduced locally.
+
+**Reproduction.** Built a CI-matching environment: fresh Python 3.13.13
+venv (`/Users/xavier/miniforge3/bin/python3.13`), the workflow's exact
+curated pip list (resolved to numpy 2.5.2, scipy 1.18.1,
+xarray 2026.7.0, emcee 3.1.6), fresh `ocpy` clone installed
+`--no-deps -e`, `bing` installed `--no-deps -e`, then
+`MPLBACKEND=Agg python -m pytest bing/tests -v -ra` with `$OS_COLOR`
+unset. Against the **working tree** this run *passes* (64 passed,
+80 skipped) — the failure only appears against what git actually has.
+Re-running the identical command against a clean `git archive HEAD`
+export (i.e., exactly what CI checks out) reproduces CI:
+**2 failed, 62 passed, 80 skipped** —
+`test_l23_inelastic.py::test_raman_correction_matches_l23` and
+`::test_fluorescence_matches_l23`, both with
+
+    FileNotFoundError: [Errno 2] No such file or directory:
+    '.../bing/tests/files/l23_inelastic_fixture.npz'
+
+**Root cause.** `.gitignore` line 16 is a blanket `*.npz`, so the
+fixture the 2026-08-18 entry describes as "committed 69 kB fixture" was
+never actually tracked — `git status` looked clean because ignored
+files are invisible to it, and every local environment (which has the
+file on disk) passed. CI's checkout simply doesn't contain the file,
+and `FileNotFoundError` on a non-Hydrolight path is (correctly) not
+converted to a skip by `conftest.py`, hence hard failures on all three
+Python versions. Not a code bug, not an environment/version issue —
+the PR's code and tests are fine.
+
+**Changes.**
+
+- `.gitignore` — added `!bing/tests/files/l23_inelastic_fixture.npz`
+  (with a comment) under the `*.npz` rule, so the fixture can be
+  tracked. It now shows as untracked (`??`) in `git status`.
+- `bing/tests/files/gen_l23_inelastic_fixture.py` — docstring corrected
+  (~150 kB → ~69 kB, the file is 70,674 bytes) and now notes the
+  required .gitignore exception.
+
+**Action required (JXP):** `git add bing/tests/files/l23_inelastic_fixture.npz`
+(plus the `.gitignore` / generator-docstring edits), commit, and push —
+CI cannot go green until the fixture is actually in the tree. No
+`git add -f` needed now that the exception is in `.gitignore`.
+
+**Verification.**
+
+- CI-equivalent env, clean `git archive` tree **with the fixture copied
+  in** (simulating the post-commit checkout):
+  **64 passed, 80 skipped, 0 failed** in 4.8 s.
+- `ocean14`, full suite (`pytest bing/tests/ -q`, `$OS_COLOR` set):
+  **180 passed, 2 skipped** in 131 s — matches the pre-change tally, no
+  regressions.
+
+**Side observation.** `bing/tests/files/m3_fixed_bp_pin.npz` also sits
+ignored-but-untracked in that directory, but nothing in the repo
+references it (grep over all `*.py` finds no consumer), so it was left
+alone — likely a leftover from other in-flight work.

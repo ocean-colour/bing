@@ -16,6 +16,10 @@ __pycache__/
 *.npz
 *.npy
 *.json
+# ... except committed test fixtures (test_l23_inelastic.py loads this
+# file; without it CI fails with FileNotFoundError, since the checkout
+# never had it -- the blanket *.npz above kept it from being tracked).
+!bing/tests/files/l23_inelastic_fixture.npz
 
 # Distribution / packaging
 .Python
