@@ -27,6 +27,8 @@ Examples
 >>> stats = evaluate.calc_stats(chains, names=['Adg', 'Sdg', 'Aph', 'Bnw', 'beta'])
 """
 
+import warnings
+
 import numpy as np
 
 from bing.rt import rrs as bing_rrs
@@ -156,10 +158,21 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
         if a_params.ndim == 1:
             bb_R = bb_model.bb_R
         else:
-            bb_R = np.outer(np.ones(a_params.shape[0]), 
+            bb_R = np.outer(np.ones(a_params.shape[0]),
                             bb_model.bb_R)
+        # Ed(lambda')/Ed(lambda): use the true solar-spectrum ratio when
+        # available (set via a_model.set_raman_Ed); otherwise fall back to
+        # a flat spectrum (ratio = 1), which is known to distort the
+        # spectral shape of the Raman correction.
+        Ed_ratio = getattr(a_model, 'Ed_ratio_raman', None)
+        if Ed_ratio is None:
+            warnings.warn(
+                "include_Raman: no Ed spectrum set on the a_nw model "
+                "(call set_raman_Ed); falling back to a flat "
+                "Ed(lambda')/Ed(lambda) = 1", RuntimeWarning)
     else:
         a_ex, bb_ex, bb_R = None, None, None
+        Ed_ratio = None
 
     # bbp required when Gb mode is on. Two conventions:
     #   4-param (G0 AND Gb set): bbp(700 nm) as a trophic-state proxy.
@@ -180,7 +193,8 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
                             in_G1=a_model.G1, in_G2=a_model.G2,
                             in_G0=_G0,
                             in_Gb=_Gb, in_bbp=_bbp,
-                            a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R)
+                            a_ex=a_ex, bb_ex=bb_ex, bb_R=bb_R,
+                            Ed_ratio=Ed_ratio)
 
     # Call me
     if debug:

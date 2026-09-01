@@ -1185,11 +1185,16 @@ def calc_Rrs_with_raman(
         include_second_order=include_second_order
     )
 
-    # Convert Raman reflectance to Rrs
-    # R_raman is subsurface reflectance; convert similar to elastic
-    # Using simplified conversion: Rrs_raman ≈ R_raman / Q
-    # where Q ≈ π for Lambertian, but we use the same conversion as elastic
-    Rrs_raman = A_Rrs * R_raman / (1 - B_Rrs * R_raman)
+    # Convert the two-flow *irradiance* reflectance R_raman = Eu/Ed to a
+    # subsurface remote-sensing reflectance rrs = Lu/Ed before the standard
+    # rrs -> Rrs conversion.  The Raman phase function (1 + delta cos^2 psi)
+    # is quasi-isotropic, so Lu(0-) ~= Eu(0-)/pi.  This mirrors the same
+    # normalization fix applied to calc_Rrs_fluorescence in bing.rt.rrs
+    # (without the 1/pi the additive term is ~3x too large; the production
+    # multiplicative path in rrs.calc_Rrs is unaffected because it uses
+    # only the ratio (R_E + R_raman)/R_E, which cancels the normalization).
+    rrs_raman = R_raman / np.pi
+    Rrs_raman = A_Rrs * rrs_raman / (1 - B_Rrs * rrs_raman)
 
     return Rrs_elastic + Rrs_raman
 

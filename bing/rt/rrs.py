@@ -223,6 +223,7 @@ def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
     in_G0: Union[float, np.ndarray, None]=None,
     in_Gb: Union[float, np.ndarray, None]=None,
     in_bbp: Union[float, np.ndarray, None]=None,
+    Ed_ratio: Union[float, np.ndarray, None]=None,
     ):
     """
     Calculate remote sensing reflectance (Rrs) including optional Raman correction.
@@ -253,6 +254,13 @@ def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
         Raman backscattering coefficient [m^-1].
         Required for Raman correction. Can be computed using
         bing.rt.raman.raman_backscattering_coeff().
+    Ed_ratio : float or np.ndarray, optional
+        Downwelling-irradiance ratio Ed(λ')/Ed(λ) between the Raman
+        excitation and emission wavelengths. If None, a flat solar
+        spectrum (ratio = 1) is assumed — this is known to distort the
+        spectral shape of the Raman correction (too strong in the blue,
+        too weak in the red); supply the true ratio whenever an Ed
+        spectrum is available (see aNWModel.set_raman_Ed).
 
     Returns
     -------
@@ -294,7 +302,9 @@ def calc_Rrs(a, bb, in_G1:float|np.ndarray=None, in_G2:float|np.ndarray=None,
     if a_ex is not None:
         if bb_ex is None or bb_R is None:
             raise IOError("bb_ex,bb_R must be set if a_ex is provided")
-        corr = calc_raman_correction_factor(a, bb, a_ex, bb_ex, bb_R)
+        corr = calc_raman_correction_factor(
+            a, bb, a_ex, bb_ex, bb_R,
+            Ed_ratio=1.0 if Ed_ratio is None else Ed_ratio)
         # Apply
         Rrs *= corr
 
@@ -503,13 +513,29 @@ def calc_Rrs_fluorescence(
     -----
     The calculation integrates over excitation wavelengths:
 
-    Rrs_fl(λ) = ∫ h_C(λ) × Ed(λ') × (λ'/λ) × [b_bF(λ')/μ_d] / [K(λ') + κ_F(λ)] dλ'
+    R_F(λ) = ∫ Ed(λ') × (λ'/λ) × [b_bF(λ')/μ_d] / [K(λ') + κ_F(λ)] dλ' / Ed(λ)
 
     where:
-    - h_C(λ) is the fluorescence emission line shape (Gaussian at 685 nm)
-    - Ed(λ') is the downwelling irradiance spectrum (assumed flat here)
+    - Ed(λ') is the downwelling irradiance spectrum
     - b_bF = 0.5 × Φ_C × a_ph is the fluorescence backscattering coefficient
     - K and κ_F are attenuation coefficients
+
+    R_F is a two-flow *irradiance* reflectance (Eu/Ed).  Because the
+    emission is isotropic, the upwelling radiance is uniform and
+    Lu(0-) = Eu(0-)/π, so the subsurface remote-sensing reflectance is
+    rrs_F = R_F/π.  The final Rrs applies the emission line shape h_C(λ)
+    (Gaussian at 685 nm, optionally double Gaussian) and the standard
+    rrs → Rrs conversion:
+
+    Rrs_fl(λ) = h_C(λ) × A × (R_F/π) / (1 − B × R_F/π)
+
+    The 1/π conversion was validated against the Loisel et al. (2023)
+    HydroLight scenario differences (X4−X2); without it the term is ~3×
+    too large (see retrieve-or-bust context/RT/rt_inelastic_bing_summary.md).
+
+    ``Ed_em`` may be a scalar (legacy: Ed at the 685 nm peak) or an array
+    over the emission wavelengths (preferred; exact per-λ_em
+    normalization).
 
     Examples
     --------
@@ -617,10 +643,21 @@ def calc_Rrs_fluorescence(
     # Normalize by emission-wavelength irradiance
     R_F = R_F / Ed_em
 
-    # Convert subsurface reflectance to Rrs and apply the emission line shape.
-    # R_F now has shape (n_em,) or (n_samples, n_em); h_C broadcasts along the
-    # n_em axis in both cases.
-    Rrs_fl = h_C * A_Rrs * R_F / (1 - B_Rrs * R_F)
+    # Convert the two-flow *irradiance* reflectance R_F = Eu/Ed into a
+    # subsurface remote-sensing reflectance rrs = Lu/Ed.  Fluorescence
+    # emission is isotropic, so the upwelling radiance field is uniform
+    # and Lu(0-) = Eu(0-)/pi.  Omitting this factor treats R_F as if it
+    # were already a radiance-based rrs and inflates Rrs_fl by ~3x:
+    # validated against the Loisel+23 HydroLight scenario pairs (X4-X2),
+    # the median model/truth ratio at 685 nm is 1.01/0.96/0.87 at solar
+    # zenith 0/30/60 deg with this factor, vs 3.18/3.00/2.73 without it
+    # (retrieve-or-bust, context/RT/rt_inelastic_bing_summary.md).
+    rrs_F = R_F / np.pi
+
+    # Convert subsurface rrs to Rrs and apply the emission line shape.
+    # rrs_F has shape (n_em,) or (n_samples, n_em); h_C broadcasts along
+    # the n_em axis in both cases.
+    Rrs_fl = h_C * A_Rrs * rrs_F / (1 - B_Rrs * rrs_F)
 
     return Rrs_fl
 

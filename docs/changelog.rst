@@ -11,6 +11,49 @@ than by release. ``git log`` remains the authoritative history.
 Unreleased
 ----------
 
+Inelastic RT fixes (2026-08)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Two errors were identified by validating BING against the paired
+inelastic scenarios of the Loisel et al. (2023) HydroLight database
+(see the retrieve-or-bust report ``context/RT/rt_inelastic_bing_summary.md``)
+and fixed. **Both change numerical results.**
+
+* **Fluorescence normalization (breaking, ~×3).**
+  ``rt.rrs.calc_Rrs_fluorescence`` treated the two-flow *irradiance*
+  reflectance :math:`R^F = E_u/E_d` as if it were a remote-sensing
+  reflectance. For isotropic emission :math:`L_u = E_u/\pi`, so the
+  term now applies :math:`r_{rs}^F = R^F/\pi` before the
+  :math:`A\,r_{rs}/(1-B\,r_{rs})` conversion. Validated against
+  L23 X4−X2: median model/truth at 685 nm is now 1.01/0.96/0.87
+  (zenith 0°/30°/60°) versus 3.18/3.00/2.73 before. Fits run with
+  ``include_Chl_fl`` before this fix overestimated
+  :math:`R_{rs}^{fl}` by ~3× (equivalently, their effective quantum
+  yield was ~π× smaller than nominal). The unused additive path
+  ``rt.raman.calc_Rrs_with_raman`` had the same flaw and received the
+  same conversion; the production multiplicative Raman path was never
+  affected (it uses only a reflectance ratio, which cancels the
+  normalization).
+* **Raman correction now uses the true solar spectrum.** The
+  production path assumed a flat spectrum,
+  :math:`E_d(\lambda')/E_d(\lambda) = 1`, which distorts the spectral
+  shape of the correction (validated against L23 X2/X1: ~+60 %
+  increment error at 490 nm, −15 % and worse in the red). New
+  ``aNWModel.set_raman_Ed(wave_Ed, Ed)`` stores the true ratio and
+  ``evaluate.calc_Rrs_from_models`` uses it automatically;
+  ``include_Raman`` runs without it fall back to flat-Ed **with a
+  RuntimeWarning**. The L23 fitting pipeline sets it from
+  ``correct_atmosphere``. Note the Ed grid must extend ~50 nm blueward
+  of the model grid to cover the Raman excitation wavelengths.
+* ``init_Chl_fluorescence`` now defaults ``Ed_em`` to the full Ed
+  vector on the model grid (exact per-wavelength normalization of the
+  fluorescence term); a legacy scalar is still accepted.
+* New L23-anchored regression tests
+  (``bing/tests/test_l23_inelastic.py`` with a committed 40-scene
+  fixture) pin the fluorescence term to ±15 % of HydroLight truth at
+  685 nm and the true-Ed Raman correction to ±15 % median increment
+  error over 550–700 nm.
+
 Turbid-water backscattering
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

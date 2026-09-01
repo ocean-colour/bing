@@ -984,8 +984,10 @@ def test_raman_fitting_LM():
     # Plot as an additional test
     rt_dict_R = rt_defs.rt_dict_from_p(p_R)
     Chl = 10**ans[2]/0.05582
+    # show=False: a unit test must not open (and block on) a GUI window;
+    # the figure-construction code path is still exercised.
     _ = bing_plot.show_fits(models_LM, ans, rt_dict_R, Chl, None,
-                figsize=(12,4), fontsize=13., show=True,
+                figsize=(12,4), fontsize=13., show=False,
                 Rrs_true=dict(wave=models_LM[0].wave, spec=prep_dict_LM['model_Rrs'], var=prep_dict_LM['model_varRrs']),
                 log_abb=True )
 
@@ -996,9 +998,10 @@ def test_raman_fitting_MCMC():
     chains_R, models_R, prep_dict_R, idx, extras_R = fit_l23.fit_one(p_R, idx)
     # Plot
     rt_dict_R = rt_defs.rt_dict_from_p(p_R)
+    # show=False: see test_raman_fitting_LM
     _ = bing_plot.show_fits(models_R, chains_R, rt_dict_R, None, None,
-                figsize=(12,4), fontsize=13., show=True,
-                Rrs_true=dict(wave=models_R[0].wave, 
+                figsize=(12,4), fontsize=13., show=False,
+                Rrs_true=dict(wave=models_R[0].wave,
                     spec=prep_dict_R['model_Rrs'], var=prep_dict_R['model_varRrs']),
                 log_abb=True)
 
@@ -1033,8 +1036,9 @@ def test_Chl_fitting_MCMC():
     #_ = evaluate.reconstruct_from_chains(models_Chl, chains_Chl, rt_dict_Chl)
 
     # Plot
+    # show=False: see test_raman_fitting_LM
     _ = bing_plot.show_fits(models_Chl, chains_Chl, rt_dict_Chl, None, None,
-                figsize=(12,4), fontsize=13., show=True,
-                Rrs_true=dict(wave=models_Chl[0].wave, 
+                figsize=(12,4), fontsize=13., show=False,
+                Rrs_true=dict(wave=models_Chl[0].wave,
                     spec=prep_dict_Chl['model_Rrs'], var=prep_dict_Chl['model_varRrs']),
                 log_abb=True )

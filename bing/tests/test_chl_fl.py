@@ -668,8 +668,11 @@ def test_calc_Rrs_fluorescence_matches_reference():
         integrand = Ed_ex * lam_ratio * (bb_F / mu_d) / (K_ex + kappa_F_em[i])
         R_F_ref[i] = np.trapezoid(integrand, x=wave_ex)
     R_F_ref /= Ed_em
+    # Isotropic emission: Lu(0-) = Eu(0-)/pi, so the irradiance
+    # reflectance R_F converts to rrs as R_F/pi (see bing.rt.rrs).
+    rrs_F_ref = R_F_ref / np.pi
     A_Rrs, B_Rrs = 0.52, 1.7
-    Rrs_ref = h_C * A_Rrs * R_F_ref / (1 - B_Rrs * R_F_ref)
+    Rrs_ref = h_C * A_Rrs * rrs_F_ref / (1 - B_Rrs * rrs_F_ref)
 
     Rrs_got = rrs.calc_Rrs_fluorescence(
         *args, phi_C=phi_C, double_gaussian=True)

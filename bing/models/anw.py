@@ -246,7 +246,17 @@ class aNWModel:
 
     Ed_em:float = None
     """
-    The downwelling irradiance at the peak emission wavelength
+    The downwelling irradiance at the emission wavelength(s).
+    An array over the model wave grid (preferred) or a scalar at the
+    685 nm peak (legacy).
+    """
+
+    Ed_ratio_raman:np.ndarray = None
+    """
+    Downwelling-irradiance ratio Ed(wave_ex)/Ed(wave) between the Raman
+    excitation and emission (model) wavelengths. Set by set_raman_Ed().
+    When None, the Raman correction falls back to a flat solar spectrum
+    (ratio = 1), which distorts its spectral shape.
     """
 
     a_w:np.ndarray = None
@@ -467,27 +477,65 @@ class aNWModel:
         """
         self.wave_ex = raman.emission_to_excitation_wavelength(self.wave)
 
+    def set_raman_Ed(self, wave_Ed:np.ndarray, Ed:np.ndarray):
+        """
+        Set the downwelling-irradiance ratio used by the Raman correction.
+
+        Interpolates the supplied Ed spectrum onto the model (emission)
+        grid and the Raman excitation grid, and stores
+
+            Ed_ratio_raman = Ed(wave_ex) / Ed(wave)
+
+        When this attribute is set, the production Raman path
+        (evaluate.calc_Rrs_from_models -> rrs.calc_Rrs) uses the true
+        solar-spectrum ratio instead of the flat-Ed (ratio = 1) fallback.
+        Validated against the Loisel+23 X2/X1 HydroLight pairs, the flat
+        fallback distorts the spectral shape of the Raman correction
+        (~ +60% increment error at 490 nm, -15% and worse in the red);
+        the true ratio removes most of that error.
+
+        Parameters
+        ----------
+        wave_Ed : np.ndarray
+            Wavelengths of the Ed spectrum [nm]. Must cover both the
+            model grid and the Raman excitation grid; note wave_ex
+            extends ~50 nm blueward of the model grid (e.g. a 400 nm
+            emission edge needs Ed down to ~352 nm).
+        Ed : np.ndarray
+            Downwelling irradiance at wave_Ed (any consistent units;
+            only the ratio is used).
+        """
+        if self.wave_ex is None:
+            self.init_raman()
+        f_Ed = interp1d(wave_Ed, Ed, kind='linear', bounds_error=True)
+        self.Ed_ratio_raman = f_Ed(self.wave_ex) / f_Ed(self.wave)
+
     def init_Chl_fluorescence(self, wv_ex_range:tuple=(400, 700),
-        Ed:np.ndarray=None, Ed_em:float=None):
+        Ed:np.ndarray=None, Ed_em=None):
         """
         Initialize the chlorophyll fluorescence parameters
 
         Parameters:
             wv_ex_range (tuple, optional): The range of excitation wavelengths. Defaults to (400, 700).
-            wv_em_range (tuple, optional): The range of emission wavelengths. Defaults to (650, 800).
+            Ed (np.ndarray): Downwelling irradiance on the model wave grid.
+            Ed_em (float or np.ndarray, optional): Downwelling irradiance at
+                the emission wavelength(s). If None (preferred), the full
+                Ed vector on the model grid is used, giving the exact
+                per-wavelength normalization of the fluorescence term.
+                A scalar (legacy: Ed at the 685 nm peak) is still accepted.
         """
         # Grab the indices
         i_Chl_ex = np.where((self.wave >= wv_ex_range[0]) & (self.wave <= wv_ex_range[1]))[0]
         #i_Chl_em = np.where((self.wave >= wv_em_range[0]) & (self.wave <= wv_em_range[1]))[0]
 
         # Multi-spectral checks here (not ready for multi-spectral yet)
-        
+
         # Downwelling
-        if Ed is None or Ed_em is None:
+        if Ed is None:
             raise IOError("Need to calculate here")
-        else:
-            self.Ed_ex = Ed[i_Chl_ex]
-            self.Ed_em = Ed_em
+        self.Ed_ex = Ed[i_Chl_ex]
+        # Per-lambda_em Ed (array) unless a legacy scalar is supplied
+        self.Ed_em = Ed if Ed_em is None else Ed_em
 
         # Save em
         self.i_Chl_ex = i_Chl_ex
