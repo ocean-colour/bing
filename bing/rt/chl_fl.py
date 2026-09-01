@@ -35,24 +35,31 @@ References
 ----------
 Ocean Optics Web Book: https://www.oceanopticsbook.info/view/scattering/level-2/chlorophyll-fluorescence
 
-Backend note
-------------
-This module implements BING's own chlorophyll-fluorescence physics and
-serves the ``gordon`` ``rt_backend`` (see ``bing.rt.defs.RT_BACKENDS``). An
-alternative inelastic path also exists via ``robust.rt.inelastic``,
-selectable through ``rt_dict['rt_backend'] = 'robust_ztt'`` or
+Backend note -- legacy module, kept for the ``gordon`` backend only
+--------------------------------------------------------------------
+This module implements BING's own legacy chlorophyll-fluorescence physics.
+It continues to serve the ``gordon`` ``rt_backend`` (see
+``bing.rt.defs.RT_BACKENDS``) for backward compatibility, but the project
+has adopted ``robust.rt.inelastic`` as the recommended inelastic path going
+forward, selectable through ``rt_dict['rt_backend'] = 'robust_ztt'`` or
 ``'robust_hybrid'`` (not ``'robust_baseline'``, which has no inelastic
-composition path at all). As of M4 (see
-``bing/claude_prompts/RT/rob_rt_prompt_5.md`` Q7/Q8), that alternative's
+composition path at all). **New work should use the ``robust`` inelastic
+path rather than this module**; this module is retained, unmodified, only
+so existing ``gordon``-backend code keeps working (per project decision --
+see ``claude_prompts/RT/rob_rt_prompt_6.md`` Q1/Q5).
+
+For anyone who needs to understand why results differ between the two
+implementations: as of M4 (see
+``bing/claude_prompts/RT/rob_rt_prompt_5.md`` Q7/Q8), ``robust``'s
 fluorescence term evaluates IOPs at the excitation wavelengths by
 interpolating/clamping the emission-grid spectrum rather than re-evaluating
 the parametric a/bb models at the true excitation grid the way this module
 does, and it was measured on real L23 data to disagree with this module's
 fluorescence term by roughly 9-18% (max) / 6-7% (mean) depending on the
 sky-irradiance case -- well outside the project's ``rtol <= 5e-4`` working
-tolerance. This module remains the physics implementation in active use for
-the ``gordon`` backend; the robust alternative is a wired, selectable
-option, not a validated equivalent replacement.
+tolerance. That measured gap is documented here for transparency, not as a
+reason to prefer this module: the project has chosen to standardize on
+``robust`` going forward regardless of it.
 """
 
 import numpy as np

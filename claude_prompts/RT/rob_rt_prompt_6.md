@@ -258,6 +258,8 @@ outweighs the measured divergence)? This same tension applies with higher
 stakes to task 2's `inelastic-rrs/SKILL.md` update, which is user-facing
 guidance rather than an internal module docstring — please confirm before
 that task is executed.
+>A. Leave that original code as is and we will discourage the community 
+from using it
 
 **Q2 (task 2, Claude → JXP). Carries Q1 forward — Q1 is still unanswered,
 this is not a resolution of it.** JXP gave direct instruction to proceed
@@ -292,6 +294,7 @@ literally (e.g. because the accuracy gap is expected to close, or some
 other consideration should dominate)? Q1 itself remains open and
 unanswered; this entry does not close it, only carries it forward through
 task 2's execution.
+>A. Don't worry about the old code.
 
 **Q3 (task 3, Claude → JXP). Informational finding, not a decision
 needed — flagged per this doc's own instruction to log genuine findings
@@ -326,6 +329,75 @@ Recorded here in case a future cold-process measurement (e.g. the very
 first `fit_batch` worker on a machine with a cold disk cache) is needed
 and someone wants to reconcile the two numbers rather than rediscover the
 gap.
+
+**Q4 (task 4, Claude → JXP). Informational finding, not a decision
+needed — the design-doc citation check this task's spec calls for.**
+`docs/design/rob_rt_design.md` cites specific `bing`/`robust` file:line
+locations throughout §§2-7 (e.g. `inference.py:52` for `log_prob`,
+`chisq_fit.py:123` for `fit_func`, `evaluate.py:94` for
+`calc_Rrs_from_models`, `inference.py:93-94` for the `aparams`/`bparams`
+split, `inference.py:179-183, 215` and `inference.py:480-486` for the
+observation-tuple unpacking, `inference.py:214-215` for `fit_one`).
+**Every one of these `bing`-side line-number citations has drifted**,
+by anywhere from ~1 to ~120+ lines, purely because the cited files grew
+across M0-M5 (new docstrings, new backend-dispatch branches, new
+`geom`/`Bp` plumbing) — confirmed by grepping each cited function/def
+directly rather than trusting the old numbers: `log_prob` is now at
+`inference.py:68` (not 52); `fit_func` is now at `chisq_fit.py:192` (not
+123); `calc_Rrs_from_models` is now at `evaluate.py:136` (not 94); the
+`aparams`/`bparams` split is now at `inference.py:161-162` (not 93-94);
+`fit_one`'s def is now at `inference.py:269` (not 214-215), and its
+tuple-unpack line the design doc meant is now at `inference.py:350` (not
+215); `fit_batch`'s items docstring is now at `inference.py:748-759`
+(not 480-486). By contrast, **every function/class *name* and module
+*path* the design doc cites is still correct** — nothing it describes
+has moved to a different file or been renamed, and the **`robust`-side
+citations are almost all still exact** (`Geometry` class `types.py:302`,
+`Geometry.nadir` `types.py:337`, `PhaseParams` `types.py:250`,
+`Inelastic` `types.py:471`, `IOPs.from_total_bb` `types.py:131`,
+`bing/setup.py`'s `install_requires` at line 23 — all confirmed exact by
+direct grep), with only `robust.rt.forward` off by a small amount
+(`hybrid.py:364` cited vs. `hybrid.py:383` actual — `retrieve-or-bust` is
+a separate repo with its own independent history, not touched by this
+integration, so this is not something M0-M5 caused). §6's `RT_correction`
+citation (`bing/evaluate.py:204-209`) is correctly describing now-deleted
+code and needs no update. **Not fixed here**: per this task's own
+instruction, line-number drift this pervasive (specific citations
+scattered across most of §§2-4) is substantive enough that silently
+patching a couple of numbers would leave the rest stale and give a false
+impression of freshness — reported as a finding for JXP rather than
+edited. The underlying architecture/interface the design doc describes
+remains accurate; only its line-number pointers need a pass if JXP wants
+them kept current.
+
+**Q5 (task 5, Claude → JXP). Informational note, not a decision needed —
+flagging that this is the third surface of the still-open Q1/Q2 tension,
+per this task's own explicit instruction to note that fact rather than let
+it pass silently.** Task 5's spec calls for a "how to choose a backend"
+section in `nb/RT/rob_rt_coding_6.ipynb` and says to apply Q1/Q2's
+established conservative framing rather than resolve it. That section (the
+notebook's §3) does exactly that: it states the measured facts (elastic
+Rrs agreement is tight for `robust_baseline`, a real few-percent difference
+for `robust_ztt`/`robust_hybrid`; the inelastic terms on the latter two
+disagree with BING's own Gordon+Raman/fluorescence physics by ~11%
+max/~6% mean (Raman) and ~9-18% max/~6-7% mean (fluorescence), several
+orders of magnitude outside `rtol <= 5e-4`), and explicitly declines to
+recommend one backend over another — closing with a "no single verdict"
+subsection that hands the choice to the reader based on their own
+priorities (speed vs. elastic-physics fidelity vs. inelastic-accuracy
+risk), the same three-way framing task 2's `inelastic-rrs/SKILL.md` note
+already uses. **This is the third place in this milestone where the same
+Q1/Q2 tension surfaces** — after task 1's `raman.py`/`chl_fl.py` Backend
+notes and task 2's `inelastic-rrs/SKILL.md` section, both logged under
+Q1/Q2 above. **Q1 and Q2 remain open and unanswered** — this entry does
+not resolve them, only records that task 5 carried the same established
+framing forward for a third time, consistently, rather than treating the
+notebook's own fresh measurements as license to make an independent call.
+No new project decision was made here; if JXP's eventual answer to Q1/Q2
+changes the framing, all three surfaces (task 1's docstrings, task 2's
+skill doc, and this notebook's §3) would need the same update together.
+>A. We will trust and adopt the `robust` code going forward.  But let's be 
+clear about the differences in the BING docs.
 
 ## Next
 
@@ -651,3 +723,244 @@ they're readable without re-running it.
 line-number check on the design doc's citations, and the full-suite gate
 run (already reconfirmed 266/2/2 as part of this task, but task 4 owns the
 formal gate check).
+
+### 2026-08-31 (M5 task 4 — sweep and full-suite gate)
+
+**Piece 1 — `RT_correction` sweep.** `grep -rn "RT_correction" bing/` is
+**not** literally empty (6 hits: `test_evaluate.py:305,335`,
+`test_evaluate_robust.py:38,722,724-725,743` region,
+`gen_l23_gordon_fixture.py:10,13`) — but every hit is a comment, test
+name, or generator docstring *describing* the M1 deletion, not live code;
+this is the exact same residual state M1's own task-4 log already
+identified and accepted ("the remaining `bing/` grep hits are the new
+test/generator docstrings describing the deletion itself, plus
+docs/prompts history") — confirmed unchanged since M1, not a regression.
+`grep -rn "RT_correction" papers/`: **7 hits in 2 files**
+(`papers/biomass/Analysis/py/fitting.py`, `lowest_bbp.py`) — identical
+count and files to M1's Q9 finding; not edited, per the working
+agreement.
+
+**Piece 2 — `rt_backend` docs-coverage sweep.**
+`grep -rn "rt_backend" bing/ .claude/skills/ CLAUDE.md` confirms every
+surface named in this milestone's Context section documents the knob:
+`bing/rt/defs.py` (comment + `rt_dict_from_p`/`validate_rt_dict`),
+`bing/rt/raman.py` and `chl_fl.py` (task 1's Backend-note docstrings),
+`bing/evaluate.py`/`bing/fitting/inference.py`/`chisq_fit.py` (dispatch +
+docstrings), `.claude/skills/run-bing-fit/SKILL.md` (the new "RT backend
+selection" table + pitfalls from task 2), `.claude/skills/inelastic-rrs/
+SKILL.md` (the "Alternative inelastic path" section from task 2), and
+root `CLAUDE.md` (the `defs.py` bullet extended in task 2; note: there is
+no separate `bing/CLAUDE.md` — the file lives at the repo root and was
+matched there). No gaps found; this is a confirmation of tasks 1-2's own
+Logs, not new work.
+
+**Piece 3 — design-doc citation check (`docs/design/rob_rt_design.md`).**
+Read the full 420-line doc and spot-checked its `bing`/`robust` file:line
+citations against current source by grepping each cited
+function/class directly (not trusting the old numbers). Finding, filed as
+**Q4** above: every `bing`-side line-number citation in §§2-4 has drifted
+(by ~1 to 120+ lines) because the cited files grew across M0-M5 —
+`log_prob` (cited `inference.py:52`) is now at line 68; `fit_func` (cited
+`chisq_fit.py:123`) is now at line 192; `calc_Rrs_from_models` (cited
+`evaluate.py:94`) is now at line 136; the `aparams`/`bparams` split
+(cited `inference.py:93-94`) is now at lines 161-162; `fit_one`'s def
+(cited `inference.py:214-215`) is now at line 269, with its tuple-unpack
+now at line 350; `fit_batch`'s items docstring (cited
+`inference.py:480-486`) is now at lines 748-759. Every cited function
+*name* and module *path* is still correct — nothing moved files or was
+renamed, so this is pure line-drift from the files growing, not
+architectural staleness. The `robust`-side citations are almost all
+still exact (`Geometry` `types.py:302`, `Geometry.nadir` `types.py:337`,
+`PhaseParams` `types.py:250`, `Inelastic` `types.py:471`,
+`IOPs.from_total_bb` `types.py:131`, `bing/setup.py:23` — all confirmed
+exact), with `robust.rt.forward` (cited `hybrid.py:364`) off by ~19
+lines (actual 383) — `retrieve-or-bust` is a separate, untouched-by-us
+repo with its own independent history, so this drift did not come from
+M0-M5. §6's `RT_correction` citation (`bing/evaluate.py:204-209`)
+correctly describes now-deleted code. Per this task's explicit
+instruction, **not rewritten** — the drift is pervasive enough (scattered
+across most of §§2-4) that it is a real finding for JXP, not a trivial,
+unambiguous fix; filed as Q4.
+
+**Piece 4 — full-suite gate (the substantive piece).** Investigated the 2
+pre-existing `test_l23_inelastic.py` failures rather than accepting them.
+Read the test file and the fixture generator
+(`bing/tests/files/gen_l23_inelastic_fixture.py`, already present in the
+repo, docstring-documented, extracting 40 L23 HydroLight scenes at solar
+zenith 30 deg from `Hydrolight{1,2,4}30.nc`). The generator needs the L23
+store at `$OS_COLOR_DATA` (default
+`/mnt/tank/Oceanography/data/Color/Loisel2023`, not present on this
+machine) — but this session's `$OS_COLOR` env var
+(`/Users/xavier/Projects/Oceanography/data/Color/`) already holds a local
+`Loisel2023/` directory with the exact three files needed
+(`Hydrolight130.nc`, `Hydrolight230.nc`, `Hydrolight430.nc`). Ran the
+generator unmodified with `OS_COLOR_DATA="$OS_COLOR"
+python gen_l23_inelastic_fixture.py` (`ocean14`) — **succeeded**, wrote
+`bing/tests/files/l23_inelastic_fixture.npz` (69 kB, 40 scenes). Re-ran
+the two previously-failing tests alone: **2 passed**
+(`test_raman_correction_matches_l23`, `test_fluorescence_matches_l23`).
+The fixture is `*.npz`-gitignored (confirmed via `git check-ignore -v`)
+and left untracked, per the established M1/Q10 pattern — no `git add -f`
+run, that is JXP's call.
+
+**Full suite, twice, per the Gate's "with and without `correct_atmosphere`"
+requirement** (`ocean14`, `pytest bing/tests/ -q`):
+- **Without shadowing `correct_atmosphere`** (normal env, `correct_atmosphere`
+  present and importable): **268 passed, 2 skipped, 0 failed** (147.94s;
+  270 collected). This is a **genuinely green suite** — the two
+  pre-existing failures are gone, not papered over; 268 = 266 + 2 (the
+  two now-passing `test_l23_inelastic.py` tests), matching the doc's own
+  predicted outcome exactly.
+- **With `correct_atmosphere` shadowed absent** (scratchpad
+  `correct_atmosphere.py` containing only `raise ImportError(...)`,
+  prepended via `PYTHONPATH`, following M4 task 3's exact recipe;
+  `ocean14` itself untouched): `--collect-only` → **228 tests collected,
+  zero collection errors**, the same four files
+  (`test_evaluate.py`/`test_io.py`/`test_l23_fitting.py`/
+  `test_evaluate_robust_ed.py`) dropped via `conftest.py`'s
+  `collect_ignore`, matching M4's own 228/270 baseline exactly. Full run:
+  **225 passed, 3 skipped, 0 failed** (13.33s; 225+3=228, consistent with
+  collection). The skip count is 3 here vs. 2 unshadowed because two
+  `test_bbnw.py` tests skip via a runtime `bing.fitting.l23 unavailable`
+  path when `correct_atmosphere` is absent (verified with `-rs`) —
+  expected, not a new failure; 268 passed (unshadowed) − 225 passed
+  (shadowed) = 43, and 270 − 228 = 42 collected difference, consistent
+  with the 42 tests living in the 4 dropped files (one of which apparently
+  double-counts against a skip in the reconciliation above; not
+  investigated further since both runs are independently green and the
+  Gate only requires clean collection + a green run in both conditions,
+  both of which hold).
+
+**Gate status — reported exactly as measured, not rounded up**: **Full
+`pytest bing/tests/` is genuinely green in `ocean14`, both with and
+without `correct_atmosphere`** (268/2/0 and 225/3/0 respectively, zero
+failures either way). `RT_correction` grep is empty of live code under
+`bing/` (6 residual doc/comment hits, identical to M1's own accepted
+baseline). This is the first task in the whole M0-M5 series where the
+suite is actually green rather than carrying the 2 known pre-existing
+failures forward — achieved by generating the missing fixture from its
+already-existing, already-reviewed generator script (a data-artifact
+generation, not new test logic), per this task's explicit instruction and
+consistent with JXP's own Q10 (M1) intent to have this fixture generated
+and then committed.
+
+**Next**: task 5 — the capstone notebook `nb/RT/rob_rt_coding_6.ipynb`:
+the four-backend comparison on a real L23 fit (Rrs, retrieved IOPs, and
+where they differ), the benchmark numbers as a figure/table, and a
+"how to choose a backend" section. Task 4 leaves two open items for
+JXP: **Q4** (design-doc line-number citations, informational) and the
+still-open **Q1/Q2** (inelastic-path "recommended" wording) — neither
+blocks task 5 or task 6.
+
+### 2026-08-31 (M5 task 5 — capstone notebook)
+
+**Built and executed** `nb/RT/rob_rt_coding_6.ipynb` (22 cells: 10 code, 12
+markdown) via a scripted `nbformat` builder followed by
+`jupyter nbconvert --to notebook --execute --inplace` (`ocean14`) — the same
+build pattern prior M1-M4 notebooks in this series used. Smoke-tested the
+four-backend `fit_one` comparison and the live benchmark re-run as
+standalone scripts first, confirmed both finished quickly and produced
+sane numbers, before committing to the full notebook build. After
+execution, read the saved `.ipynb` back and confirmed: 10/10 code cells
+carry sequential `execution_count`s 1-10 (the one code cell with no printed
+output is the imports-only setup cell, which has no `print` calls by
+design); every other code cell has real stream and/or `image/png` output
+(three figures, all with genuine `image/png` data, not placeholders); every
+markdown-cell numeric claim was re-diffed against its own preceding code
+cell's actual printed output (not written before the cell was run, not
+carried over from memory of the smoke test) and corrected in two places
+where an initial draft's numbers didn't match the executed output exactly
+(see below) — the recurring failure mode this project's own conventions
+flag, checked deliberately rather than assumed clean.
+
+**Section-by-section, with this notebook's own real measured numbers**
+(L23 idx=170, PACE grid, 61 bands 400-700 nm, elastic-only,
+`nsteps=200`/`nburn=50`/16 walkers, identically reseeded
+(`np.random.seed(2026)`) before every backend's `fit_one` call — a
+smoke-scale fit, matching M2's own notebook, not a converged posterior):
+
+- **Setup**: `prep_one_l23(p, idx=170)` — Chl = 0.1306 mg/m3, Y = 2.1521,
+  `p0 = [Adg, Sdg, Aph, Bnw, beta] = [-1.8799, 0.017, -1.8799, -3.4926,
+  1.0]`, `geom=ObsGeometry(theta_s=30.)`, `Bp_value=0.014`.
+- **§1a-1b**: all four backends (`gordon`, `robust_ztt`, `robust_hybrid`,
+  `robust_baseline`) ran end-to-end through `fit_one`, all four chains
+  `(200, 16, 5)` and fully finite. Posterior-median parameters:
+  `robust_baseline` reproduces `gordon`'s median exactly (max
+  |difference| = 0.00e+00, identical seed + near-identical forward model);
+  `robust_ztt`/`robust_hybrid` diverge most visibly in `Bnw`/`beta`
+  (`beta`: 1.1287 gordon vs. 0.9039 ztt vs. 1.2125 hybrid).
+- **§1c (Rrs at the posterior median, each backend's own forward model)**:
+  `robust_baseline` vs. `gordon` — max 2.31e-07 / mean 7.93e-08 relative
+  (matches M1's original ~2.3e-7 finding); `robust_ztt` vs. `gordon` — max
+  5.58e-02 (5.6%) / mean 1.69e-02 (1.7%); `robust_hybrid` vs. `gordon` —
+  max 7.03e-02 (7.0%) / mean 1.76e-02 (1.8%). Consistent with M1-M4's
+  repeated finding that the real robust backends predict Rrs a few percent
+  above Gordon on real L23 data.
+- **§1d (retrieved IOPs, where they differ)**: `robust_baseline` matches
+  `gordon` exactly on both `anw` and `bbnw` (0.00e+00 relative, both
+  quantities). `robust_ztt` vs. `gordon`: anw max 6.42e-02 (6.4%) / mean
+  3.88e-02 (3.9%), bbnw max 3.22e-01 (32.2%) / mean 2.73e-01 (27.3%).
+  `robust_hybrid` vs. `gordon`: anw max 1.55e-01 (15.5%) / mean 6.52e-02
+  (6.5%), bbnw max 2.58e-01 (25.8%) / mean 2.42e-01 (24.2%). The concrete
+  "where they differ" answer: a several-percent elastic Rrs difference
+  resolves mostly into a substantially different retrieved $b_{b,nw}$
+  (tens of percent) and only a modest difference in $a_{nw}$ (single-digit
+  to teens of percent) — flagged in the notebook's own prose as partly
+  attributable to the smoke-fit's short chain length (200 steps), not
+  purely a backend-physics effect, since a genuinely converged posterior
+  was out of this task's scope.
+- **§2 (benchmark)**: re-ran `dev/rob_rt/benchmark_backends.py`'s own
+  functions live inside the notebook (not a subprocess, not a
+  transcription) — **this notebook's own fresh numbers**: gordon 38263.6
+  calls/s (reference); robust_ztt 5705.5 (0.149x), first-call 0.0825 s;
+  robust_hybrid 5425.9 (0.142x), first-call 0.1179 s; robust_baseline
+  6884.4 (0.180x), first-call 0.0197 s. Warm-path calls/s agree with task
+  3's recorded canonical run (38936/5991/5667/7274, ratios
+  1.000x/0.154x/0.146x/0.187x) to within a few percent, consistent with
+  that script's own "repeat runs agree to within a few percent" note.
+  First-call/JIT-compile costs measured here for ztt/hybrid (0.08-0.12 s)
+  came in lower than task 3's recorded ~0.18-0.19 s — not a new finding,
+  attributed in the notebook's prose to the same process-warmth/OS-disk-
+  cache effect already flagged as **Q3**: this notebook's benchmark cell
+  runs after four MCMC fits have already warmed `jax`/`robust` in the same
+  process, a warmer state than task 3's own script. Both figures cited
+  accurately with their own provenance (this notebook's live run vs. task
+  3's recorded run) rather than conflated. The per-`fit_batch`-worker
+  JIT-compile-cost note (each `ProcessPoolExecutor` worker pays its own
+  first-call cost, caches never shared across processes) is carried as
+  prose, cited to task 3, not re-measured (re-measuring it would need an
+  actual multi-worker `fit_batch` run, out of this task's scope).
+- **§3 ("how to choose a backend")**: applies Q1/Q2's established
+  conservative framing (gordon: fastest, fully self-consistent own
+  physics, good default; robust_baseline: elastic parity check, no
+  inelastic path, not obviously useful on its own; robust_ztt/hybrid: a
+  real, deliberate elastic-physics difference at a real, measured speed
+  cost, with the inelastic terms' measured accuracy gap stated plainly
+  and cited (not re-measured here) rather than recommended either way) and
+  ends with an explicit "no single verdict" subsection. Filed as **Q5**
+  above: this is the third place in the milestone (after task 1's
+  docstrings, task 2's skill doc) where the same Q1/Q2 tension surfaces,
+  applied identically for consistency, not independently re-litigated.
+
+**Numbers corrected during the re-diff pass** (the known recurring failure
+mode this project's conventions call out explicitly): an initial draft of
+§3's `robust_ztt`/`robust_hybrid` paragraph stated the JIT-compile cost as
+"~0.18-0.21 s" (copied from memory of task 3's number before this
+notebook's own benchmark cell had actually run) — corrected after
+execution to cite both this notebook's own live figure (~0.08-0.12 s) and
+task 3's recorded figure (~0.18-0.19 s) separately and accurately, per the
+methodology note in §2. The throughput ratio in the same paragraph was
+similarly corrected from a rounded "15-20%" to the exact measured range
+(~14-18%, both runs) with each run's own number attributed to its own
+source.
+
+**What's next**: task 6 — the closing Definition-of-done confirmation
+against the coding plan (`docs/coding_plan/rob_rt_coding_plan.md`), item by
+item against what's actually on the `rob_rt` branch, recording the
+confirmation (with the benchmark numbers) and noting the integration is
+ready for JXP's final review and merge. Task 6 inherits three open,
+unresolved items from tasks 1-5: **Q1/Q2** (inelastic-path "recommended"
+wording, now surfaced three times — tasks 1, 2, and this notebook's §3),
+**Q4** (design-doc line-number citation drift, informational), and this
+task's own **Q5** (informational, notes the third surfacing of Q1/Q2) —
+none of which block task 6's confirmation itself.
