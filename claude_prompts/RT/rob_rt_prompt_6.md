@@ -169,6 +169,8 @@ Read before coding:
 
 7. I have issued a PR on GitHub.  Please see the comments and address them.  If you have any questions, ask me in the Q&A section below.  Use Fable if you can. Log your work.
 
+8. I have answered the questions in the Q&A section below.  Please see the comments and address them.  Use Fable if you can. Log your work.
+
 ## M5
 
 ### Tasks
@@ -442,6 +444,39 @@ optimizer's stalled-at-p0 output; only `chisq_robust_ztt` changed,
 on disk is the current, correct pin.
 
 >A. I have added it to the Repo
+
+**Q8 (PR #27 CI, Claude → JXP). Decision when convenient — CI is green
+in the meantime, but the Python-floor mismatch between the two repos
+should eventually be reconciled properly, and both clean resolutions are
+yours to make.** After the Q6/Q7 round, PR #27's head (`eb4792c`) had
+three of four checks green but **Tests (Python 3.11) failing in the
+"Install dependencies" step**. Reproduced in a fresh Python 3.11.16
+environment against a clean `git archive HEAD` export, running the
+workflow's install commands verbatim: every step passes until
+`pip install --no-deps -e ../retrieve-or-bust`, which dies with
+`ERROR: Package 'retrieve-or-bust' requires a different Python: 3.11.16
+not in '>=3.12'`. Root cause: `retrieve-or-bust/setup.py:46` declares
+`python_requires = '>=3.12'` (present since the repo's initial commit
+`06f6a38`), while `bing`'s stated minimum is 3.11 (`setup.py:22`) and
+the CI matrix tests 3.11 — and since PR #27 bing imports robust
+unconditionally, so a 3.11 bing cannot get robust installed at all. pip
+enforces Requires-Python even under `--no-deps`, and a direct editable
+install has no older version to backtrack to, hence the hard failure
+(3.12/3.13 satisfy the floor and never see it). **What I did**: measured
+that the floor is metadata-only for what bing exercises — robust's
+source has no 3.12-only syntax, and on 3.11 (which resolves jax 0.10.2,
+since jax >=0.11 itself requires Python >=3.12) every workflow import
+check passes and the CI-equivalent suite gives **84 passed /
+151 skipped**, identical to 3.12/3.13 — then added
+`--ignore-requires-python` to that one install line in the tests job,
+with a comment explaining why and when to drop it. **The decision that
+is yours**: the override is a bridge, not the proper resolution. Either
+(a) lower `retrieve-or-bust`'s floor to `'>=3.11'` (one line in its
+setup.py; the 3.11 measurements above are the supporting evidence), or
+(b) decide bing itself now effectively requires >=3.12 (bump
+`bing/setup.py`, drop 3.11 from the matrix). Whichever you choose, the
+`--ignore-requires-python` flag should be removed at that point — the
+workflow comment points back to this entry.
 
 ## Next
 
@@ -1398,3 +1433,121 @@ fixture per Q7.
 track — currently pinned to `cdom-rt`, the validated state, but it is a
 moving feature branch) and Q7 (`git add -f
 bing/tests/files/m3_fixed_bp_pin.npz`).
+
+### 2026-09-01 (Q6/Q7 confirmed, Python 3.11 CI fix)
+
+Prompts item 8: JXP answered Q6 and Q7; both turned out to be pure
+confirmations needing no code change, and the real work this round was a
+new, Python-3.11-specific CI failure that surfaced once the previous CI
+fix landed.
+
+**Q6 — no action.** JXP confirmed the `cdom-rt` branch pin in
+`.github/workflows/tests.yml` is fine for now ("I'll redirect to `main`
+eventually"). The pin is untouched; the workflow comment already says to
+re-point it when `robust/rt` merges to main.
+
+**Q7 — no action.** JXP added `bing/tests/files/m3_fixed_bp_pin.npz` to
+the repo; verified tracked (`git ls-files` lists it) and present in a
+clean `git archive HEAD` export, so fresh clones with the Hydrolight
+data now get the fixture.
+
+**The new problem — Tests (Python 3.11) failing at "Install
+dependencies".** Against the current head `eb4792c`, the PR's checks
+read: Tests 3.12 success, Tests 3.13 success, Docs build success, Tests
+**3.11 failure** — i.e. the previous session's CI fix worked everywhere
+except 3.11, which now fails in the install step itself (exit 1 before
+any test runs; the log text needs sign-in, so the cause was reproduced
+locally rather than read off the runner).
+
+**Reproduction — exact, in a fresh Python 3.11.16 conda env
+(`ci-repro-py311`), against a clean `git archive HEAD` export, running
+the tests job's install commands verbatim and in order.** The curated
+scientific stack installs fine. `pip install jax flax jaxtyping` also
+succeeds — but resolves **jax 0.10.2 / flax 0.12.8** (not the 0.11.x
+line 3.12/3.13 get), because jax >=0.11 and flax 0.12.9 declare
+`Requires-Python >=3.12` and pip backtracks to the newest versions that
+allow 3.11. The ocpy clone + editable install succeeds. The failure is
+the next line:
+
+    pip install --no-deps -e ../retrieve-or-bust
+    ERROR: Package 'retrieve-or-bust' requires a different Python:
+    3.11.16 not in '>=3.12'
+
+**Root cause**: `retrieve-or-bust/setup.py:46` declares
+`python_requires = '>=3.12'` (present since that repo's initial commit
+`06f6a38`). pip enforces Requires-Python even under `--no-deps`, and a
+direct editable install of a single source tree has no older version to
+backtrack to — so 3.11 hard-fails while 3.12/3.13 sail through. The
+floor mismatch is real at the metadata level: bing states >=3.11
+(`setup.py:22`) and its CI matrix tests 3.11, but bing now imports
+robust unconditionally, and robust says >=3.12.
+
+**Measured, the floor is metadata-only for what bing exercises**:
+robust's source contains no 3.12-only syntax (no PEP 695 generics/`type`
+statements, no `except*`), all four of the workflow's "Show environment"
+import checks pass on 3.11 (including `import robust.rt` and
+`import bing.evaluate`, on jax 0.10.2), and the suite behaves
+identically to 3.12/3.13 (numbers below).
+
+**Fix** (`.github/workflows/tests.yml`, tests job only — the docs job
+runs 3.12 and satisfies the floor):
+
+    pip install --no-deps --ignore-requires-python -e ../retrieve-or-bust
+
+with an inline comment quoting the error, recording the measurements,
+and saying when to drop the flag; the header's jax/flax note now also
+records the 3.11 Python-floor situation (jax 0.10.2 / flax 0.12.8 on
+3.11, measured to pass). The flag is a documented bridge, not the
+proper resolution — **Q8** (new this round) puts the real decision to
+JXP: lower retrieve-or-bust's floor to >=3.11, or accept that bing now
+effectively requires >=3.12 and drop 3.11 from the matrix; either way
+the flag comes out then.
+
+**Verification, before/after, same 3.11 environment.**
+
+- Pre-fix: the quoted `ERROR: ... 3.11.16 not in '>=3.12'` — install
+  step dead, zero tests run (matches the CI symptom exactly).
+- Post-fix, CI-equivalent (no `$OS_COLOR`, `MPLBACKEND=Agg`):
+  **84 passed, 151 skipped, 0 failed** (10.4s) — identical to the
+  3.12/3.13 pattern and to the previous entry's 3.13 reproduction.
+- Post-fix, same env *with* the Hydrolight data: **231 passed, 1 failed,
+  3 skipped** (14.1s). The one failure is
+  `test_fit_Bp_false_matches_provisional_pin`, the rtol=0/atol=0 exact
+  pin — max abs diff 1.47e-12 (4e-10 relative) on the Gordon-generated
+  observation itself, i.e. last-ulps float drift between this env's
+  numpy build (cp311 wheel) and the one the fixture was generated under.
+  This is precisely the case the test's own docstring anticipates ("If
+  this test ever fails on a new environment (BLAS/emcee version) while
+  test_fit_Bp_false_or_absent_byte_identical_to_m2 stays green,
+  regenerate the fixture rather than suspecting a regression") — the
+  byte-identity companion test **did** stay green, the same pin test
+  **passes** in ocean14 (so the committed fixture is correct as-is; not
+  regenerated, to avoid churning a file JXP just committed), and the
+  test skips on CI regardless (needs Hydrolight). Not a 3.11 defect.
+- **ocean14 full suite on the final tree: 281 passed, 2 skipped,
+  0 failed** (176.1s) — byte-for-byte the previous entry's totals, as
+  expected for a change that touches only the workflow file and this
+  doc.
+
+**Bugbot-findings sanity check (not new work — confirming the prior fix
+holds).** All 13 tests the previous session added for the two findings
+pass in the ocean14 run: `test_evaluate_robust.py`'s 7
+(`test_reconstruct_chisq_fits_robust_requires_geom`,
+`..._robust_geom_end_to_end`, `..._robust_fit_Bp_tail`,
+`test_show_fits_LM_robust_geom`, `..._without_geom_raises`,
+`test_calc_Rrs_from_iops_robust_matches_model_path`,
+`..._error_paths`) and `test_l23_fitting.py`'s 6
+(`test_geom_from_p_policy`, `test_prep_one_l23_robust_backend`,
+`test_fit_with_LM_robust_backend_end_to_end`,
+`test_fit_with_LM_robust_fit_Bp`, `test_fit_one_robust_backend_mcmc`,
+`test_batch_fit_robust_backend`). The stale Bugbot comments still shown
+on the PR page are expected — Bugbot has not been re-triggered since the
+fix commits landed; the underlying code was not touched again.
+
+**Files changed this round**: `.github/workflows/tests.yml` (the
+`--ignore-requires-python` flag plus its comment, and the header note)
+and this doc (Q8, this entry). No source or test code changed.
+
+**Open item for JXP**: Q8 (reconcile the bing >=3.11 / retrieve-or-bust
+>=3.12 Python floors; then drop the workflow's
+`--ignore-requires-python`).

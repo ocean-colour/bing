@@ -55,7 +55,12 @@ name: Tests
 # data fetch. jax/flax/jaxtyping are left unpinned like the rest of the
 # curated list; the integration was validated against jax 0.11.0 / flax
 # 0.12.8 / jaxtyping 0.3.11 (pin those if an upstream release ever
-# breaks this job). The clone pins the `cdom-rt` branch: robust/rt does
+# breaks this job). Note the Python floors: jax >=0.11 and flax >=0.12.9
+# require Python >=3.12, so the 3.11 matrix job resolves jax 0.10.2 /
+# flax 0.12.8 -- measured to pass the suite identically to 3.12/3.13.
+# retrieve-or-bust itself declares python_requires '>=3.12', which is
+# why its install below carries --ignore-requires-python (see the
+# comment on that line). The clone pins the `cdom-rt` branch: robust/rt does
 # not exist on retrieve-or-bust's main yet (main holds only
 # robust/__init__.py), and cdom-rt is the branch the bing-side
 # integration was developed and validated against. Re-point the --branch
@@ -116,9 +121,25 @@ jobs:
           # (see the note at the top of this file). Editable keeps the
           # committed .npz data files (emulator weights etc.) resolvable
           # from the source tree.
+          #
+          # --ignore-requires-python: retrieve-or-bust's setup.py declares
+          # python_requires '>=3.12', which pip enforces even with
+          # --no-deps, so this line hard-failed the 3.11 matrix job
+          # ("ERROR: Package 'retrieve-or-bust' requires a different
+          # Python: 3.11.16 not in '>=3.12'") while 3.12/3.13 passed.
+          # Measured on 3.11 (jax 0.10.2): every import works and the
+          # suite passes identically to 3.12/3.13 (84 passed /
+          # 151 skipped; with the Hydrolight data 231 pass and the only
+          # delta is the zero-tolerance m3 pin fixture, which its own
+          # docstring documents as environment-sensitive and which skips
+          # on CI anyway), so the floor is metadata-only for what bing
+          # exercises. Drop this
+          # flag once the two packages' floors are reconciled (either
+          # retrieve-or-bust lowers to >=3.11 or bing moves to >=3.12
+          # and 3.11 leaves this matrix) -- see rob_rt_prompt_6.md Q8.
           git clone --depth 1 --branch cdom-rt \
             https://github.com/ocean-colour/retrieve-or-bust.git ../retrieve-or-bust
-          pip install --no-deps -e ../retrieve-or-bust
+          pip install --no-deps --ignore-requires-python -e ../retrieve-or-bust
           # Register bing itself without its heavy install_requires
           pip install -e . --no-deps
 
