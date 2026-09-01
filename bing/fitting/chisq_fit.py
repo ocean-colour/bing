@@ -58,6 +58,7 @@ def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None,
     ----------
     items : tuple
         Tuple containing (Rrs, varRrs, params, idx[, geom]):
+
         - Rrs : np.ndarray - Observed remote sensing reflectance [sr^-1]
         - varRrs : np.ndarray - Variance of Rrs [sr^-2]
         - params : np.ndarray - Initial parameter guess
@@ -135,6 +136,12 @@ def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None,
     keyword to ``max_nfev`` internally, while the unbounded case passes
     it to leastsq ('lm').
 
+    For robust backends the numerical-Jacobian step is widened to a
+    float32-appropriate 1e-3 relative step (``diff_step``/``epsfcn``,
+    PR #27): robust.rt runs at float32, and scipy's ~1.5e-8 default
+    produces a Jacobian of exact zeros there, stalling the optimizer at
+    p0. The Gordon backend (float64) keeps scipy's default.
+
     See Also
     --------
     bing.fitting.inference.fit_one : MCMC-based fitting
@@ -180,6 +187,27 @@ def fit(items:tuple, models:list, rt_dict:dict, bounds:tuple=None,
 
     # Only pass maxfev when asked, so scipy's default is untouched
     kwargs = {} if maxfev is None else dict(maxfev=maxfev)
+
+    # Finite-difference step for the robust backends (PR #27). robust.rt
+    # runs at float32 (jax_enable_x64 is never enabled -- CQ1), but
+    # curve_fit's default relative step for the numerical Jacobian is
+    # ~sqrt(float64 eps) ~ 1.5e-8 -- far below float32 resolution, so
+    # every column of the differenced Jacobian is *exactly zero* and the
+    # optimizer declares convergence at p0 without moving (measured: a
+    # parameter step of 1.5e-8 changes no Rrs value at all; 1e-3 changes
+    # them smoothly, and with it a noiseless synthetic refit recovers the
+    # generating parameters to ~4e-7). Use a float32-appropriate relative
+    # step: `diff_step` for the bounded case (curve_fit dispatches to
+    # least_squares/'trf') and the equivalent `epsfcn` (step =
+    # sqrt(epsfcn) * |x|) for the unbounded case ('lm' via leastsq).
+    # The Gordon backend is float64 end-to-end and keeps scipy's default.
+    if (rt_dict or {}).get('rt_backend', 'gordon') != 'gordon':
+        unbounded = (np.all(np.isneginf(np.asarray(bounds[0]))) and
+                     np.all(np.isposinf(np.asarray(bounds[1]))))
+        if unbounded:
+            kwargs.setdefault('epsfcn', 1e-6)
+        else:
+            kwargs.setdefault('diff_step', 1e-3)
 
     partial_func = partial(fit_func, models=models, rt_dict=rt_dict,
                            geom=geom)

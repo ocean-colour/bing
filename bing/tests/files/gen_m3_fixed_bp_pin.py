@@ -37,6 +37,14 @@ Run once (ocean14):
     python gen_m3_fixed_bp_pin.py
 
 Writes m3_fixed_bp_pin.npz next to this script (committed).
+
+Regenerated 2026-09-01 (PR #27): chisq_fit.fit now widens the numerical-
+Jacobian step for robust backends (float32 -- scipy's ~1.5e-8 default
+produced an exactly-zero Jacobian, so the pinned ``chisq_robust_ztt`` had
+frozen an optimizer that never moved off p0). Only ``chisq_robust_ztt``
+changed in the regeneration -- ``chisq_gordon``/both MCMC chains were
+verified byte-identical to the previous pin, so the Gordon path and the
+dispatch behavior this fixture exists to freeze are untouched.
 """
 
 import os

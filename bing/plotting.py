@@ -175,9 +175,11 @@ def show_fits(models:list, inputs:np.ndarray, rt_dict:dict,
         Display the figure interactively. Default is False.
     geom : bing.rt.geometry.ObsGeometry, optional
         Fixed per-pixel viewing/illumination geometry, forwarded to
-        evaluate.reconstruct_from_chains. Required whenever
-        rt_dict['rt_backend'] selects a robust backend; ignored by the
-        default Gordon backend.
+        evaluate.reconstruct_from_chains (MCMC inputs) or
+        evaluate.reconstruct_chisq_fits (least-squares inputs) -- both
+        paths thread it identically (PR #27, Bugbot finding 2). Required
+        whenever rt_dict['rt_backend'] selects a robust backend; ignored
+        by the default Gordon backend.
 
     Returns
     -------
@@ -206,8 +208,13 @@ def show_fits(models:list, inputs:np.ndarray, rt_dict:dict,
 
     # Reconstruc
     if use_LM:
+        # geom rides along here too (PR #27, Bugbot finding 2): a robust-
+        # backend LM fit is reconstructed through the same forward model
+        # (and the same geometry) the fit itself used, exactly like the
+        # MCMC branch below.
         model_Rrs, a_mean, bb_mean = evaluate.reconstruct_chisq_fits(
-            models, params, rt_dict, Chl=ex_a_params, bb_basis_params=ex_bb_params)
+            models, params, rt_dict, Chl=ex_a_params,
+            bb_basis_params=ex_bb_params, geom=geom)
             #d_chains['Chl'], bb_basis_params=d_chains['Y']) # Lee
     else:
         a_mean, bb_mean, a_5, a_95, bb_5, bb_95,\

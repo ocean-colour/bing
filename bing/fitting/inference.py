@@ -93,6 +93,7 @@ def log_prob(params, models:list, Rrs:np.ndarray,
         Variance of Rrs measurements [sr^-2].
     rt_dict : dict
         Radiative transfer configuration dictionary with keys:
+
         - 'variable_Gordon' : bool - Use wavelength-dependent Gordon coefficients
         - 'include_Raman' : bool - Include Raman scattering correction
         - 'rt_backend' : str, optional - Radiative transfer backend
@@ -230,6 +231,7 @@ def init_mcmc(models:list, nsteps:int=10000, nburn:int=1000,
     -------
     dict
         MCMC configuration dictionary with keys:
+
         - 'ndim' : int - Total sampled dimensions (sum of model nparam,
           +1 when rt_dict['fit_Bp'] is True)
         - 'nwalkers' : int - Number of ensemble walkers (max(16, 2×ndim))
@@ -278,6 +280,7 @@ def fit_one(items:list, models:list=None, pdict:dict=None,
     ----------
     items : tuple
         Tuple containing (Rrs, varRrs, params, idx[, geom]):
+
         - Rrs : np.ndarray - Observed remote sensing reflectance [sr^-1]
         - varRrs : np.ndarray - Variance of Rrs [sr^-2]
         - params : np.ndarray - Initial parameter guess
@@ -748,6 +751,7 @@ def fit_batch(models:list, pdict:dict, items:list, rt_dict:dict,
     items : list of tuple
         List of (Rrs, varRrs, params, idx[, geom]) tuples, one per
         spectrum. Each tuple contains:
+
         - Rrs : np.ndarray - Observed reflectance
         - varRrs : np.ndarray - Variance
         - params : np.ndarray - Initial parameter guess

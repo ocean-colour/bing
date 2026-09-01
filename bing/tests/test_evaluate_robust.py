@@ -1990,3 +1990,193 @@ def test_robust_fluorescence_with_aph_set_does_not_raise(robust_models):
     Rrs = evaluate.calc_Rrs_from_models_robust(
         a_model, a_params, bb_model, bb_params, _fl_rt_dict(), geom=geom)
     assert np.all(np.isfinite(Rrs)) and np.all(Rrs > 0)
+
+
+# ===== PR #27, Bugbot finding 2: LM-path reconstruction/visualization =====
+#
+# reconstruct_chisq_fits used to call chisq_fit.fit_func with no geometry,
+# and plotting.show_fits only forwarded geom on the MCMC branch -- so a
+# robust-backend LM (chi-squared) fit could be *run* (chisq_fit.fit threads
+# the 5-tuple's geom, M2) but never reconstructed or plotted: both ended in
+# calc_Rrs_from_models_robust with geom=None, which raises. These tests pin
+# the fix end-to-end on the same cheap synthetic recipe as the threading
+# tests above: a noiseless robust_ztt observation, LM-refit through
+# chisq_fit.fit, then reconstructed and plotted with the same geometry.
+
+_LM_GEOM = ObsGeometry(theta_s=30.)
+
+
+@pytest.fixture()
+def robust_lm_fit(threading_setup):
+    """A completed robust_ztt LM fit of a self-consistent synthetic Rrs.
+
+    Returns
+    -------
+    dict
+        models, the robust rt_dict, geom, the observed (synthetic) Rrs,
+        varRrs, and the best-fit parameter vector ``ans``.
+    """
+    ts = threading_setup
+    rt_dict = dict(ts['rt_dict'], rt_backend='robust_ztt')
+    # The observation comes from the same forward model the fit uses, so
+    # the LM fit is self-consistent and its reconstruction must land on
+    # the observation (up to optimizer tolerance + float32 forward noise).
+    Rrs_obs = chisq_fit.fit_func(ts['models'][0].wave, *_THREAD_TRUTH,
+                                 models=ts['models'], rt_dict=rt_dict,
+                                 geom=_LM_GEOM)
+    varRrs = (0.02 * Rrs_obs)**2
+    items = (Rrs_obs, varRrs, _THREAD_P0.copy(), 0, _LM_GEOM)
+    ans, cov, idx = chisq_fit.fit(items, ts['models'], rt_dict)
+    return dict(models=ts['models'], rt_dict=rt_dict, geom=_LM_GEOM,
+                Rrs_obs=Rrs_obs, varRrs=varRrs, ans=ans)
+
+
+def test_reconstruct_chisq_fits_robust_requires_geom(robust_lm_fit):
+    """Without geom, reconstructing a robust LM fit raises the CQ4-style
+    ValueError (naming geom) -- the pre-fix behavior, now only reachable
+    by actually omitting the argument."""
+    rf = robust_lm_fit
+    with pytest.raises(ValueError, match='geom'):
+        evaluate.reconstruct_chisq_fits(rf['models'], rf['ans'],
+                                        rf['rt_dict'], Chl=1.0)
+
+
+def test_reconstruct_chisq_fits_robust_geom_end_to_end(robust_lm_fit):
+    """With geom threaded, a robust LM fit reconstructs through the robust
+    forward model: the reconstruction equals a direct fit_func evaluation
+    of the best-fit vector exactly, and lands on the (self-consistent)
+    observation to well within the 2% noise scale."""
+    rf = robust_lm_fit
+    models = rf['models']
+
+    Rrs_fit, a_fit, bb_fit = evaluate.reconstruct_chisq_fits(
+        models, rf['ans'], rf['rt_dict'], Chl=1.0, geom=rf['geom'])
+
+    nwave = len(models[0].wave)
+    assert Rrs_fit.shape == (nwave,)
+    assert np.all(np.isfinite(Rrs_fit)) and np.all(Rrs_fit > 0)
+    assert np.all(a_fit > 0) and np.all(bb_fit > 0)
+
+    # Identical to evaluating the best-fit vector through the same
+    # forward model directly -- reconstruction is not a re-fit.
+    direct = chisq_fit.fit_func(models[0].wave, *rf['ans'], models=models,
+                                rt_dict=rf['rt_dict'], geom=rf['geom'])
+    np.testing.assert_allclose(Rrs_fit, direct, rtol=0, atol=0)
+
+    # And it actually reproduces the observation (end-to-end proof, not
+    # just "does not crash"): noiseless, self-consistent synthetic.
+    rel = np.abs((Rrs_fit - rf['Rrs_obs']) / rf['Rrs_obs'])
+    assert np.median(rel) < 1e-3, f"median rel err {np.median(rel):.2e}"
+    assert rel.max() < 1e-2, f"max rel err {rel.max():.2e}"
+
+
+def test_reconstruct_chisq_fits_robust_fit_Bp_tail(robust_lm_fit):
+    """Under fit_Bp the parameter vector carries a trailing B_p --
+    reconstruct_chisq_fits forwards it through fit_func's tail peel with
+    the geometry intact (the B_p value reaches the adapter, not the
+    models' parameter split)."""
+    rf = robust_lm_fit
+    rt_dict = dict(rf['rt_dict'], fit_Bp=True)
+    params_bp = np.append(_THREAD_TRUTH, 0.02)
+
+    Rrs_bp, _, _ = evaluate.reconstruct_chisq_fits(
+        rf['models'], params_bp, rt_dict, Chl=1.0, geom=rf['geom'])
+    assert np.all(np.isfinite(Rrs_bp)) and np.all(Rrs_bp > 0)
+
+    # A different B_p must change the robust Rrs (proves the tail is
+    # consumed as B_p rather than silently dropped).
+    Rrs_bp2, _, _ = evaluate.reconstruct_chisq_fits(
+        rf['models'], np.append(_THREAD_TRUTH, 0.04), rt_dict,
+        Chl=1.0, geom=rf['geom'])
+    assert not np.allclose(Rrs_bp, Rrs_bp2)
+
+
+def test_show_fits_LM_robust_geom(robust_lm_fit):
+    """plotting.show_fits' least-squares branch forwards geom (the fix):
+    a robust LM fit renders end-to-end, and the returned model Rrs is the
+    same reconstruction reconstruct_chisq_fits produces."""
+    import matplotlib
+    matplotlib.use('Agg', force=True)   # non-interactive, as in conftest
+    from bing import plotting as bing_plot
+
+    rf = robust_lm_fit
+    models = rf['models']
+
+    axes, model_Rrs = bing_plot.show_fits(
+        models, rf['ans'], rf['rt_dict'], 1.0, None, show=False,
+        Rrs_true=dict(wave=models[0].wave, spec=rf['Rrs_obs'],
+                      var=rf['varRrs']),
+        geom=rf['geom'])
+
+    assert len(axes) == 3
+    assert np.all(np.isfinite(model_Rrs))
+    expected, _, _ = evaluate.reconstruct_chisq_fits(
+        models, rf['ans'], rf['rt_dict'], Chl=1.0, geom=rf['geom'])
+    np.testing.assert_allclose(np.squeeze(model_Rrs), expected,
+                               rtol=0, atol=0)
+
+
+def test_show_fits_LM_robust_without_geom_raises(robust_lm_fit):
+    """Regression pin for the reported bug itself: the LM branch without
+    geom still fails loudly (never silently Gordon) for a robust backend."""
+    import matplotlib
+    matplotlib.use('Agg', force=True)
+    from bing import plotting as bing_plot
+
+    rf = robust_lm_fit
+    with pytest.raises(ValueError, match='geom'):
+        bing_plot.show_fits(rf['models'], rf['ans'], rf['rt_dict'],
+                            1.0, None, show=False)
+
+
+# ===== PR #27, Bugbot finding 1 (backend-agnostic part): the raw-IOP =====
+# ===== robust entry point prep_one_l23's synthetic observation uses  =====
+
+def test_calc_Rrs_from_iops_robust_matches_model_path(threading_setup):
+    """calc_Rrs_from_iops_robust on eval_a/eval_bb spectra equals
+    calc_Rrs_from_models_robust on the generating parameters -- the two
+    entry points share the input construction and jit dispatch, so raw
+    spectra and model parameters can never disagree."""
+    ts = threading_setup
+    rt_dict = dict(ts['rt_dict'], rt_backend='robust_ztt')
+    models = ts['models']
+    nap = models[0].nparam
+
+    a = np.squeeze(models[0].eval_a(_THREAD_TRUTH[:nap]))
+    bb = np.squeeze(models[1].eval_bb(_THREAD_TRUTH[nap:]))
+
+    Rrs_raw = evaluate.calc_Rrs_from_iops_robust(
+        a, bb, models[0].wave, rt_dict, geom=_LM_GEOM)
+    Rrs_model = evaluate.calc_Rrs_from_models_robust(
+        models[0], _THREAD_TRUTH[:nap], models[1], _THREAD_TRUTH[nap:],
+        rt_dict, geom=_LM_GEOM)
+    np.testing.assert_allclose(np.squeeze(Rrs_raw), np.squeeze(Rrs_model),
+                               rtol=1e-6, atol=0)
+
+
+def test_calc_Rrs_from_iops_robust_error_paths(threading_setup):
+    """The raw-IOP entry point enforces the same argument-validity rules
+    as the model-parameter one: geom required, robust backends only,
+    no robust_baseline + inelastic, fluorescence needs a_ph."""
+    ts = threading_setup
+    models = ts['models']
+    nap = models[0].nparam
+    a = np.squeeze(models[0].eval_a(_THREAD_TRUTH[:nap]))
+    bb = np.squeeze(models[1].eval_bb(_THREAD_TRUTH[nap:]))
+    wave = models[0].wave
+
+    rt_ztt = dict(ts['rt_dict'], rt_backend='robust_ztt')
+    with pytest.raises(ValueError, match='geom'):
+        evaluate.calc_Rrs_from_iops_robust(a, bb, wave, rt_ztt)
+    with pytest.raises(ValueError, match='robust backend'):
+        evaluate.calc_Rrs_from_iops_robust(a, bb, wave, ts['rt_dict'],
+                                           geom=_LM_GEOM)
+    rt_base_inel = dict(ts['rt_dict'], rt_backend='robust_baseline',
+                        include_Raman=True)
+    with pytest.raises(ValueError, match='robust_baseline'):
+        evaluate.calc_Rrs_from_iops_robust(a, bb, wave, rt_base_inel,
+                                           geom=_LM_GEOM)
+    rt_fl = dict(rt_ztt, include_Chl_fl=True)
+    with pytest.raises(ValueError, match='a_ph'):
+        evaluate.calc_Rrs_from_iops_robust(a, bb, wave, rt_fl,
+                                           geom=_LM_GEOM)

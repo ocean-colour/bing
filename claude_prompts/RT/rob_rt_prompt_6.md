@@ -167,7 +167,7 @@ Read before coding:
    numbers) in the Logs below, and note that the integration is ready for
    JXP's final review and merge. Use Fable if you can. Log your work.
 
-7. I have issued a PR on GitHub.  Please see the comments and address them.  Also, attempt to reconcile the CI failures.  Use Fable if you can. Log your work.
+7. I have issued a PR on GitHub.  Please see the comments and address them.  If you have any questions, ask me in the Q&A section below.  Use Fable if you can. Log your work.
 
 ## M5
 
@@ -400,6 +400,48 @@ changes the framing, all three surfaces (task 1's docstrings, task 2's
 skill doc, and this notebook's §3) would need the same update together.
 >A. We will trust and adopt the `robust` code going forward.  But let's be 
 clear about the differences in the BING docs.
+
+**Q6 (PR #27 CI, Claude → JXP). Needs your confirmation — which
+`retrieve-or-bust` branch should CI track?** Fixing the CI failures
+required installing `robust` into the workflow's environment, but
+`robust/rt` **does not exist on `retrieve-or-bust`'s `main`** — `main`
+holds only `robust/__init__.py`; the rt subpackage lives on the branches
+`cdom-rt` (18 files, current), `inelastic-rt`/`inelastic-rt-staging` (17),
+`RT`/`rt-elastic-prototype` (13), `vicc-proposal` (11). **What I did**:
+pinned the workflow's clone to `--branch cdom-rt`, because it is exactly
+the state your local `retrieve-or-bust` checkout is on (local HEAD
+`0002b3e` == `origin/cdom-rt`) — i.e. the state every M0-M5 validation run
+actually imported — and documented in the workflow comment that the pin
+should be re-pointed (or dropped) once `robust/rt` merges to `main`. **The
+caveat**: `cdom-rt` is a moving feature branch (active CDOM work), so a
+future push there could break bing's CI through no fault of bing's own.
+If you'd rather CI track a quieter branch (e.g. merge the rt work to
+`main` first, or keep a dedicated `rt-stable` branch), say so and the
+`--branch` value is a one-line change in both jobs of
+`.github/workflows/tests.yml`.
+
+>A. Pinning to `cdom-rt` is fine for now.  I'll redirect to `main` eventually.
+
+**Q7 (PR #27 CI, Claude → JXP). Action needed from you (git):
+`bing/tests/files/m3_fixed_bp_pin.npz` is gitignored and was never
+committed.** The repo's `.gitignore` line 16 (`*.npz`) catches it; the
+other two test fixtures (`l23_gordon_fixture.npz`,
+`l23_inelastic_fixture.npz`) are tracked (evidently force-added at some
+point), but the M3 pin never was — its generator's docstring says
+"(committed)", which was aspirational. Found by reproducing CI against a
+clean `git ls-files` export: `test_fit_Bp_false_matches_provisional_pin`
+dies with `FileNotFoundError: ... m3_fixed_bp_pin.npz`. It does **not**
+affect CI today (that test needs Hydrolight data and skips there), but it
+fails for anyone running the suite on a fresh clone *with* data. Since
+git actions are yours: please run
+`git add -f bing/tests/files/m3_fixed_bp_pin.npz` when you commit this
+work. Note the fixture was also **regenerated** this session (see the
+2026-09-01 Logs entry: the old pin had frozen the robust chi-squared
+optimizer's stalled-at-p0 output; only `chisq_robust_ztt` changed,
+`chisq_gordon` and both MCMC chains verified byte-identical), so the file
+on disk is the current, correct pin.
+
+>A. I have added it to the Repo
 
 ## Next
 
@@ -1140,3 +1182,219 @@ line-number citation drift, filed as Q4, informational; the
 **The `rob_rt` branch integration is ready for JXP's final review and
 merge.** This closes M5 and the whole `rob_rt` coding-plan series — per
 the doc's own "Next" section, there is no `rob_rt_prompt_7.md`.
+
+### 2026-09-01 (PR #27 — Bugbot findings and CI reconciliation)
+
+Prompts item 7: PR `ocean-colour/bing#27` ("Rob rt", `rob_rt` →
+`develop`, head `a408b68`, verified == local `git log -1`) carries two
+real review comments from `cursor[bot]` (Cursor Bugbot), and all four CI
+checks (Tests 3.11/3.12/3.13, Docs build) were failing. Both findings are
+fixed with tests; the CI root cause was reproduced locally, fixed in the
+workflow, and the fix verified in the same reproduction environment.
+
+**Bugbot finding 1 — "L23 fits omit required geometry"
+(`bing/fitting/l23.py`). Confirmed real and fixed.** `prep_one_l23`
+seeded `fit_Bp`/MCMC dimensions from `rt_dict`, but `fit_one`,
+`fit_with_LM`, and `batch_fit` (this module's own convenience wrappers —
+distinct from `bing.fitting.inference.fit_one`/`fit_batch`, which M2
+already threads correctly) built 4-tuples with no `ObsGeometry`, so
+`validate_rt_dict` raised at setup for every robust-backend fit through
+this layer; the synthetic observation Rrs also stayed Gordon-generated
+regardless of `rt_dict['rt_backend']`. The fix makes the M4/M5 notebooks'
+hand-built pattern the built-in default:
+
+- **`geom_from_p(p)`** (`l23.py:77`, with module constant
+  `L23_THETA_S = 0.0` at `:74`): returns `None` for a legacy Gordon `p`
+  with no geometry attributes (byte-for-byte legacy behavior), else an
+  `ObsGeometry` from `p.theta_s`/`p.theta_v`/`p.dphi` (any extra field on
+  `p_ntuple.gen` works, e.g. `standard.expb_pow(theta_s=30., ...)`),
+  falling back to the L23 simulation's **own** documented geometry —
+  `loisel23.load_ds(4, 0)` is the Hydrolight run at solar zenith 00
+  degrees, nadir viewing — for a robust backend with no `p.theta_s`.
+  Documented explicitly as *not* a CQ4 "silent theta_s default": the
+  module generates the observation itself from that dataset, so the scene
+  geometry is known metadata, not a guess.
+- **`prep_one_l23`** builds and eagerly validates the geometry
+  (`l23.py:383-384`, `validate_rt_dict(rt_dict, models=models,
+  geom=geom)` — fail-at-setup, M2's rule), exposes it as
+  `ret_dict['geom']` (`:543`), and **dispatches the synthetic observation
+  on the backend** (`:409-478`): the Gordon branch is the previous code
+  verbatim (including variable-Gordon G0/Gb and BING's own
+  Raman/fluorescence composition); a robust backend pushes the same true
+  L23 `a`/`bb` spectra on the native L23 grid through the new shared
+  raw-IOP adapter (below), with the true `aph` as the fluorescence source
+  term and the same stashed downwelling-Ed pair routed to robust's
+  `Geometry.Ed`. Measured on idx=170/PACE: the `robust_ztt` observation
+  differs from the Gordon one by mean |rel| 1.19e-1, max 1.49e-1 at
+  theta_s=0 — really robust-generated, not relabeled Gordon.
+- **`fit_one`/`fit_with_LM`** now build 5-tuples
+  `(Rrs, varRrs, p0, idx, prep_dict['geom'])` (`l23.py:639`, `:780`);
+  **`batch_fit`** threads one shared frozen `ObsGeometry` through every
+  item (same `p`, same dataset ⇒ same geometry; pickles by value for
+  multiprocessing) and its output loop unpacks `item[:4]` (the 5th slot
+  was consumed by the fit).
+- **New shared raw-IOP entry point** `bing/evaluate.py`:
+  `calc_Rrs_from_iops_robust` (`:754`) for callers holding spectra rather
+  than model parameters. Implemented by *splitting*, not duplicating, the
+  existing adapter: `_build_robust_inputs_from_iops` (`:396`) now owns
+  validation + IOPs/PhaseParams/Geometry construction, the model-parameter
+  `_build_robust_inputs` evaluates the models/a_ph/Ed stash then
+  delegates, and `_dispatch_robust_forward` (`:709`) is the single
+  backend→jitted-closure dispatch both public entry points share — the
+  raw-spectrum and model-parameter paths cannot drift (pinned by
+  `test_calc_Rrs_from_iops_robust_matches_model_path`, rtol 1e-6).
+
+**Bugbot finding 2 — "LM reconstruction drops geometry"
+(`bing/evaluate.py`, `bing/plotting.py`). Confirmed real and fixed.**
+`reconstruct_chisq_fits` called `chisq_fit.fit_func` with no geometry and
+`show_fits` forwarded `geom` only on the MCMC branch, so a robust LM fit
+could be *run* (M2's 5-tuple) but never reconstructed or plotted — both
+ended in `calc_Rrs_from_models_robust` with `geom=None`, which raises.
+Fix: `reconstruct_chisq_fits` gains `geom=None` (`evaluate.py:1065`,
+forwarded to `fit_func` on every evaluation, documented per the M2
+convention), and `show_fits`' LM branch passes it through
+(`plotting.py:217`) exactly like the MCMC branch always did.
+
+**Adjacent defect found while proving the fix end-to-end — robust LM
+fits could not actually converge.** With the geometry threaded, a
+noiseless self-consistent `robust_ztt` synthetic refit still returned
+ans ≈ p0 (median |rel| 8.9e-2 vs the observation) plus scipy's
+"Covariance of the parameters could not be estimated". Root-caused by
+direct measurement: robust runs at float32 (CQ1), and curve_fit's default
+finite-difference step (~1.5e-8 relative) is below float32 resolution — a
+1.5e-8 parameter step changed **zero** Rrs values (Jacobian exactly 0, so
+the optimizer "converged" at p0), while a 1e-3 step changed them smoothly.
+Fix in `chisq_fit.fit`: for a robust backend only, pass a
+float32-appropriate 1e-3 relative step (`diff_step` on the bounded/'trf'
+path, the equivalent `epsfcn=1e-6` on the unbounded/'lm' path); the
+Gordon (float64) path keeps scipy's default untouched. With the fix the
+same synthetic refit recovers the generating parameters to max |rel|
+3.7e-7. Consequence: `bing/tests/files/m3_fixed_bp_pin.npz` was
+regenerated (`gen_m3_fixed_bp_pin.py`, note added) — the old
+`chisq_robust_ztt` entry had frozen the stalled optimizer's output
+(pinned value ≈ p0). Verified key-by-key against the old pin:
+**only `chisq_robust_ztt` changed**; `chisq_gordon` and *both* MCMC
+chains are byte-identical, so the Gordon path and the dispatch behavior
+the pin exists to freeze are untouched.
+
+**New tests (13; all green).** `bing/tests/test_evaluate_robust.py` (+7,
+cheap synthetic recipe, no L23 data):
+`test_reconstruct_chisq_fits_robust_requires_geom` (raises, match
+'geom'), `..._robust_geom_end_to_end` (reconstruction == direct
+`fit_func` eval exactly, and lands on the observation, asserted median
+<1e-3 / max <1e-2 — actual max 3.7e-7-scale),
+`..._robust_fit_Bp_tail` (trailing B_p consumed as B_p — different B_p ⇒
+different Rrs), `test_show_fits_LM_robust_geom` (renders; returned Rrs ==
+`reconstruct_chisq_fits` exactly), `..._without_geom_raises` (regression
+pin: loud failure, never silent Gordon),
+`test_calc_Rrs_from_iops_robust_matches_model_path`, and
+`..._error_paths` (geom/backend/baseline-inelastic/a_ph errors).
+`bing/tests/test_l23_fitting.py` (+6, L23-data-gated):
+`test_geom_from_p_policy`, `test_prep_one_l23_robust_backend` (geom
+exposed; observation robust-generated and == the raw-IOP adapter to
+rtol 1e-6), `test_fit_with_LM_robust_backend_end_to_end` (idx=170:
+reconstruction median |rel| 5.3e-3, max 4.2e-2 vs the observation —
+model-mismatch floor of ExpBricaud+Pow on true L23 IOPs — then
+`show_fits` through the LM branch), `test_fit_with_LM_robust_fit_Bp`
+(p0/bounds/ans carry the B_p slot; fitted B_p=0.0081 inside
+[BP_PRIOR_PMIN, BP_PRIOR_PMAX]; reconstruction median 5.1e-3),
+`test_fit_one_robust_backend_mcmc` (nsteps=10000 > the 7000 default
+burn; chains (10000, 16, 5) all finite; `reconstruct_from_chains` median
+|rel| 1.2e-2, max 2.3e-2), `test_batch_fit_robust_backend` (debug-mode
+4-spectrum robust batch through multiprocessing, standard NPZ outputs).
+
+**CI root cause — reproduced, not assumed.** Fresh Python 3.13.13 venv
+(`/Users/xavier/miniforge3/bin/python3.13`), installed *exactly* the
+current `tests` job list (curated pip set + `ocpy` clone + `pip install
+--no-deps -e`), ran `MPLBACKEND=Agg python -m pytest bing/tests -v -ra`
+against a clean `git archive HEAD` export. Result: `import bing` itself
+passes (the "Show environment" step was green), but collection dies —
+`bing/evaluate.py:36: in <module> import jax` →
+`E   ModuleNotFoundError: No module named 'jax'` in 6 test modules
+(test_bbnw, test_chisq_fit, test_evaluate_robust, test_inference,
+test_plotting, test_raman), ending in `Interrupted: 6 errors during
+collection` — **zero tests ran**, matching "all three matrix jobs fail".
+The docs job dies the same way (autodoc imports `bing.evaluate`). So the
+handoff hypothesis was right, with one refinement (`import jax` in
+evaluate.py itself fails before `from robust import rt` is reached) and
+three discoveries beyond it:
+
+1. **`robust/rt` does not exist on `retrieve-or-bust`'s `main`** (`main`
+   holds only `robust/__init__.py`); the rt subpackage lives on feature
+   branches, and local validation state == `origin/cdom-rt` (`0002b3e`).
+   The workflow therefore clones `--branch cdom-rt` — see **Q6** for the
+   branch-pin question this raises.
+2. **flax is required at run time, not import time**: with only
+   `jax`+`jaxtyping` installed the suite reached `9 failed, 223 passed` —
+   8 of the 9 were robust_hybrid/domain-check tests dying in
+   `robust/rt/emulator.py:1069` with `ModuleNotFoundError: No module
+   named 'flax'` (the emulator loader lazily imports
+   `flax.traverse_util`/`flax.linen`). `optax` is only imported by
+   robust's training entry points (and rides in with flax anyway).
+3. **`m3_fixed_bp_pin.npz` was never committed** — `.gitignore`'s `*.npz`
+   catches it (the other two fixtures were evidently force-added); the
+   9th failure was its `FileNotFoundError`. Invisible to CI (that test
+   needs Hydrolight and skips there) but real for any fresh clone with
+   data — **Q7** asks JXP to `git add -f` it.
+
+**Workflow fix** (`.github/workflows/tests.yml`, both jobs, matching the
+file's comment conventions): `pip install jax flax jaxtyping` (unpinned
+like the rest of the curated list; validated versions jax 0.11.0 / flax
+0.12.8 / jaxtyping 0.3.11 noted in the comment as the pin-if-broken
+fallback), `git clone --depth 1 --branch cdom-rt
+https://github.com/ocean-colour/retrieve-or-bust.git ../retrieve-or-bust`
++ `pip install --no-deps -e` (the exact ocpy pattern; robust's emulator
+weights and data .npz files are committed in its repo, so no external
+data fetch), an expanded header note explaining *why* (the deliberate
+unconditional `import jax`/`from robust import rt` in `bing/evaluate.py`
+— which this task did **not** weaken, per settled M0-M5 policy), updated
+"Show environment" checks (`import robust.rt`, `import bing.evaluate`),
+and refreshed measured skip counts in the header.
+
+**Docs job, second masked blocker.** With imports fixed, the actual
+`python -m sphinx -W -b html docs docs/_build/html` (sphinx 9.1.0 from
+`docs/requirements.txt`, in the same repro venv) still failed: "build
+finished with problems, 9 warnings (with warnings treated as errors)" —
+all docutils "Unexpected indentation"/"Block quote" errors from
+M0-M5-era docstrings (a bullet list with no blank line after its intro
+line) in `evaluate.calc_Rrs_from_models_robust`, `chisq_fit.fit`,
+`inference.log_prob`/`init_mcmc`/`fit_one`/`fit_batch` — never seen
+before because the docs job always died at import first. Fixed by
+inserting the missing blank lines (docstring-only). Rebuild: **"build
+succeeded"** with `-W`. This is the *full* docs-job verification (real
+sphinx build, not just the import-succeeds minimum).
+
+**Verification, before/after, same environment.**
+
+- Pre-fix (CI-equivalent, Python 3.13): `6 errors during collection`,
+  0 tests run (the quoted ModuleNotFoundError above).
+- Post-fix, CI-equivalent (no `$OS_COLOR` — it leaks from the local
+  shell, so it was explicitly unset to match CI): **84 passed,
+  151 skipped, 0 failed** (9.4s) — collection clean, Hydrolight-gated
+  skips as designed.
+- Post-fix, same venv *with* the data (`$OS_COLOR` set, pin fixture
+  present): **232 passed, 3 skipped, 0 failed** (15.1s) — the fewer
+  totals vs ocean14 are the four `correct_atmosphere`-gated modules
+  conftest drops from collection.
+- Docs: sphinx `-W` build succeeded (above).
+- **ocean14 full suite on the final tree: 281 passed, 2 skipped,
+  0 failed** (185.9s) — up from M5's 268/2 by exactly the 13 new tests;
+  no regressions from any Piece-A change (including the regenerated pin
+  and the docstring RST fixes).
+
+**Observed, deliberately not touched.** (a) `l23.process_one` is
+pre-existing bit-rot unrelated to these findings: it references undefined
+`anly_utils_20` and `bbw_440` and calls `reconstruct_from_chains` without
+the required `rt_dict` — it would NameError before any geometry question
+arises; its test has always been skipped. Left for a separate decision.
+(b) Mid-task, `git status` began showing `MM` states — someone (JXP,
+presumably, as during the M5 closing) staged an intermediate snapshot of
+this work into the index. Nothing was done about it (Claude runs no
+state-changing git); the **working tree** is the authoritative, complete
+state — please re-`git add` on commit, including the `-f` for the pin
+fixture per Q7.
+
+**Open items for JXP**: Q6 (which `retrieve-or-bust` branch CI should
+track — currently pinned to `cdom-rt`, the validated state, but it is a
+moving feature branch) and Q7 (`git add -f
+bing/tests/files/m3_fixed_bp_pin.npz`).
