@@ -109,6 +109,29 @@ Pre-configured combos are in [bing/parameters/standard.py](../../../bing/paramet
 
 All accept `**kwargs` that flow into the `p_ntuple.gen` config; common keys: `satellite`, `nsteps`, `nburn`, `scl_noise`, `wv_min`, `wv_max`, `variable_Gordon`, `include_Raman`, `add_noise`, `beta`, `set_Sdg`, `Sdg`, `sSdg`.
 
+### RT backend selection
+
+Three more `p_ntuple` keys pick the forward model that turns `(a, bb)`
+into `Rrs`, consumed by `rt_defs.rt_dict_from_p(p)`:
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `rt_backend` | str | `'gordon'` | One of `bing.rt.defs.RT_BACKENDS = ('gordon', 'robust_ztt', 'robust_hybrid', 'robust_baseline')`. `'gordon'` is BING's own Gordon (1988) model; the `'robust_*'` values dispatch to retrieve-or-bust's `robust.rt` forward models instead. |
+| `fit_Bp` | bool | `False` | Whether `B_p` (phase-function parameter, robust backends only) is a free MCMC parameter vs. fixed at `Bp_value`. Requires a robust backend — `fit_Bp=True` with `rt_backend='gordon'` raises. |
+| `Bp_value` | float | `0.01` | Fixed/seed value for `B_p`. |
+
+```python
+p = standard.expb_pow(
+    satellite='PACE',
+    rt_backend='robust_ztt',   # or 'robust_hybrid', 'robust_baseline', 'gordon'
+    fit_Bp=False,
+    Bp_value=0.01,
+)
+rt_dict = rt_defs.rt_dict_from_p(p)
+```
+
+A robust backend also requires geometry: pass `geom=ObsGeometry(...)` through to the forward-model call (`rt_defs.validate_rt_dict` raises `ValueError` if a robust backend is selected and `geom` is `None` — `theta_s` is never silently defaulted). See `bing/rt/defs.py`'s `rt_dict_from_p`/`validate_rt_dict` docstrings for the full key/value reference, and [inelastic-rrs](../inelastic-rrs/SKILL.md) for the accuracy caveat on the robust backends' Raman/fluorescence terms before picking one for an inelastic fit.
+
 ## Sanity checks
 
 Before trusting any fit:
@@ -157,6 +180,11 @@ CSV format: `wave,Rrs,sigRrs[,anw,bbnw]`. See [bing/scripts/fit_Rrs.py](../../..
 - **`rt_dict` missing** → all forward-model calls now require it (added during the Raman/fluorescence refactor); pass `rt_defs.rt_dict_from_p(p)`.
 - **Wave grid mismatch** → `models` and `Rrs` must share `wave`. If you have hyperspectral data and a satellite grid, use [satellite-band-prep](../satellite-band-prep/SKILL.md) first.
 - **Tight priors near initial guess** → `log_prob = -inf` at p0; widen priors before MCMC.
+- **`rt_backend='robust_baseline'` + `include_Raman`/`include_Chl_fl`** → raises `ValueError`; `robust_baseline` is elastic-only (no `inelastic` composition path). Use `'robust_ztt'`/`'robust_hybrid'` for an inelastic fit on the robust side.
+- **Any `robust_*` backend without `geom=`** → `validate_rt_dict` raises `ValueError`; `theta_s` is never silently defaulted. Pass a `bing.rt.geometry.ObsGeometry(...)` through to the forward-model call.
+- **`fit_Bp=True` with `rt_backend='gordon'`** → raises; `B_p` (phase-function parameter) only applies to robust backends.
+- **First `robust_hybrid` call is slow** → its emulator JIT-compiles on first use (~1s); subsequent calls in the same process are fast. In `fit_batch`, each `ProcessPoolExecutor` worker pays this cost once per worker, not once per fit.
+- **`rt_backend='robust_hybrid'` outside its training wavelength range** → `validate_rt_dict` raises if any model wavelength falls outside `[ROBUST_HYBRID_WAVE_MIN, ROBUST_HYBRID_WAVE_MAX]` (350-750 nm).
 
 ## Related skills
 

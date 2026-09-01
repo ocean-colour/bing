@@ -27,12 +27,20 @@ Examples
 >>> stats = evaluate.calc_stats(chains, names=['Adg', 'Sdg', 'Aph', 'Bnw', 'beta'])
 """
 
+import collections
+import functools
 import warnings
 
 import numpy as np
 
+import jax
+import jax.numpy as jnp
+
 from bing.rt import rrs as bing_rrs
+from bing.rt import defs as rt_defs
 from bing.fitting import chisq_fit
+
+from robust import rt as robust_rt
 
 from IPython import embed
 
@@ -90,6 +98,40 @@ def calc_stats(chains, names:list=None,
     stats[f'p{perc[1]:02d}'] = np.percentile(chains, perc[1], axis=0)
 
     return stats
+
+def chain_param_names(models:list, rt_dict:dict=None):
+    """
+    Parameter names for one fitted vector / chain column each.
+
+    The single place the fitted-vector naming convention lives (M3 task
+    3): the concatenated model ``pnames`` (absorption first, then
+    backscattering), plus a trailing ``'B_p'`` when ``rt_dict['fit_Bp']``
+    is True -- matching the sampled layout
+    ``[a_params..., bb_params..., B_p]`` (design §3.3). Use it wherever
+    chain columns get labeled: `calc_stats` ``names`` (see
+    bing.io.save_fit) and corner-plot labels
+    (bing.plotting.corner_plot). ``'B_p'`` is a *linear-space* parameter
+    (its ``log_params`` semantics are False -- see
+    bing.plotting.log_param_mask), so it is never log10-wrapped.
+
+    Parameters
+    ----------
+    models : list
+        List of two model objects: [absorption_model, backscattering_model].
+    rt_dict : dict, optional
+        Radiative transfer configuration. Only 'fit_Bp' (default False)
+        is consulted; None is the fixed-B_p default.
+
+    Returns
+    -------
+    list of str
+        One name per fitted parameter, ending in ``'B_p'`` when
+        rt_dict['fit_Bp'] is True.
+    """
+    names = list(models[0].pnames) + list(models[1].pnames)
+    if rt_dict is not None and rt_dict.get('fit_Bp', False):
+        names.append('B_p')
+    return names
 
 def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params, 
         rt_dict:dict, debug:bool=False, full_return:bool=False):
@@ -200,14 +242,6 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
     if debug:
         embed(header='174 of evaluate.py')
 
-    # RT correction?
-    #  THIS SHOULD BE REMOVED
-    if rt_dict.get('RT_correction', None) is not None:
-        if a_params.ndim == 1:
-            Rrs = Rrs * rt_dict['RT_correction']
-        else:
-            Rrs = Rrs * np.outer(np.ones(a_params.shape[0]), rt_dict['RT_correction'])
-
     # Fluorescence? Accept rt_dicts that don't specify the key (ad-hoc dicts
     # built by tests / notebooks pre-date the include_Chl_fl field).
     if rt_dict.get('include_Chl_fl', False):
@@ -242,8 +276,663 @@ def calc_Rrs_from_models(a_model, a_params, bb_model, bb_params,
     else:
         return Rrs
 
+@functools.lru_cache(maxsize=None)
+def _robust_forward_jit(mode, inelastic_key, wave_key):
+    """
+    Build (and cache) a jax.jit'd closure for one (mode, inelastic
+    configuration, wavelength grid) combination.
+
+    rob_rt integration, M1 task 2 -- plan choice, docs/design/rob_rt_design.md
+    §7.1. One compile per distinct combination, reused for the rest of the
+    fit. Deliberately a `functools.lru_cache` on top of (not instead of)
+    JAX's own compilation cache: this gives a stable, introspectable
+    `_robust_forward_jit.cache_info()` for the M1 gate's "second call with
+    identical config hits the cache, no recompile" check, which JAX's own
+    internal cache doesn't expose as directly.
+
+    `wave` is baked into the closure as a Python-level constant (via
+    `wave_key = wave.tobytes()`, assumed float64 -- BING's convention) rather
+    than passed as a traced argument: it never varies within a fit, so
+    there is no reason to let it participate in tracing, and doing so this
+    way keeps the traced signature to exactly the things that do vary
+    (`iops`, `phase_params`, `geometry`, and -- when inelastic is on --
+    `phi_C`). No `vmap` is used or needed: `robust.rt.forward`/
+    `baselines.Rrs_gordon` are natively batched over leading axes, so one
+    call handles a whole `(nsamples, nparam)` chain.
+
+    NumPy crosses to JAX only at the boundary of the returned closure --
+    plain float64 `IOPs`/`PhaseParams`/`Geometry` built outside `jit` are
+    converted to JAX's default dtype (float32; `jax_enable_x64` is never
+    enabled, CQ1) the moment they are passed into it. Nothing in this
+    module casts dtypes explicitly; the jit boundary does it.
+
+    Parameters
+    ----------
+    mode : str
+        'ztt', 'hybrid', or 'baseline' (`rt_dict['rt_backend']` with its
+        'robust_' prefix stripped, or literally 'baseline').
+    inelastic_key : tuple or None
+        `(raman: bool, fluorescence: bool, emission_shape: str)` -- the
+        *static* `Inelastic` configuration -- or `None` for the
+        elastic-only path. `None` is not the same as
+        `Inelastic(raman=False, fluorescence=False)`: passing `None` to
+        `robust.rt.forward` takes the pre-existing, bit-identical code
+        route (robust.rt.types.Inelastic docstring; design §3.5), so the
+        two are kept as genuinely different cache entries / closures,
+        never conflated.
+    wave_key : bytes
+        `a_model.wave` as float64 bytes (`np.asarray(wave,
+        dtype=np.float64).tobytes()`).
+
+    Returns
+    -------
+    callable
+        A `jax.jit`-wrapped function. Signature is `f(iops, phase_params,
+        geometry)` when `mode == 'baseline'` or `inelastic_key is None`;
+        `f(iops, phase_params, geometry, phi_C)` otherwise (`phi_C` is the
+        one `Inelastic` field that is a real traced leaf, not static).
+    """
+    wave = jnp.asarray(np.frombuffer(wave_key, dtype=np.float64))
+
+    # mode='hybrid' needs the trained emulator. forward()'s own default
+    # (emulator=None) lazily loads it from disk on first use
+    # (hybrid.py:_resolve_emulator -> emulator.load_default()) -- a side
+    # effect that raises jax.errors.UnexpectedTracerError the first time it
+    # happens inside a jit trace (found by running this exact code path,
+    # not anticipated in advance -- the same failure mode as
+    # corrections=None below, just a second, independent lazy-load). Fixed
+    # the same way: load it here, once, outside jit (robust's own
+    # load_default() is itself memoised -- "read once per process" -- so
+    # this is not a redundant read), and pass the already-loaded object
+    # explicitly so forward() never has a reason to load anything at trace
+    # time.
+    emulator_obj = robust_rt.emulator.load_default() if mode == 'hybrid' else None
+
+    if mode == 'baseline':
+        def _fn(iops, phase_params, geometry):
+            return robust_rt.baselines.Rrs_gordon(iops, phase_params,
+                                                   geometry, wave)
+        return jax.jit(_fn)
+
+    if inelastic_key is None:
+        def _fn(iops, phase_params, geometry):
+            return robust_rt.forward(iops, phase_params, geometry, wave,
+                                     mode=mode, inelastic=None,
+                                     corrections=False, emulator=emulator_obj)
+        return jax.jit(_fn)
+
+    raman, fluorescence, emission_shape = inelastic_key
+
+    def _fn(iops, phase_params, geometry, phi_C):
+        inelastic = robust_rt.Inelastic(
+            raman=raman, fluorescence=fluorescence, phi_C=phi_C,
+            emission_shape=emission_shape)
+        # corrections=False: explicit analytic-only inelastic physics (no
+        # M3 learned correction heads). Not a simplification of scope --
+        # it is the only inelastic behavior this integration ever resolved
+        # or cross-checked (claude_prompts/rob_rt.md, robust's own
+        # test_inelastic_bing_xcheck.py). It is also load-bearing for
+        # jit-safety, same reason as the emulator above: corrections=None
+        # (the forward() default) tries to lazily load trained
+        # correction-head weights from disk on first use
+        # (hybrid.py:_resolve_corrections -> inelastic_corr.load_default()),
+        # which raises jax.errors.UnexpectedTracerError under jit.
+        return robust_rt.forward(iops, phase_params, geometry, wave,
+                                 mode=mode, inelastic=inelastic,
+                                 corrections=False, emulator=emulator_obj)
+    return jax.jit(_fn)
+
+#: Everything a robust.rt call needs, built once from BING-side arguments.
+#: Shared by `calc_Rrs_from_models_robust` (the jitted hot path) and
+#: `robust_domain_check` (the un-jitted diagnostic) so the BING -> robust
+#: argument mapping is defined in exactly one place -- the two callers can
+#: never drift apart on how IOPs/PhaseParams/Geometry are constructed.
+_RobustInputs = collections.namedtuple(
+    '_RobustInputs',
+    ['rt_backend', 'iops', 'phase_params', 'geometry', 'a', 'bb',
+     'include_raman', 'include_fl', 'emission_shape', 'phi_C'])
+
+
+def _build_robust_inputs_from_iops(a, bb, wave, rt_dict, geom, Bp,
+                                   a_ph=None, Ed=None):
+    """
+    Validate and map raw IOP spectra onto robust.rt call inputs.
+
+    The innermost layer of the BING -> robust argument construction
+    (design §3.4's mapping table), shared by the model-parameter adapter
+    (`_build_robust_inputs`, which evaluates the models first) and the
+    raw-spectrum entry point (`calc_Rrs_from_iops_robust`, PR #27): the
+    ``IOPs.from_total_bb`` split, ``PhaseParams(B_p=...)`` with the
+    free-``Bp`` override, ``geom.to_robust()`` with the optional ``Ed``
+    pair routed into ``Geometry.Ed`` when Raman is requested (M4 task 2),
+    and the inelastic flags. Also owns the argument-validity errors
+    (missing ``geom``, a non-robust ``rt_backend``, ``robust_baseline`` +
+    inelastic, fluorescence without ``a_ph``), so every consumer fails
+    identically.
+
+    Parameters
+    ----------
+    a, bb : np.ndarray
+        Total absorption/backscattering on ``wave`` [m^-1]; shape
+        (nwave,) or batched (nsamples, nwave), robust's own convention.
+    wave : np.ndarray
+        Wavelength grid [nm] the spectra live on.
+    rt_dict : dict
+        Radiative transfer configuration; same keys as
+        `calc_Rrs_from_models_robust` consults.
+    geom : bing.rt.geometry.ObsGeometry
+        Fixed viewing/illumination geometry. Required (non-None); theta_s
+        is never silently defaulted.
+    Bp : float or np.ndarray or None
+        Free-B_p override; falls back to rt_dict['Bp_value'] when None.
+    a_ph : np.ndarray, optional
+        Phytoplankton absorption on ``wave`` -- the fluorescence source
+        term. Required when rt_dict['include_Chl_fl'] is True.
+    Ed : tuple, optional
+        A raw ``(wave_Ed, Ed)`` downwelling-irradiance pair for robust's
+        ``Geometry.Ed`` seam; consulted only when rt_dict['include_Raman']
+        is True (robust's packaged L23 spectra are the fallback).
+
+    Returns
+    -------
+    _RobustInputs
+        The validated, fully-constructed robust.rt call ingredients
+        (plus the raw ``a``/``bb`` arrays for ``full_return``).
+    """
+    if geom is None:
+        raise ValueError(
+            "the robust.rt backend requires geom (a bing.rt.geometry."
+            "ObsGeometry) -- theta_s is never silently defaulted "
+            "(claude_prompts/rob_rt.md, Q&A/Coding item 4). "
+            "rt_defs.validate_rt_dict should have raised before this "
+            "function was ever reached for a robust backend.")
+
+    rt_backend = rt_dict.get('rt_backend', 'gordon')
+    if rt_backend not in rt_defs.RT_BACKENDS or rt_backend == 'gordon':
+        raise ValueError(
+            f"rt_dict['rt_backend']={rt_backend!r} "
+            "is not a robust backend -- use one of "
+            f"{[b for b in rt_defs.RT_BACKENDS if b != 'gordon']}, or "
+            "dispatch 'gordon' to calc_Rrs_from_models instead.")
+
+    include_raman = rt_dict.get('include_Raman', False)
+    include_fl = rt_dict.get('include_Chl_fl', False)
+
+    if rt_backend == 'robust_baseline' and (include_raman or include_fl):
+        raise ValueError(
+            "rt_dict['rt_backend']='robust_baseline' has no inelastic "
+            "composition path -- robust.rt.baselines.Rrs_gordon takes "
+            "no `inelastic` argument and is elastic-only by "
+            "construction. Disable include_Raman/include_Chl_fl, or "
+            "use rt_backend='robust_ztt'/'robust_hybrid' instead.")
+
+    if include_fl and a_ph is None:
+        raise ValueError(
+            "rt_dict['include_Chl_fl']=True requires a_ph (phytoplankton "
+            "absorption on the same wavelength grid) -- the fluorescence "
+            "source term is phi_C * a_ph, and bulk absorption cannot "
+            "stand in for the phytoplankton component.")
+
+    iops = robust_rt.IOPs.from_total_bb(a, bb, wave=wave,
+                                        a_ph=a_ph if include_fl else None)
+
+    B_p = Bp if Bp is not None else rt_dict['Bp_value']
+    phase_params = robust_rt.PhaseParams(B_p=B_p)
+
+    # Ed routing (M4 task 2): when Raman is on and the caller supplied a
+    # raw (wave_Ed, Ed) pair, pass it through into robust's Geometry.Ed
+    # seam -- robust builds the Ed(lambda')/Ed(lambda) ratio internally
+    # (robust/rt/ed.py). With no pair (or Raman off) the geometry carries
+    # Ed=None and robust falls back to its packaged L23 spectra
+    # interpolated in theta_s, its documented default -- BING's flat-Ed
+    # fallback is deliberately NOT replicated here. Note robust's
+    # fluorescence kernel reads Geometry.Ed too, so when include_Raman and
+    # include_Chl_fl are both on the two terms share the supplied sky; a
+    # fluorescence-only call keeps the packaged default (M4 Q4).
+    if include_raman and Ed is not None:
+        geometry = geom.to_robust(Ed=Ed)
+    else:
+        geometry = geom.to_robust()
+
+    emission_shape = ('double' if rt_dict.get('double_gaussian', True)
+                      else 'single')
+
+    return _RobustInputs(
+        rt_backend=rt_backend, iops=iops, phase_params=phase_params,
+        geometry=geometry, a=a, bb=bb, include_raman=include_raman,
+        include_fl=include_fl, emission_shape=emission_shape,
+        phi_C=rt_dict.get('phi_C', 0.02))
+
+
+def _build_robust_inputs(a_model, a_params, bb_model, bb_params,
+                         rt_dict, geom, Bp):
+    """
+    Validate and map BING-side model arguments onto robust.rt call inputs.
+
+    The model-parameter layer of the BING -> robust argument construction:
+    parameter evaluation via ``a_model.eval_a``/``bb_model.eval_bb``
+    (identical to the Gordon path), the fluorescence a_ph construction
+    from the a-model's stashed spectrum, and the a-model's stashed raw
+    ``(wave_Ed_raw, Ed_raw)`` pair for ``Geometry.Ed`` when Raman is
+    requested (M4 task 2; see `calc_Rrs_from_models_robust`'s Notes) --
+    then delegates the IOPs/PhaseParams/Geometry construction and the
+    shared validity errors to `_build_robust_inputs_from_iops`, so the
+    model-parameter and raw-spectrum entry points can never drift apart.
+    Owns one model-specific error of its own: fluorescence without
+    ``a_model.a_ph`` (M4 task 3), so the fix (``set_aph``) is named.
+
+    Parameters and error semantics are exactly those documented on
+    `calc_Rrs_from_models_robust`; see its docstring.
+
+    Returns
+    -------
+    _RobustInputs
+        The validated, fully-constructed robust.rt call ingredients
+        (plus the raw ``a``/``bb`` arrays for ``full_return``).
+    """
+    include_fl = rt_dict.get('include_Chl_fl', False)
+
+    # IOPs for model wave -- identical evaluation to the Gordon path.
+    a = a_model.eval_a(a_params)
+    bb = bb_model.eval_bb(bb_params)
+
+    # Fluorescence source term (full spectrum on a_model.wave -- see
+    # calc_Rrs_from_models_robust's Notes; not sliced at a_model.i_Chl_ex
+    # like calc_Rrs_from_models' aph_ex). Guard the a_ph requirement
+    # eagerly, with the fix named (M4 task 3) -- the shared layer below
+    # has its own a_ph guard, but only this layer can tell the caller the
+    # actual remedy (set_aph). Checked after eval_a on purpose: Bricaud
+    # models with free Chl (e.g. aNWExpBricaud) set a_ph implicitly inside
+    # eval_anw, so at this point a_ph is genuinely available or genuinely
+    # missing.
+    if include_fl and a_model.a_ph is None:
+        raise ValueError(
+            "rt_dict['include_Chl_fl']=True requires the a-model's "
+            "phytoplankton absorption, but a_model.a_ph is None -- the "
+            "fluorescence source term is phi_C * a_ph, and bulk absorption "
+            "cannot stand in for the phytoplankton component. Call "
+            "a_model.set_aph(Chl) first (Bricaud-family models), or "
+            "disable include_Chl_fl if the a-model has no phytoplankton "
+            "component.")
+    a_ph = (10**a_params[..., -1:]) * a_model.a_ph if include_fl else None
+
+    # The a-model's stashed raw Ed pair (set_raman_Ed, M4 task 1, CQ2) --
+    # the shared layer routes it into Geometry.Ed when Raman is on.
+    Ed = ((a_model.wave_Ed_raw, a_model.Ed_raw)
+          if a_model.wave_Ed_raw is not None else None)
+
+    return _build_robust_inputs_from_iops(a, bb, a_model.wave, rt_dict,
+                                          geom, Bp, a_ph=a_ph, Ed=Ed)
+
+
+def calc_Rrs_from_models_robust(a_model, a_params, bb_model, bb_params,
+        rt_dict:dict, geom=None, Bp:float=None, debug:bool=False,
+        full_return:bool=False):
+    """
+    Calculate Rrs from model parameters using the robust.rt backend
+    (rob_rt integration, M1).
+
+    Sibling of calc_Rrs_from_models: same parameter-to-IOP evaluation
+    (a_model.eval_a / bb_model.eval_bb, unchanged) and the same batch shape
+    contract, but the IOPs -> Rrs step is retrieve-or-bust's robust.rt
+    forward model instead of the Gordon relation. Called only for a robust
+    rt_dict['rt_backend'] value -- the Gordon path stays on
+    calc_Rrs_from_models unchanged. See docs/design/rob_rt_design.md §3.4
+    for the full mapping table this implements, and claude_prompts/rob_rt.md
+    (Q&A/Design 4, 13; Q&A/Coding 1) for the decisions behind it.
+
+    Runs entirely at float32 -- robust.rt never enables jax_enable_x64
+    (Q&A/Coding item 1), and BING's float64 NumPy arrays downcast crossing
+    the JAX boundary here. Documented, not a bug: float32 is more than
+    sufficient precision for these calculations, and no test tolerance
+    against this function assumes float64 headroom.
+
+    The actual IOPs -> Rrs call is dispatched through `_robust_forward_jit`,
+    an `lru_cache`d builder of `jax.jit`'d closures (one compile per
+    distinct `(mode, inelastic configuration, wavelength grid)`
+    combination, reused for the rest of the fit -- see its own docstring
+    for the caching design, M1 task 2).
+
+    Parameters
+    ----------
+    a_model : aNWModel
+        Absorption model object (e.g., aNWExpBricaud).
+    a_params : np.ndarray
+        Absorption model parameters. Shape can be (nparam,) for single
+        evaluation or (nsamples, nparam) for batch evaluation.
+    bb_model : bbNWModel
+        Backscattering model object (e.g., bbNWPow).
+    bb_params : np.ndarray
+        Backscattering model parameters. Shape matches a_params.
+    rt_dict : dict
+        Radiative transfer configuration. Consulted keys:
+
+        - 'rt_backend' : str - one of 'robust_ztt'/'robust_hybrid'/
+          'robust_baseline' (see bing.rt.defs.RT_BACKENDS). 'gordon' is a
+          caller error here -- dispatch to calc_Rrs_from_models instead.
+        - 'include_Raman', 'include_Chl_fl', 'phi_C', 'double_gaussian' :
+          same meaning as for calc_Rrs_from_models. When 'include_Raman'
+          is True and the a-model carries the raw Ed pair stashed by
+          aNWModel.set_raman_Ed, that pair is routed into robust's
+          Geometry.Ed (see Notes, "Ed routing").
+        - 'Bp_value' : float - constant B_p when Bp is not given.
+    geom : bing.rt.geometry.ObsGeometry, optional
+        Fixed per-pixel viewing/illumination geometry. Required (non-None)
+        for every robust backend -- theta_s is never silently defaulted
+        (claude_prompts/rob_rt.md, Q&A/Coding item 4). Fitters raise via
+        rt_defs.validate_rt_dict before this function is ever reached; a
+        direct call is held to the same rule.
+    Bp : float, optional
+        Free-parameter override for the particle phase-function ratio
+        B_p = bb_p/b_p (design §3.3). Falls back to rt_dict['Bp_value']
+        when None (the fixed-B_p, default case).
+    debug : bool, optional
+        If True, drop into an IPython shell after computing Rrs.
+    full_return : bool, optional
+        If True, return the full Rrs, a, bb arrays. Default is False.
+
+    Returns
+    -------
+    np.ndarray
+        Remote sensing reflectance Rrs [sr^-1]. Shape is (nwave,) for
+        single evaluation or (nsamples, nwave) for batch.
+
+    Raises
+    ------
+    ValueError
+        If geom is None; if rt_dict['rt_backend'] is not a robust backend;
+        if rt_dict['rt_backend'] == 'robust_baseline' while Raman or
+        chlorophyll fluorescence is requested (robust.rt.baselines.Rrs_gordon
+        takes no `inelastic` argument -- it is elastic-only by
+        construction, see Notes); or if rt_dict['include_Chl_fl'] is True
+        but the a-model has no a_ph spectrum set after eval_a (the
+        fluorescence source term is phi_C * a_ph -- call a_model.set_aph
+        first; M4 task 3).
+
+    Notes
+    -----
+    Unlike calc_Rrs_from_models, this function never evaluates a_model/
+    bb_model at separate Raman-excitation wavelengths (eval_a_ex/eval_bb_ex):
+    robust.rt.inelastic derives its own excitation-grid IOPs by interpolating
+    (and, outside the supplied wave range, clamping) the single emission-grid
+    IOPs passed in here. This is a real, load-bearing difference from BING's
+    own Raman path, which evaluates the true parametric models at the wider
+    excitation grid -- not a bug in this adapter, but an inherent property of
+    delegating to robust.rt's public forward()/rrs_forward() API, which has
+    no parameter for separately-evaluated excitation IOPs. Likewise a_ph is
+    passed as the *full* spectrum on a_model.wave, not pre-sliced at
+    a_model.i_Chl_ex -- robust.rt.inelastic.fluorescence_kernel interpolates
+    onto its own fixed 370-690 nm excitation grid internally.
+
+    **Ed routing (M4 task 2).** When rt_dict['include_Raman'] is True and
+    the a-model carries the raw downwelling-irradiance pair stashed by
+    `aNWModel.set_raman_Ed` (``a_model.wave_Ed_raw is not None``), the
+    robust geometry is built with ``Ed=(wave_Ed_raw, Ed_raw)`` --
+    robust.rt builds the true Ed(lambda')/Ed(lambda) Raman ratio from it
+    internally (robust.rt.ed). Otherwise (Raman off, or no pair stashed)
+    the geometry carries ``Ed=None`` and robust falls back to its packaged
+    L23 solar spectra interpolated in theta_s -- its documented default.
+    BING's own flat-Ed (ratio = 1) fallback is *not* replicated on this
+    path. robust's fluorescence kernel reads Geometry.Ed too, so when both
+    inelastic terms are on they share the stashed sky; a fluorescence-only
+    call (include_Raman False) keeps robust's packaged default.
+
+    'robust_baseline' has no inelastic composition path at all: it dispatches
+    directly to robust.rt.baselines.Rrs_gordon (elastic-only by construction,
+    the point of the like-for-like Gordon comparison), bypassing forward()
+    entirely. Requesting Raman/fluorescence with 'robust_baseline' raises
+    rather than silently dropping the inelastic terms.
+
+    See Also
+    --------
+    calc_Rrs_from_models : the Gordon-backend sibling this mirrors.
+    bing.rt.defs.validate_rt_dict : the fit-setup checks this function
+        assumes have already run.
+    """
+    inp = _build_robust_inputs(a_model, a_params, bb_model, bb_params,
+                               rt_dict, geom, Bp)
+
+    Rrs = _dispatch_robust_forward(inp, a_model.wave)
+    a, bb = inp.a, inp.bb
+
+    # Call me
+    if debug:
+        embed(header='calc_Rrs_from_models_robust of evaluate.py')
+
+    # Return
+    if full_return:
+        return Rrs, a, bb
+    else:
+        return Rrs
+
+
+def _dispatch_robust_forward(inp, wave):
+    """
+    Run the jitted robust.rt forward call for prebuilt `_RobustInputs`.
+
+    The single definition of the backend -> jitted-closure dispatch
+    (robust_baseline -> baselines.Rrs_gordon; robust_ztt/robust_hybrid ->
+    forward(), with the inelastic-configured closure when Raman or
+    fluorescence is on), shared by `calc_Rrs_from_models_robust` and
+    `calc_Rrs_from_iops_robust` so the two entry points can never drift
+    apart on how the `_robust_forward_jit` cache is keyed or called.
+
+    Parameters
+    ----------
+    inp : _RobustInputs
+        The validated call ingredients from `_build_robust_inputs` /
+        `_build_robust_inputs_from_iops`.
+    wave : np.ndarray
+        The wavelength grid the spectra live on; becomes the jit cache's
+        `wave_key` (assumed float64, BING's convention).
+
+    Returns
+    -------
+    np.ndarray
+        Remote sensing reflectance Rrs [sr^-1], as a NumPy array.
+    """
+    wave_key = np.asarray(wave, dtype=np.float64).tobytes()
+
+    if inp.rt_backend == 'robust_baseline':
+        jit_fn = _robust_forward_jit('baseline', None, wave_key)
+        Rrs = jit_fn(inp.iops, inp.phase_params, inp.geometry)
+    else:
+        # 'robust_ztt' -> mode='ztt'; 'robust_hybrid' -> mode='hybrid'.
+        mode = inp.rt_backend[len('robust_'):]
+        if inp.include_raman or inp.include_fl:
+            inelastic_key = (inp.include_raman, inp.include_fl,
+                             inp.emission_shape)
+            jit_fn = _robust_forward_jit(mode, inelastic_key, wave_key)
+            Rrs = jit_fn(inp.iops, inp.phase_params, inp.geometry, inp.phi_C)
+        else:
+            jit_fn = _robust_forward_jit(mode, None, wave_key)
+            Rrs = jit_fn(inp.iops, inp.phase_params, inp.geometry)
+
+    return np.asarray(Rrs)
+
+
+def calc_Rrs_from_iops_robust(a, bb, wave, rt_dict:dict, geom=None,
+                              Bp:float=None, a_ph=None, Ed=None):
+    """
+    Calculate Rrs from raw IOP spectra using the robust.rt backend
+    (PR #27, Bugbot finding 1).
+
+    Sibling of `calc_Rrs_from_models_robust` for callers that hold total
+    absorption/backscattering *spectra* rather than model parameters --
+    the L23 synthetic-observation path (`bing.fitting.l23.prep_one_l23`
+    generates its observation Rrs from the dataset's true a/bb, and must
+    use the same forward model the fit itself will use). Validation, the
+    IOPs/PhaseParams/Geometry construction, and the jit dispatch are all
+    shared with the model-parameter entry point
+    (`_build_robust_inputs_from_iops` / `_dispatch_robust_forward`), so
+    the two can never drift apart.
+
+    Parameters
+    ----------
+    a : np.ndarray
+        Total absorption on ``wave`` [m^-1], shape (nwave,) or batched
+        (nsamples, nwave).
+    bb : np.ndarray
+        Total backscattering on ``wave`` [m^-1], same shape as ``a``.
+    wave : np.ndarray
+        Wavelength grid [nm] the spectra live on. Note robust_hybrid's
+        emulator is only valid inside its trained [350, 750] nm range --
+        callers fitting through the standard entry points get that checked
+        by rt_defs.validate_rt_dict; a direct call here does not.
+    rt_dict : dict
+        Radiative transfer configuration; same consulted keys as
+        `calc_Rrs_from_models_robust` ('rt_backend', 'include_Raman',
+        'include_Chl_fl', 'phi_C', 'double_gaussian', 'Bp_value').
+    geom : bing.rt.geometry.ObsGeometry, optional
+        Fixed viewing/illumination geometry. Required (non-None) for every
+        robust backend -- theta_s is never silently defaulted.
+    Bp : float, optional
+        Free-B_p override; falls back to rt_dict['Bp_value'] when None.
+    a_ph : np.ndarray, optional
+        Phytoplankton absorption on ``wave`` [m^-1] -- the fluorescence
+        source term. Required when rt_dict['include_Chl_fl'] is True.
+    Ed : tuple, optional
+        A raw ``(wave_Ed, Ed)`` downwelling-irradiance pair routed into
+        robust's ``Geometry.Ed`` when rt_dict['include_Raman'] is True;
+        robust's packaged L23 solar spectra (interpolated in theta_s) are
+        the fallback when None.
+
+    Returns
+    -------
+    np.ndarray
+        Remote sensing reflectance Rrs [sr^-1]. Shape (nwave,) for a
+        single spectrum, (nsamples, nwave) for a batch.
+
+    Raises
+    ------
+    ValueError
+        If geom is None; if rt_dict['rt_backend'] is not a robust backend;
+        if rt_dict['rt_backend'] == 'robust_baseline' while Raman or
+        fluorescence is requested; or if rt_dict['include_Chl_fl'] is True
+        with a_ph=None.
+
+    See Also
+    --------
+    calc_Rrs_from_models_robust : the model-parameter sibling.
+    """
+    a = np.asarray(a)
+    bb = np.asarray(bb)
+    wave = np.asarray(wave, dtype=np.float64)
+
+    inp = _build_robust_inputs_from_iops(a, bb, wave, rt_dict, geom, Bp,
+                                         a_ph=a_ph, Ed=Ed)
+    return _dispatch_robust_forward(inp, wave)
+
+
+def robust_domain_check(a_model, a_params, bb_model, bb_params,
+                        rt_dict:dict, geom=None, Bp:float=None):
+    """
+    Run robust.rt's out-of-domain check on concrete arrays, un-jitted, so
+    its `DomainWarning` can actually fire (rob_rt integration, M1 task 3;
+    design docs/design/rob_rt_design.md §4).
+
+    The emulator's domain check (`robust.rt.hybrid._check_domain`,
+    hybrid.py:139-163) is deliberately skipped whenever any input is a JAX
+    tracer -- it needs concrete values to compare against the trained
+    ranges -- so on the fitting hot path, which always goes through
+    `_robust_forward_jit`'s `jax.jit`-wrapped closures, an out-of-domain
+    evaluation is *silent by construction* (design §4; the warn-and-continue
+    policy of claude_prompts/rob_rt.md Q8). This helper is the sanctioned
+    complement: it rebuilds the exact same robust.rt call arguments as
+    `calc_Rrs_from_models_robust` (through the shared `_build_robust_inputs`,
+    so the two can never drift) and calls the **un-jitted**
+    `robust.rt.forward` once on the concrete NumPy-backed inputs, letting
+    `robust.rt.hybrid.DomainWarning` propagate to the caller. Fitters call
+    it twice per fit (M2): on the initial guess before sampling and on the
+    posterior median after -- never inside the hot loop.
+
+    Only ``rt_backend='robust_hybrid'`` has a domain to check: the check
+    lives past `forward()`'s ``mode='ztt'`` early return (hybrid.py:304),
+    and `robust.rt.baselines.Rrs_gordon` (the ``robust_baseline`` dispatch
+    target) is a closed-form expression with no emulator and no domain
+    logic at all -- both confirmed by reading robust's source directly.
+    For ``robust_ztt``/``robust_baseline`` this function is therefore a
+    validated no-op: it still runs `_build_robust_inputs` (so the same
+    argument errors raise as on the hot path) but performs no forward call.
+
+    Runs the same `corrections=False` / explicitly-loaded-emulator
+    configuration as `_robust_forward_jit` (see Q6 in
+    claude_prompts/RT/rob_rt_prompt_2.md): not for jit-safety here (nothing
+    is traced), but so the domain check evaluates the *identical* forward
+    configuration the fit itself uses. `robust.rt.emulator.load_default()`
+    is memoised process-wide, so this adds no I/O beyond the fit's own.
+
+    Parameters
+    ----------
+    a_model : aNWModel
+        Absorption model object (e.g., aNWExpBricaud).
+    a_params : np.ndarray
+        Absorption model parameters, ``(nparam,)`` or ``(nsamples, nparam)``
+        -- e.g. the initial guess, or the posterior median.
+    bb_model : bbNWModel
+        Backscattering model object (e.g., bbNWPow).
+    bb_params : np.ndarray
+        Backscattering model parameters. Shape matches a_params.
+    rt_dict : dict
+        Radiative transfer configuration -- same keys as
+        `calc_Rrs_from_models_robust`.
+    geom : bing.rt.geometry.ObsGeometry, optional
+        Viewing/illumination geometry. Required (non-None), same rule as
+        the adapter.
+    Bp : float, optional
+        Free-parameter override for B_p; falls back to
+        rt_dict['Bp_value'] when None.
+
+    Returns
+    -------
+    None
+        This is a diagnostic side-effect function: it exists to let
+        `DomainWarning` reach the caller's warning filters, not to return
+        Rrs -- use `calc_Rrs_from_models_robust` for values.
+
+    Warns
+    -----
+    robust.rt.hybrid.DomainWarning
+        If any input lies outside the emulator's training range
+        (``robust_hybrid`` only). Callers that must not extrapolate can
+        promote it: ``warnings.simplefilter('error', DomainWarning)``.
+
+    Raises
+    ------
+    ValueError
+        Same argument-validity errors as `calc_Rrs_from_models_robust`
+        (missing geom, non-robust backend, robust_baseline + inelastic).
+
+    See Also
+    --------
+    calc_Rrs_from_models_robust : the jitted hot-path twin whose inputs
+        this function checks.
+    """
+    inp = _build_robust_inputs(a_model, a_params, bb_model, bb_params,
+                               rt_dict, geom, Bp)
+
+    # Only the hybrid backend carries an emulator, hence a trained domain.
+    if inp.rt_backend != 'robust_hybrid':
+        return
+
+    inelastic = None
+    if inp.include_raman or inp.include_fl:
+        inelastic = robust_rt.Inelastic(
+            raman=inp.include_raman, fluorescence=inp.include_fl,
+            phi_C=inp.phi_C, emission_shape=inp.emission_shape)
+
+    # Un-jitted, concrete-array call: the whole point. Same
+    # corrections=False / explicit-emulator configuration as the jitted
+    # closures (Q6) so the checked configuration is the fitted one.
+    emulator_obj = robust_rt.emulator.load_default()
+    wave = np.asarray(a_model.wave, dtype=np.float64)
+    robust_rt.forward(inp.iops, inp.phase_params, inp.geometry, wave,
+                      mode='hybrid', inelastic=inelastic,
+                      corrections=False, emulator=emulator_obj)
+
+
 def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
-                            perc=(5,95)):
+                            perc=(5,95), geom=None):
     """
     Reconstruct IOPs and Rrs with uncertainties from MCMC chains.
 
@@ -251,17 +940,37 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
     to compute posterior distributions of IOPs and Rrs, then summarizes with
     median and percentile statistics.
 
+    Dispatches on ``rt_dict['rt_backend']`` exactly like the fitters
+    (inference.log_prob / chisq_fit.fit_func): 'gordon' (also the value
+    when the key is absent) keeps the legacy calc_Rrs_from_models call
+    byte-for-byte unchanged; a robust backend evaluates the same chain
+    through calc_Rrs_from_models_robust (which requires ``geom``). When
+    ``rt_dict['fit_Bp']`` is True (M3 task 3, design §3.3) the chain
+    carries B_p as its trailing column: it is stripped off *before* the
+    aparams/bparams split -- so the model-parameter evaluation and the
+    IOP credible bands are untouched by the extra column -- and forwarded
+    as the adapter's ``Bp``, per-sample (broadcast across wavelength,
+    robust's batched B_p convention; robust.rt.validation uses the same
+    ``(sample, wave)`` layout).
+
     Parameters
     ----------
     models : list
         List of two model objects: [absorption_model, backscattering_model].
     chains : np.ndarray
-        MCMC chains with shape (nsteps, nwalkers, nparam).
+        MCMC chains with shape (nsteps, nwalkers, nparam). Under
+        rt_dict['fit_Bp'], nparam includes the trailing B_p column.
     rt_dict : dict
         Radiative transfer configuration dictionary.
     perc : tuple, optional
         Percentiles for credible interval bounds. Default is (5, 95),
         giving a 90% credible interval.
+    geom : bing.rt.geometry.ObsGeometry, optional
+        Fixed per-pixel viewing/illumination geometry -- the same object
+        the fit itself used. Required (non-None) whenever
+        rt_dict['rt_backend'] selects a robust backend (the adapter
+        raises otherwise; theta_s is never silently defaulted); ignored
+        by the default Gordon backend.
 
     Returns
     -------
@@ -303,18 +1012,39 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
     # Burn/thin the chains
     chains = thin_burn_chains(chains)
 
+    # B_p tail strip (M3 task 3, design §3.3): under fit_Bp the chain's
+    # trailing column is the sampled B_p, not a model parameter -- peel
+    # it *before* the aparams/bparams split, exactly as log_prob does.
+    # Broadcast per-sample across wavelength (a read-only view, no copy):
+    # the (nsamples, nwave) layout is robust's own batched-B_p convention
+    # (robust/rt/validation.py) and the one shape all three robust
+    # backends accept.  Bp stays None otherwise (the adapter falls back
+    # to rt_dict['Bp_value'] -- the fixed-B_p case).
+    if rt_dict.get('fit_Bp', False):
+        Bp = np.broadcast_to(chains[:, -1:],
+                             (chains.shape[0], len(models[0].wave)))
+        chains = chains[:, :-1]
+    else:
+        Bp = None
+
     # Split parameters once
     aparams = chains[..., :models[0].nparam]
     bparams = chains[..., models[0].nparam:]
 
     # Forward-model Rrs through the shared helper so the elastic, Raman,
     # G0/Gb, and fluorescence branches stay defined in a single place
-    # (also used by inference.log_prob and chisq_fit.fit_func).
+    # (also used by inference.log_prob and chisq_fit.fit_func) --
+    # dispatched on the RT backend (design §3.4) like the fitters.
     #embed(header='287 of evaluate.py')
-    Rrs, a, bb = calc_Rrs_from_models(models[0], aparams,
-                               models[1], bparams, rt_dict,
-                               full_return=True)
-                               #debug=True)
+    if rt_dict.get('rt_backend', 'gordon') == 'gordon':
+        Rrs, a, bb = calc_Rrs_from_models(models[0], aparams,
+                                   models[1], bparams, rt_dict,
+                                   full_return=True)
+                                   #debug=True)
+    else:
+        Rrs, a, bb = calc_Rrs_from_models_robust(models[0], aparams,
+                                   models[1], bparams, rt_dict,
+                                   geom=geom, Bp=Bp, full_return=True)
 
     # Stats over the Rrs posterior
     sigRs = np.std(Rrs, axis=0)
@@ -334,7 +1064,8 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
 
 def reconstruct_chisq_fits(models:list, params:np.ndarray, rt_dict:dict,
                            Chl:np.ndarray=None,
-                           bb_basis_params:np.ndarray=None):
+                           bb_basis_params:np.ndarray=None,
+                           geom=None):
     """
     Reconstructs the parameters and calculates statistics from chisq fits.
 
@@ -347,6 +1078,13 @@ def reconstruct_chisq_fits(models:list, params:np.ndarray, rt_dict:dict,
         - Chl (ndarray): The chlorophyll values to use for the fits. Default is None.
         - bb_basis_params (ndarray): The basis parameters to use for the fits. Default is None.
             (nspec, nparams)
+        - geom (bing.rt.geometry.ObsGeometry, optional): fixed per-pixel
+            viewing/illumination geometry -- the same object the fit itself
+            used, forwarded to chisq_fit.fit_func on every evaluation
+            (PR #27, Bugbot finding 2). Required (non-None) whenever
+            rt_dict['rt_backend'] selects a robust backend (the adapter
+            raises otherwise; theta_s is never silently defaulted); ignored
+            by the default Gordon backend.
 
 
     Returns:
@@ -377,7 +1115,7 @@ def reconstruct_chisq_fits(models:list, params:np.ndarray, rt_dict:dict,
             models[1].set_basis_func(np.atleast_1d(bb_basis_params)[ss])
         model_Rrs, a_mean, bb_mean = chisq_fit.fit_func(
             models[0].wave, *param, models=models, return_full=True,
-            rt_dict=rt_dict)
+            rt_dict=rt_dict, geom=geom)
         # Save
         all_Rrs.append(model_Rrs)
         all_a.append(a_mean)

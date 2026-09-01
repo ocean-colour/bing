@@ -259,6 +259,22 @@ class aNWModel:
     (ratio = 1), which distorts its spectral shape.
     """
 
+    wave_Ed_raw:np.ndarray = None
+    """
+    Wavelengths [nm] of the raw Ed spectrum last passed to set_raman_Ed(),
+    stored verbatim (the caller's array, uncopied). None until
+    set_raman_Ed() is called. Consumed (with Ed_raw) by the robust RT
+    backend, which builds its own Ed ratio internally from the raw pair.
+    """
+
+    Ed_raw:np.ndarray = None
+    """
+    Raw downwelling-irradiance spectrum at wave_Ed_raw last passed to
+    set_raman_Ed(), stored verbatim (the caller's array, uncopied). None
+    until set_raman_Ed() is called. Consumed (with wave_Ed_raw) by the
+    robust RT backend; BING's own Raman path keeps using Ed_ratio_raman.
+    """
+
     a_w:np.ndarray = None
     """
     The absorption coefficient of water
@@ -494,6 +510,12 @@ class aNWModel:
         (~ +60% increment error at 490 nm, -15% and worse in the red);
         the true ratio removes most of that error.
 
+        The incoming pair is also stashed verbatim (uncopied) on
+        ``wave_Ed_raw`` / ``Ed_raw`` before the ratio is computed. The
+        robust RT backend reads that raw pair to build its own internal
+        Ed ratio (``robust.rt.ed``); BING's own Raman path is unaffected
+        and keeps consuming ``Ed_ratio_raman``.
+
         Parameters
         ----------
         wave_Ed : np.ndarray
@@ -504,7 +526,19 @@ class aNWModel:
         Ed : np.ndarray
             Downwelling irradiance at wave_Ed (any consistent units;
             only the ratio is used).
+
+        Sets
+        ----
+        wave_Ed_raw, Ed_raw : np.ndarray
+            The incoming pair, verbatim.
+        Ed_ratio_raman : np.ndarray
+            Ed(wave_ex) / Ed(wave) on the model grids.
         """
+        # Stash the raw pair verbatim for consumers that build their own
+        # ratio (the robust RT backend's Geometry.Ed seam).
+        self.wave_Ed_raw = wave_Ed
+        self.Ed_raw = Ed
+        # Ratio computation unchanged.
         if self.wave_ex is None:
             self.init_raman()
         f_Ed = interp1d(wave_Ed, Ed, kind='linear', bounds_error=True)

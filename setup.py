@@ -19,15 +19,26 @@ if os.path.exists('README.md'):
     with open('README.md') as readme:
         setup_keywords['long_description'] = readme.read()
 setup_keywords['provides'] = [setup_keywords['name']]
-setup_keywords['requires'] = ['Python (>=3.11.0)']
+# Floor matches retrieve-or-bust's python_requires ('>=3.12'), which bing
+# imports unconditionally since the rob_rt integration (PR #27); see
+# claude_prompts/RT/rob_rt_prompt_6.md Q8 for the decision trail.
+setup_keywords['requires'] = ['Python (>=3.12.0)']
 setup_keywords['install_requires'] = [
-    'seaborn', 'smart-open[s3]', 
+    'seaborn', 'smart-open[s3]',
     'scikit-learn', 'scikit-image', 'tqdm', 'astropy', 'astropy-healpix',
     'healpy', 'cftime', 'bokeh', 'umap-learn', 'llvmlite', 'boto3',
     'xarray', 'h5netcdf', 'emcee', 'corner',
     'importlib-metadata', 'timm==0.3.2', 'IPython',
     'scikit-learn', 'scikit-image', 'tqdm',
-    'pysolar','pytest']
+    'pysolar','pytest',
+    # robust.rt backend (rob_rt integration, M0): retrieve-or-bust is not on
+    # PyPI (dev-installed via `pip install -e .` from a local checkout), and
+    # its own setup.py deliberately excludes the JAX stack from
+    # install_requires (kept in its requirements.txt only) -- so jax/flax/
+    # jaxtyping are listed here explicitly rather than assumed transitive.
+    # optax is NOT needed: robust only imports it lazily inside its own
+    # emulator-training functions, never on the inference path bing uses.
+    'retrieve-or-bust', 'jax', 'flax', 'jaxtyping']
 setup_keywords['extras_require'] = {
     # Docs build: pip install -e ".[docs]"
     #   keep in sync with docs/requirements.txt (used by ReadTheDocs)

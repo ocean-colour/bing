@@ -72,7 +72,8 @@ def params_to_dict(p):
     return to_jsonable(p)
 
 def save_fit(outroot, p, models, chains, p0, Rrs, varRrs,
-             p0_init=None, stats_perc=(14, 86), recon_perc=(5, 95)):
+             p0_init=None, stats_perc=(14, 86), recon_perc=(5, 95),
+             geom=None):
     """Save a BING MCMC fit to ``<outroot>.npz`` and ``<outroot>.json``.
 
     Parameters
@@ -99,6 +100,11 @@ def save_fit(outroot, p, models, chains, p0, Rrs, varRrs,
     recon_perc : tuple of int, optional
         Percentiles passed to
         :func:`bing.evaluate.reconstruct_from_chains`.
+    geom : bing.rt.geometry.ObsGeometry, optional
+        Fixed per-pixel viewing/illumination geometry, forwarded to
+        :func:`bing.evaluate.reconstruct_from_chains`. Required whenever
+        ``p`` selects a robust ``rt_backend``; ignored for the default
+        Gordon backend.
 
     Returns
     -------
@@ -117,13 +123,15 @@ def save_fit(outroot, p, models, chains, p0, Rrs, varRrs,
     # be passed in by the caller.
     rt_dict = rt_defs.rt_dict_from_p(p)
 
-    # Concatenated parameter names (absorption first, then backscattering).
-    pnames = list(models[0].pnames) + list(models[1].pnames)
+    # Concatenated parameter names (absorption first, then
+    # backscattering; plus the trailing 'B_p' when p requests fit_Bp --
+    # the chain then carries B_p as its last column, M3 task 3).
+    pnames = bing_eval.chain_param_names(models, rt_dict=rt_dict)
 
     # ---- Per-wavelength reconstruction --------------------------------
     a, bb, a_lo, a_hi, bb_lo, bb_hi, Rrs_recon, sigRrs_recon = \
         bing_eval.reconstruct_from_chains(models, chains, rt_dict,
-                                          perc=recon_perc)
+                                          perc=recon_perc, geom=geom)
 
     # ---- Simple stats from the chains ---------------------------------
     stats = bing_eval.calc_stats(chains, names=pnames, perc=stats_perc)

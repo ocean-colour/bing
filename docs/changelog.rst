@@ -101,7 +101,7 @@ Corrections
 Infrastructure
 ~~~~~~~~~~~~~~
 
-* GitHub Actions workflow running the test suite on Python 3.11-3.13 and
+* GitHub Actions workflow running the test suite on Python 3.12-3.14 and
   building the documentation.
 * ``bing/tests/conftest.py`` reports a missing reference dataset as a
   skip, so the suite is usable without the data tree.

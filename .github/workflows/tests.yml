@@ -6,8 +6,9 @@ name: Tests
 # Loisel et al. (2023) Hydrolight dataset skip automatically. That is not
 # a small subset -- constructing *any* backscattering model calls
 # bbNWModel.init_bbw, which reads Hydrolight400.nc -- so on CI roughly
-# 110 of ~180 tests skip and ~70 run. bing/tests/conftest.py handles the
-# conversion and prints the reason under `-ra`.
+# 150 of ~235 tests skip and ~85 run (measured 84 passed / 151 skipped
+# on a local reproduction of this job, 2026-09-01). bing/tests/
+# conftest.py handles the conversion and prints the reason under `-ra`.
 #
 # Why not fetch the data: the files live on Dryad
 # (doi:10.6076/D1630T), ~17 MB each, with no stable direct-download URL,
@@ -30,6 +31,40 @@ name: Tests
 # source tree importable, so the namespace package resolves. Once ocpy
 # gains ocpy/hydrolight/__init__.py this can go back to the one-liner
 #   pip install --no-deps git+https://github.com/ocean-colour/ocpy.git
+#
+# Why robust (retrieve-or-bust) and the JAX stack are installed: as of
+# the rob_rt integration (PR #27), bing/evaluate.py unconditionally does
+# `import jax` and `from robust import rt` at module level -- a
+# deliberate, settled design decision (no importorskip/lazy import;
+# claude_prompts/RT/rob_rt_prompt_*.md) -- and nearly every test module
+# imports bing.evaluate transitively. Without jax/robust, pytest dies at
+# collection ("ModuleNotFoundError: No module named 'jax'" from
+# bing/evaluate.py, 6 collection errors, zero tests run), which is what
+# broke all three matrix jobs and the docs job before this step existed.
+# robust.rt imports only jax + jaxtyping at module level, but its
+# emulator loader lazily imports flax at run time
+# (robust/rt/emulator.py: flax.linen for the MLP, flax.traverse_util to
+# unflatten the committed weight dict) -- measured, not assumed: without
+# flax the robust_hybrid tests fail with "ModuleNotFoundError: No module
+# named 'flax'" from emulator.py while everything else passes. optax is
+# NOT needed (only robust's training entry points import it; installing
+# flax pulls it in transitively anyway). All of robust's data files
+# (robust/rt/files/*.npz emulator weights, robust/rt/data/*.npz) are
+# committed inside its repo, so a plain clone + editable install makes
+# the backend fully functional -- emulator included -- with no external
+# data fetch. jax/flax/jaxtyping are left unpinned like the rest of the
+# curated list; the integration was validated against jax 0.11.0 / flax
+# 0.12.8 / jaxtyping 0.3.11 (pin those if an upstream release ever
+# breaks this job). Python floors: retrieve-or-bust declares
+# python_requires '>=3.12', and bing's own floor is now >=3.12 to match
+# (setup.py; JXP's Q8 resolution in rob_rt_prompt_6.md -- 3.11 left this
+# matrix rather than retrieve-or-bust lowering its floor), so every
+# matrix job satisfies it and the install below needs no override.
+# The clone pins the `cdom-rt` branch: robust/rt does
+# not exist on retrieve-or-bust's main yet (main holds only
+# robust/__init__.py), and cdom-rt is the branch the bing-side
+# integration was developed and validated against. Re-point the --branch
+# (or drop it) once robust/rt merges to main.
 
 on:
   push:
@@ -48,8 +83,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # setup.py requires >= 3.11; bing also uses `X | Y` annotations
-        python-version: ['3.11', '3.12', '3.13']
+        # setup.py requires >= 3.12, matching retrieve-or-bust's
+        # python_requires (see the note at the top of this file).
+        python-version: ['3.12', '3.13', '3.14']
 
     steps:
       - uses: actions/checkout@v4
@@ -69,22 +105,43 @@ jobs:
           pip install numpy scipy pandas matplotlib xarray \
                       h5netcdf h5py emcee corner tqdm ipython \
                       scikit-learn "pytest>=8"
+          # JAX stack for the robust.rt forward-model backend --
+          # bing/evaluate.py imports jax and robust unconditionally, and
+          # robust's emulator loads its weights through flax at run time
+          # (see the note at the top of this file). CPU jax is enough.
+          pip install jax flax jaxtyping
           # Sibling package, public repo.  --no-deps keeps cartopy,
           # healpy and friends out of the job.  Editable, so the
           # __init__.py-less ocpy.hydrolight subpackage still imports
           # (see the note at the top of this file).
           git clone --depth 1 https://github.com/ocean-colour/ocpy.git ../ocpy
           pip install --no-deps -e ../ocpy
+          # Sibling package providing `robust` (the robust.rt backend);
+          # same clone + editable + --no-deps treatment as ocpy. Pinned
+          # to the cdom-rt branch because robust/rt is not on main yet
+          # (see the note at the top of this file). Editable keeps the
+          # committed .npz data files (emulator weights etc.) resolvable
+          # from the source tree. retrieve-or-bust declares
+          # python_requires '>=3.12'; every Python in this job's matrix
+          # satisfies it, since bing's own floor was raised to >=3.12 to
+          # match (this line briefly carried --ignore-requires-python
+          # while the matrix still had 3.11 -- rob_rt_prompt_6.md Q8 has
+          # the history).
+          git clone --depth 1 --branch cdom-rt \
+            https://github.com/ocean-colour/retrieve-or-bust.git ../retrieve-or-bust
+          pip install --no-deps -e ../retrieve-or-bust
           # Register bing itself without its heavy install_requires
           pip install -e . --no-deps
 
       - name: Show environment
         run: |
-          python -c "import numpy, scipy, xarray, emcee; \
+          python -c "import numpy, scipy, xarray, emcee, jax; \
             print('numpy', numpy.__version__); print('scipy', scipy.__version__); \
-            print('xarray', xarray.__version__); print('emcee', emcee.__version__)"
+            print('xarray', xarray.__version__); print('emcee', emcee.__version__); \
+            print('jax', jax.__version__)"
           python -c "import ocpy; print('ocpy ok')"
-          python -c "import bing; print('bing ok')"
+          python -c "import robust.rt; print('robust.rt ok')"
+          python -c "import bing.evaluate; print('bing (incl. evaluate/robust) ok')"
 
       - name: Run tests
         # -ra prints the skip reasons, so it is visible in the log which
@@ -111,11 +168,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r docs/requirements.txt
           # docs/api/io_api.rst uses autofunction, so bing (and the
-          # modules it imports) must be importable.
+          # modules it imports) must be importable -- which since the
+          # rob_rt integration includes jax and robust, exactly as in the
+          # tests job above (bing/evaluate.py imports both
+          # unconditionally; see the note at the top of this file).
           pip install numpy scipy pandas matplotlib xarray h5netcdf h5py \
                       emcee corner tqdm ipython scikit-learn
+          pip install jax flax jaxtyping
           git clone --depth 1 https://github.com/ocean-colour/ocpy.git ../ocpy
           pip install --no-deps -e ../ocpy
+          git clone --depth 1 --branch cdom-rt \
+            https://github.com/ocean-colour/retrieve-or-bust.git ../retrieve-or-bust
+          pip install --no-deps -e ../retrieve-or-bust
           pip install -e . --no-deps
 
       - name: Build HTML docs
