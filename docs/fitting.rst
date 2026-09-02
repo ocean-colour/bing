@@ -58,7 +58,11 @@ Basic Usage
     print(f"Reduced chi-squared: {chi2/(Rrs_measured.size - ans.size)}")
 
 ``items`` is the tuple ``(Rrs, varRrs, p0, idx)``, where ``idx`` is
-echoed back in the return so batch callers can reassemble results.
+echoed back in the return so batch callers can reassemble results. The
+tuple accepts an optional fifth element, an
+:class:`bing.rt.geometry.ObsGeometry` — required whenever
+``rt_dict['rt_backend']`` selects a ``robust_*`` backend; see
+:ref:`fitting-robust-backend` below.
 
 Advanced Options
 ~~~~~~~~~~~~~~~~
@@ -198,6 +202,57 @@ Analyzing Results
         quantiles=[0.16, 0.5, 0.84],
         show_titles=True
     )
+
+.. _fitting-robust-backend:
+
+Fitting with a robust RT Backend
+--------------------------------
+
+All three fitting entry points — :func:`bing.fitting.chisq_fit.fit`,
+:func:`bing.fitting.inference.fit_one` and
+:func:`bing.fitting.inference.fit_batch` — accept the same observation
+tuple with an optional fifth element carrying the viewing/illumination
+geometry:
+
+.. code-block:: python
+
+    from bing.rt.geometry import ObsGeometry
+
+    geom = ObsGeometry(theta_s=30.)          # solar zenith; theta_v/dphi
+                                             # default to nadir viewing
+    items = (Rrs_measured, varRrs, p0, idx, geom)
+
+    # Least squares
+    ans, cov, idx = chisq_fit.fit(items, models, rt_dict,
+                                  bounds=(low, high))
+    # MCMC
+    chains, idx = bing_inf.fit_one(items, models=models, pdict=pdict,
+                                   chains_only=True)
+
+The geometry element is **required whenever
+``rt_dict['rt_backend']`` is a robust backend** (``'robust_ztt'``,
+``'robust_hybrid'``, ``'robust_baseline'``): a robust-backend fit
+without it raises ``ValueError`` at fit setup, naming ``theta_s`` —
+the solar zenith angle is real scene metadata and is never silently
+defaulted. For the (default) ``'gordon'`` backend the fifth element
+may simply be omitted, and legacy 4-tuples keep working unchanged.
+
+When ``rt_dict['fit_Bp']`` is ``True``, one extra free parameter —
+:math:`B_p`, the phase-function/backscattering-ratio parameter of the
+robust forward models — is appended after the model parameters, sampled
+linearly over [0.004, 0.05]; ``p0`` and any bounds arrays must carry the
+extra slot. See :ref:`rt-backends` in :doc:`radiative_transfer` for the
+backend descriptions, geometry semantics, accuracy numbers and
+per-backend throughput.
+
+The L23 convenience wrappers below (``l23.fit_one``, ``l23.fit_with_LM``,
+``l23.batch_fit``) build and validate the geometry themselves via
+``l23.geom_from_p``: attributes ``theta_s``/``theta_v``/``dphi`` on the
+parameter named-tuple are used when present, and for a robust backend
+with no ``p.theta_s`` the wrappers fall back to the L23 simulation's own
+documented scene geometry (solar zenith 0°, nadir viewing) — known
+dataset metadata, not a guess. A legacy Gordon ``p`` yields no geometry
+and byte-identical legacy behavior.
 
 L23 Fitting
 -----------

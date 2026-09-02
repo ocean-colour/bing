@@ -31,14 +31,25 @@ setup_keywords['install_requires'] = [
     'importlib-metadata', 'timm==0.3.2', 'IPython',
     'scikit-learn', 'scikit-image', 'tqdm',
     'pysolar','pytest',
-    # robust.rt backend (rob_rt integration, M0): retrieve-or-bust is not on
-    # PyPI (dev-installed via `pip install -e .` from a local checkout), and
-    # its own setup.py deliberately excludes the JAX stack from
-    # install_requires (kept in its requirements.txt only) -- so jax/flax/
-    # jaxtyping are listed here explicitly rather than assumed transitive.
-    # optax is NOT needed: robust only imports it lazily inside its own
-    # emulator-training functions, never on the inference path bing uses.
-    'retrieve-or-bust', 'jax', 'flax', 'jaxtyping']
+    # robust.rt backend (rob_rt integration, PR #27): retrieve-or-bust is
+    # not on PyPI, so a bare name here breaks any plain `pip install .`
+    # ("ERROR: No matching distribution found for retrieve-or-bust" --
+    # which is exactly how the ReadTheDocs build died). A PEP 508 direct
+    # reference tells pip to fetch it from GitHub instead; pip supports
+    # this natively in install_requires, and a non-editable install ships
+    # the emulator weights because retrieve-or-bust's setup.py declares
+    # them in package_data. Pinned to the cdom-rt branch because robust/rt
+    # does not exist on that repo's main yet -- same pin as
+    # .github/workflows/tests.yml (Q6 in claude_prompts/RT/
+    # rob_rt_prompt_6.md); re-point or drop the @cdom-rt once robust/rt
+    # merges to main. retrieve-or-bust's own setup.py deliberately
+    # excludes the JAX stack from its install_requires (kept in its
+    # requirements.txt only) -- so jax/flax/jaxtyping are listed here
+    # explicitly rather than assumed transitive. optax is NOT needed:
+    # robust only imports it lazily inside its own emulator-training
+    # functions, never on the inference path bing uses.
+    'retrieve-or-bust @ git+https://github.com/ocean-colour/retrieve-or-bust.git@cdom-rt',
+    'jax', 'flax', 'jaxtyping']
 setup_keywords['extras_require'] = {
     # Docs build: pip install -e ".[docs]"
     #   keep in sync with docs/requirements.txt (used by ReadTheDocs)
