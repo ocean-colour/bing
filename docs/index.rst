@@ -4,7 +4,7 @@
 BING - Bayesian INference with Gordon coefficients
 ==================================================
 
-.. image:: https://img.shields.io/badge/python-3.8+-blue.svg
+.. image:: https://img.shields.io/badge/python-3.12+-blue.svg
    :target: https://www.python.org/downloads/
    :alt: Python Version
 

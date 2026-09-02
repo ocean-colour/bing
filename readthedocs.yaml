@@ -4,12 +4,35 @@ build:
   os: ubuntu-22.04
   tools:
     python: "3.12"
+  jobs:
+    # ocpy is not on PyPI and cannot ride in install_requires: its
+    # ocpy/hydrolight subpackage has no __init__.py, so a regular
+    # (non-editable) install produces an ocpy without ocpy.hydrolight --
+    # which bing needs (bbNWModel.init_bbw imports loisel23). A clone +
+    # editable install keeps the source tree importable, exactly as
+    # .github/workflows/tests.yml does for the same reason. Without it,
+    # autodoc fails to import 8 bing modules (fitting.inference, io,
+    # models.anw/bbnw/utils, noise, plotting) and their API pages come
+    # out empty. --no-deps keeps cartopy, healpy and friends out of the
+    # build; everything bing itself needs arrives via `pip install .`
+    # below. The clone lands outside the checkout so bing's own
+    # `pip install .` never sees it. pre_install runs in the same
+    # environment python.install uses, so the editable install persists
+    # into the sphinx build.
+    pre_install:
+      - git clone --depth 1 https://github.com/ocean-colour/ocpy.git ../ocpy
+      - pip install --no-deps -e ../ocpy
 
 sphinx:
   configuration: docs/conf.py
 
 python:
   install:
+    # Plain `pip install .` -- pulls bing's full install_requires,
+    # including retrieve-or-bust (the robust.rt backend) via the PEP 508
+    # git direct reference in setup.py; see the comment there. This is
+    # what died with "No matching distribution found for
+    # retrieve-or-bust" when install_requires carried the bare name.
     - method: pip
       path: .
     - requirements: docs/requirements.txt

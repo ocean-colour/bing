@@ -4,7 +4,7 @@
 Radiative Transfer
 ====================
 
-BING implements radiative transfer models for calculating remote sensing reflectance (Rrs) from inherent optical properties (IOPs). This module provides both standard and advanced formulations of the Gordon semi-analytical model.
+BING implements radiative transfer models for calculating remote sensing reflectance (Rrs) from inherent optical properties (IOPs). This module provides both standard and advanced formulations of the Gordon semi-analytical model, and — since the integration with the sibling ``retrieve-or-bust`` (``robust``) package — a pluggable **RT backend** that can replace the Gordon forward model with ``robust.rt``'s more physically complete radiative transfer (see :ref:`rt-backends`).
 
 Overview
 --------
@@ -399,6 +399,9 @@ dictionary from a parameter named-tuple (see :ref:`parameters`):
     #     'include_Chl_fl':   True,
     #     'phi_C':            0.02,
     #     'double_gaussian':  True,
+    #     'rt_backend':       'gordon',   # default; see RT Backends below
+    #     'fit_Bp':           False,
+    #     'Bp_value':         0.01,
     # }
 
     # Pass through to a fit
@@ -414,13 +417,204 @@ dictionary from a parameter named-tuple (see :ref:`parameters`):
        :func:`bing.parameters.p_ntuple.gen` or one of the ``standard.*``
        helpers).
    :returns: ``dict`` with keys ``variable_Gordon``, ``include_Raman``,
-       ``include_Chl_fl``, ``phi_C``, ``double_gaussian``. Any attribute
-       that is missing on ``p`` is set to ``None``.
+       ``include_Chl_fl``, ``phi_C``, ``double_gaussian`` (any attribute
+       that is missing on ``p`` is set to ``None``), plus the RT-backend
+       keys ``rt_backend``, ``fit_Bp``, ``Bp_value``. Unlike the others,
+       the backend keys get real defaults — ``'gordon'`` / ``False`` /
+       ``0.01`` — so a legacy ``p`` (and any rt dict saved before the
+       backend integration) yields a fully valid, Gordon-backend dict.
    :rtype: dict
 
    The returned dictionary is the canonical way to pass radiative-transfer
-   options into the forward model and the fitting routines.
+   options into the forward model and the fitting routines. The
+   ``rt_backend``, ``fit_Bp`` and ``Bp_value`` keys are documented in
+   :ref:`rt-backends` below; :func:`bing.rt.defs.validate_rt_dict`
+   checks the combination once, at fit setup.
 
+
+.. _rt-backends:
+
+RT Backends: Gordon and ``robust.rt``
+-------------------------------------
+
+Since the integration with the sibling `retrieve-or-bust
+<https://github.com/ocean-colour/retrieve-or-bust>`_ package (the
+``robust`` import), the forward model that turns :math:`(a, b_b)` into
+:math:`R_{rs}` is selectable through ``rt_dict['rt_backend']``. The four
+valid values live in ``bing.rt.defs.RT_BACKENDS``:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 52 30
+
+   * - Backend
+     - Physics
+     - Inelastic (Raman/fluorescence)
+   * - ``'gordon'`` (default)
+     - BING's own Gordon (1988) elastic model (``bing.rt.rrs``),
+       everything documented above on this page
+     - Yes — BING's own ``bing.rt.raman`` / ``bing.rt.chl_fl`` physics
+   * - ``'robust_ztt'``
+     - ``robust.rt``'s analytic (Zaneveld/Twardowski/Tassan-style)
+       forward model
+     - Yes — via ``robust.rt.inelastic``
+   * - ``'robust_hybrid'``
+     - ``robust_ztt`` plus a learned emulator correction; valid only
+       for wavelengths inside 350–750 nm (its L23/HydroLight training
+       domain)
+     - Yes — via ``robust.rt.inelastic``
+   * - ``'robust_baseline'``
+     - ``robust``'s Gordon-compatible refit
+     - **No** — ``include_Raman``/``include_Chl_fl`` raises
+       ``ValueError``
+
+When unset, ``rt_backend`` defaults to ``'gordon'`` and the fit is
+byte-identical to pre-integration BING — the integration is
+non-breaking for existing configurations and saved rt dicts.
+
+Choosing a backend
+~~~~~~~~~~~~~~~~~~
+
+The project has adopted ``robust`` — elastic and inelastic alike — as
+the recommended path going forward, while keeping the measured
+differences from BING's own Gordon physics clearly documented. In
+brief (all numbers measured on real Loisel et al. 2023 data;
+``nb/RT/rob_rt_coding_6.ipynb`` is the full four-backend comparison):
+
+* ``'gordon'`` is the original, by far the fastest, and its inelastic
+  terms are BING's own fully self-consistent legacy physics — the
+  reference the other backends are measured against. It is kept for
+  backward compatibility and remains the default, but it is not the
+  recommended starting point for new work.
+* ``'robust_baseline'`` is a **parity check**: its elastic Rrs agrees
+  with ``'gordon'`` to ~2.3e-7 relative (float32-vs-float64 scale).
+  Since it cannot carry inelastic terms and reproduces physics
+  ``'gordon'`` already gets right, more slowly, reach for it when you
+  specifically want an elastic-only ``robust``-side sanity check —
+  not as a destination in itself.
+* ``'robust_ztt'`` / ``'robust_hybrid'`` compute **genuinely
+  different, more physically complete elastic RT** than Gordon's:
+  a few percent higher Rrs on real L23 data (``robust_ztt``: 5.6 %
+  max / 1.7 % mean; ``robust_hybrid``: 7.0 % max / 1.8 % mean at the
+  L23 idx=170 anchor spectrum), propagating into materially different
+  retrieved :math:`b_{b,nw}` in particular. This is a deliberate
+  physical improvement, not a bug. Prefer ``robust_hybrid`` when the
+  emulator correction's added fidelity is worth staying inside its
+  350–750 nm domain; ``robust_ztt`` otherwise.
+
+.. warning::
+
+   **Inelastic accuracy caveat.** ``robust``'s Raman and fluorescence
+   terms diverge from BING's own Gordon+Raman/fluorescence physics by
+   several percent on real L23 data: Raman max 11.4 % / mean 5.6 %
+   (worst at 400 nm); fluorescence max 9.2 % / mean 5.8 %
+   (mismatched-``Ed`` case) to max 18.5 % / mean 7.2 %
+   (``Ed``-matched case). That is orders of magnitude outside the
+   project's usual cross-backend tolerance (rtol ≤ 5e-4) and is a
+   known, understood physics-composition difference — ``robust``
+   interpolates/clamps the emission-grid IOP spectrum to stand in for
+   the excitation-wavelength IOPs, rather than re-evaluating the
+   parametric models at the true excitation grid — not numerical
+   noise (the *elastic* agreement is ~2.3e-7). The gap is documented,
+   deliberate to live with, and not yet closed. Elastic-only use of
+   the robust backends is unaffected.
+
+Geometry is required (``ObsGeometry``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The robust backends require the observation geometry, which the Gordon
+model never needed. It is carried by the frozen dataclass
+:class:`bing.rt.geometry.ObsGeometry` — fixed, per-pixel, never-fit
+scene metadata:
+
+.. code-block:: python
+
+    from bing.rt.geometry import ObsGeometry
+
+    geom = ObsGeometry(
+        theta_s=30.,   # solar zenith angle (deg) -- REQUIRED, no default
+        theta_v=0.,    # sensor zenith angle (deg); defaults to nadir
+        dphi=0.,       # sensor-sun relative azimuth (deg); default 0
+    )
+
+``theta_s`` is **never silently defaulted**: selecting a robust backend
+without supplying ``geom`` raises ``ValueError`` at fit setup
+(:func:`bing.rt.defs.validate_rt_dict`), before any forward-model call.
+The fitting routines thread ``geom`` through as an optional fifth
+element of the observation tuple — see :ref:`fitting-robust-backend`
+in :doc:`fitting`.
+
+Free or fixed :math:`B_p` (``fit_Bp``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The robust forward models take a phase-function parameter :math:`B_p`
+(the particulate backscattering ratio :math:`b_{b,p}/b_p`) that Gordon's
+model has no analog of. Two rt-dict keys control it:
+
+* ``fit_Bp`` (default ``False``): when ``True``, :math:`B_p` becomes an
+  extra free MCMC/least-squares parameter, appended after the model
+  parameters. It is sampled **linearly** (not log10) under a uniform
+  prior over ``[BP_PRIOR_PMIN, BP_PRIOR_PMAX] = [0.004, 0.05]``
+  (module constants in ``bing.rt.defs``). ``fit_Bp=True`` with
+  ``rt_backend='gordon'`` raises — Gordon has no phase-function input.
+* ``Bp_value`` (default ``0.01``): the fixed value when
+  ``fit_Bp=False``, and the walker-ball seed when ``fit_Bp=True``.
+
+Validation and error behavior
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+:func:`bing.rt.defs.validate_rt_dict` is called once per fit, at setup,
+and raises ``ValueError`` on any illegal combination:
+
+* ``rt_backend`` not one of ``RT_BACKENDS``;
+* ``fit_Bp=True`` with ``rt_backend='gordon'``;
+* a robust backend with no ``geom`` (``theta_s`` never defaulted);
+* ``rt_backend='robust_hybrid'`` with any model wavelength outside
+  [350, 750] nm (the emulator's training range).
+
+Additionally, ``rt_backend='robust_baseline'`` combined with
+``include_Raman=True`` or ``include_Chl_fl=True`` raises in
+:func:`bing.evaluate.calc_Rrs_from_models_robust` — the baseline is
+elastic-only by construction.
+
+Backend throughput
+~~~~~~~~~~~~~~~~~~
+
+Measured warm-path ``log_prob`` throughput at MCMC-realistic call
+shapes (single-walker, 5-parameter ``ExpBricaud``+``Pow``, PACE-like
+grid; ``dev/rob_rt/benchmark_backends.py``, which documents the
+methodology and re-produces these numbers):
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 25 20 30
+
+   * - Backend
+     - Warm calls/s
+     - vs ``gordon``
+     - First-call (JIT) cost
+   * - ``gordon``
+     - 38936
+     - 1.000x
+     - ~0.0001 s (no JIT)
+   * - ``robust_ztt``
+     - 5991
+     - 0.154x
+     - 0.182 s
+   * - ``robust_hybrid``
+     - 5667
+     - 0.146x
+     - 0.181 s
+   * - ``robust_baseline``
+     - 7274
+     - 0.187x
+     - 0.019 s
+
+The robust backends run through JAX and pay a one-time JIT-compile
+cost per process. In :func:`bing.fitting.inference.fit_batch`, every
+``ProcessPoolExecutor`` worker compiles its own cache, so an
+:math:`n`-worker robust batch pays roughly :math:`n\times` the
+single-process compile cost before any fitting happens.
 
 API Reference
 -------------
@@ -901,5 +1095,6 @@ See Also
 
 * :py:mod:`bing.rt.raman` - Raman scattering corrections (inelastic)
 * :py:mod:`bing.rt.chl_fl` - Chlorophyll fluorescence (inelastic)
+* :py:mod:`bing.rt.geometry` - ``ObsGeometry`` for the robust backends
 * :py:mod:`bing.models` - Bio-optical model components
 * :py:mod:`bing.fitting` - Inverse retrieval algorithms

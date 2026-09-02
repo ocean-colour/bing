@@ -11,6 +11,55 @@ than by release. ``git log`` remains the authoritative history.
 Unreleased
 ----------
 
+robust.rt backend integration (2026-08/09, PR #27)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+BING's forward Rrs model is now pluggable: ``rt_dict['rt_backend']``
+selects between BING's own Gordon (1988) path and the sibling
+`retrieve-or-bust <https://github.com/ocean-colour/retrieve-or-bust>`_
+package's ``robust.rt`` forward models. See :ref:`rt-backends` for the
+full documentation. **Non-breaking**: ``rt_backend`` defaults to
+``'gordon'``, which is byte-identical to pre-integration BING
+(regression-pinned by the test suite); legacy 4-tuple observations and
+saved rt dicts keep working unchanged.
+
+* **Four backends** — ``'gordon'`` (the legacy default),
+  ``'robust_ztt'`` (robust's analytic model), ``'robust_hybrid'``
+  (ztt + a learned emulator correction, valid on 350–750 nm only) and
+  ``'robust_baseline'`` (robust's Gordon-compatible refit, elastic
+  only) — all fit end-to-end through ``chisq_fit.fit``,
+  ``inference.fit_one``/``fit_batch`` and the ``l23`` wrappers.
+* **Geometry threading.** The observation tuple gains an optional
+  fifth element, a ``bing.rt.geometry.ObsGeometry``; robust-backend
+  fits without one raise at setup (``theta_s`` is never silently
+  defaulted). The ``l23`` wrappers build it from ``p`` or the L23
+  dataset's own documented geometry (``l23.geom_from_p``).
+* **Free or fixed** :math:`B_p`: ``rt_dict['fit_Bp']`` adds robust's
+  phase-function parameter as an extra free parameter (linear uniform
+  prior over [0.004, 0.05]) or holds it at ``rt_dict['Bp_value']``.
+* **Accuracy, measured on real L23 data**: ``robust_baseline`` matches
+  ``gordon`` elastically to ~2.3e-7 relative;
+  ``robust_ztt``/``robust_hybrid`` are deliberately different, more
+  physically complete elastic RT (a few percent higher Rrs). robust's
+  *inelastic* terms diverge from BING's own Gordon+Raman/fluorescence
+  physics by several percent (Raman max ~11 %, fluorescence max
+  ~9–18 %) — a known, documented composition difference, not yet
+  closed. The project has adopted the robust path for new work; the
+  ``gordon`` backend and ``bing.rt.raman``/``chl_fl`` are kept for
+  backward compatibility.
+* New evaluation entry points: ``calc_Rrs_from_models_robust``,
+  ``calc_Rrs_from_iops_robust``, ``robust_domain_check``;
+  ``reconstruct_from_chains``/``reconstruct_chisq_fits`` dispatch on
+  the backend and accept ``geom``.
+* **Packaging**: ``bing`` now depends on ``retrieve-or-bust``
+  (installed from GitHub via a PEP 508 direct reference in
+  ``setup.py`` — it is not on PyPI) plus ``jax``/``flax``/
+  ``jaxtyping``, and requires Python >= 3.12 to match
+  retrieve-or-bust's floor. A bare ``'retrieve-or-bust'`` name briefly
+  in ``install_requires`` broke any plain ``pip install .`` (including
+  the ReadTheDocs build) with "No matching distribution found"; fixed
+  by the direct reference.
+
 Inelastic RT fixes (2026-08)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

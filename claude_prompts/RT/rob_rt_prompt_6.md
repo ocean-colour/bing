@@ -173,6 +173,8 @@ Read before coding:
 
 9. Please modify the CI tests to only include Python 3.12 and greater.  And add a new 3.14 test.  Use Fable if you can. Log your work.
 
+10.  I just pushed this branch into `develop` and I see the docs are failing.  Please make a pass on the docs, making sure they are up to date for the new integration with RoB.  Use Fable if you can. Log your work.
+
 ## M5
 
 ### Tasks
@@ -1652,3 +1654,162 @@ ocean14 is consistent, just with a newer pip/wheel than before.
 `setup.py`, `readthedocs.yaml`, `docs/contributing.rst`,
 `docs/changelog.rst`, and this doc (this entry). No source or test
 code changed. Q8 is resolved; no open items from this round.
+
+### 2026-09-01 (Docs pass: RTD build fix + RoB content update)
+
+Prompts item 10: the branch is merged into `develop` (merge commit
+`c668f78`) and all four GitHub Actions checks there are green, so the
+"docs are failing" JXP sees is **ReadTheDocs** — the separate build
+service configured by `readthedocs.yaml`, which (unlike the GH docs
+job's curated `--no-deps` install) does a plain `pip install .`. Two
+real problems were found and fixed by local reproduction (RTD's own
+logs need dashboard access), and the Sphinx content itself was brought
+up to date for the RoB integration.
+
+**Root cause 1 — reproduced, fatal: `pip install .` cannot resolve
+`retrieve-or-bust`.** In a fresh Python 3.12.14 venv (RTD builds on
+3.12), against a clean `git archive HEAD` export, `pip install .`
+dies in dependency resolution:
+
+    ERROR: Could not find a version that satisfies the requirement
+    retrieve-or-bust (from bing) (from versions: none)
+    ERROR: No matching distribution found for retrieve-or-bust
+
+`setup.py`'s `install_requires` carried the **bare name**
+`'retrieve-or-bust'` (added in M0), which tells pip to fetch it from
+PyPI — where it does not exist. This is exactly the step RTD's
+`python.install` runs, and it also breaks any real downstream
+non-editable install of bing.
+
+**Fix: PEP 508 direct reference** in `install_requires`:
+`'retrieve-or-bust @ git+https://github.com/ocean-colour/
+retrieve-or-bust.git@cdom-rt'` (one line, plus a comment recording the
+reproduced error and when to re-point the branch pin). Chosen over the
+alternative (drop the requirement + add an RTD pre-install clone)
+because (a) it fixes plain `pip install .` for RTD *and* every
+downstream user in one place; (b) unlike ocpy, a **non-editable**
+robust install is fully functional — retrieve-or-bust's own setup.py
+declares `package_data` for the emulator weights precisely so an
+installed copy works (verified below: `robust/rt/files/*.npz` and
+`rt/data/*.npz` all present in site-packages); (c) the `@cdom-rt` pin
+mirrors the tests.yml pin JXP blessed in Q6, same re-point-on-merge
+note. The GH workflow is untouched and unaffected — both its jobs
+install bing with `pip install -e . --no-deps`, which never reads
+`install_requires`.
+
+**Verification of fix 1** (same fresh venv, clean export + the fixed
+setup.py): `pip install .` **succeeds** — pip clones the repo and
+resolves it to commit `363951d` == `origin/cdom-rt` == the local
+validated checkout; `import bing`, `import bing.evaluate`, and
+`import robust.rt` all work; the installed (non-editable) robust
+carries `emulator_l23.npz`/`fl_corr_l23.npz`/`raman_corr_l23.npz` and
+`ed_l23.npz`, so the hybrid backend is functional with no external
+fetch.
+
+**Root cause 2 — previously masked: ocpy missing from the RTD
+environment.** With the install fixed, the RTD-equivalent Sphinx
+build (`python -m sphinx -W -b html docs docs/_build/html`, sphinx
+9.1.0 from docs/requirements.txt) still showed **8 warnings**, all
+`autodoc: failed to import ... ModuleNotFoundError: No module named
+'ocpy'` (fitting.inference, io.save_fit/load_fit, models.anw/bbnw/
+utils, noise, plotting). RTD does not set `fail_on_warning`, so these
+were never fatal — they were silently rendering 8 API pages empty on
+the live site. ocpy cannot ride in `install_requires`: it is not on
+PyPI either, and a non-editable install drops `ocpy.hydrolight` (no
+`__init__.py`), which bing needs. **Fix**: `readthedocs.yaml` gains
+`build.jobs.pre_install` (config v2, verified against RTD's
+build-customization docs; runs in the same env as `python.install`)
+doing the exact tests.yml ocpy pattern — `git clone --depth 1` +
+`pip install --no-deps -e ../ocpy` — with a comment block explaining
+why, and the `python.install` section gains a comment tying the
+plain-`pip install .` step to the setup.py direct reference. With
+ocpy editable-installed in the same venv, the full RTD-equivalent
+build is **"build succeeded" under `-W`** — stricter than RTD's
+actual (non-`-W`) behavior, so RTD gets both a passing build and its
+8 missing API pages back.
+
+**Docs content pass (Piece 2)** — the rendered Sphinx docs previously
+contained *nothing* about the RT-backend integration (no `rt_backend`,
+no `ObsGeometry`, no robust backends anywhere under `docs/*.rst`);
+all of it lived in skills/planning docs only. Added, matching each
+file's existing voice and citing the measured numbers (sources:
+`rt_dict_from_p`'s M5 docstring, `inelastic-rrs`/`run-bing-fit`
+SKILL.md, `nb/RT/rob_rt_coding_6.ipynb` §3, and
+`dev/rob_rt/benchmark_backends.py`'s recorded run):
+
+- `docs/radiative_transfer.rst`: new top-level section **"RT
+  Backends: Gordon and robust.rt"** (anchor `_rt-backends`) — the
+  four-value table; a "Choosing a backend" guide mirroring the
+  capstone notebook's adopted-robust framing (baseline ≈ gordon to
+  ~2.3e-7 elastic parity; ztt/hybrid deliberately different, 5.6%/
+  7.0% max Rrs difference on L23 idx=170); a warning block with the
+  full inelastic-gap numbers (Raman max 11.4%/mean 5.6%;
+  fluorescence 9.2-18.5% max — documented, not yet closed); the
+  ObsGeometry requirement (`theta_s` mandatory, fail-at-setup);
+  free/fixed B_p ([0.004, 0.05] linear prior); the
+  validate_rt_dict error list (baseline+inelastic, hybrid 350-750 nm
+  domain); and the benchmark throughput table (gordon 38936 calls/s;
+  ztt 5991/0.154x; hybrid 5667/0.146x; baseline 7274/0.187x; JIT
+  first-call ~0.18 s, per-`fit_batch`-worker note). Also updated the
+  stale `rt_dict_from_p` section (example dict and py:function now
+  show `rt_backend`/`fit_Bp`/`Bp_value` with their real defaults),
+  the page intro, and See Also (`bing.rt.geometry`).
+- `docs/fitting.rst`: the observation tuple's optional 5th `geom`
+  element documented at the `items` definition, plus a new section
+  **"Fitting with a robust RT Backend"** (anchor
+  `_fitting-robust-backend`): the 5-tuple through `chisq_fit.fit`/
+  `fit_one`/`fit_batch`, the fail-at-setup ValueError naming
+  `theta_s`, the extra B_p parameter slot when `fit_Bp=True`, and the
+  l23 wrappers' `geom_from_p` policy (attributes on `p`, else the
+  L23 dataset's own documented zenith-0/nadir geometry; legacy Gordon
+  `p` = byte-identical legacy behavior).
+- `docs/api/evaluation_api.rst`: the page uses `automodule
+  :members:`, so `calc_Rrs_from_models_robust`,
+  `calc_Rrs_from_iops_robust`, `robust_domain_check` and the
+  backend-aware `reconstruct_from_chains` were verified already
+  present in the built HTML; the intro prose now names them so the
+  page reflects its content.
+- `docs/changelog.rst`: new "robust.rt backend integration
+  (2026-08/09, PR #27)" entry above the PR #26 one, comparable
+  detail: the four backends, geometry threading, B_p, the measured
+  accuracy story (parity + inelastic caveat), the new evaluate entry
+  points, explicit **non-breaking** statement (gordon default,
+  byte-identical, regression-pinned), and the packaging change
+  (direct reference + the >=3.12 floor).
+- `docs/installation.rst`: Python floor 3.8→3.12 (this page had been
+  missed by the Q8 sweep), the from-source note that `pip install .`
+  now pulls retrieve-or-bust from GitHub (needs git + network, JAX
+  rides in, unconditional import — not optional), corrected ocpy
+  instructions (editable-from-source, the `pip install ocpy` line was
+  wrong — it isn't on PyPI), a new "retrieve-or-bust (robust.rt)
+  Installation" subsection (automatic in the normal case, editable
+  side-by-side for development), and two troubleshooting entries.
+- `docs/index.rst`: python badge 3.8+ → 3.12+.
+
+**Verification (Piece 3).**
+
+- Sphinx: `python -m sphinx -W -b html` (and a fresh-environment `-E`
+  rebuild) on the final tree: **"build succeeded"**, zero warnings —
+  matching the GH docs job's strictness; RTD's own build is laxer.
+- `readthedocs.yaml` re-parsed as valid YAML with the expected
+  `build.jobs.pre_install` / `python.install` structure.
+- GH workflow cross-check: both tests.yml jobs use
+  `pip install -e . --no-deps` + their own clones, so the setup.py
+  change cannot affect them (and docs content changes only feed the
+  already-green sphinx step).
+- **ocean14 full suite on the final tree: 281 passed, 2 skipped,
+  0 failed** (181.0 s) — byte-for-byte the last-recorded baseline, as
+  expected for a change touching only packaging metadata, RTD config,
+  and docs text.
+
+**Not verifiable from here**: the RTD dashboard itself (needs
+authenticated access). The failure mode was reproduced and fixed
+locally at the exact step RTD runs; if the next RTD build still
+fails, its dashboard log is the thing to read. No new Q&A entry —
+no open decisions this round.
+
+**Files changed this round**: `setup.py`, `readthedocs.yaml`,
+`docs/radiative_transfer.rst`, `docs/fitting.rst`,
+`docs/api/evaluation_api.rst`, `docs/changelog.rst`,
+`docs/installation.rst`, `docs/index.rst`, and this doc (this
+entry). No source or test code changed.
