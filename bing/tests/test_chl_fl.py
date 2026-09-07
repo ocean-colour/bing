@@ -773,12 +773,19 @@ def test_rt_dict_from_p_defaults():
     assert rt_dict['fit_Bp'] is False
     assert rt_dict['Bp_value'] == 0.01
 
+    # CDOM-fluorescence keys (rob_cdom): same real-default pattern -- the
+    # process is off, and the a_cdom = cdom_fraction * a_dg proxy factor
+    # carries its documented 0.8 default even when unused.
+    assert rt_dict['include_CDOM_fl'] is False
+    assert rt_dict['cdom_fraction'] == 0.8
+
     # No other unexpected keys are added
     assert set(rt_dict.keys()) == {
         'variable_Gordon', 'variable_Gordon_G0', 'variable_Gordon_bbp',
         'include_Raman', 'include_Chl_fl',
         'phi_C', 'double_gaussian',
         'rt_backend', 'fit_Bp', 'Bp_value',
+        'include_CDOM_fl', 'cdom_fraction',
     }
 
 

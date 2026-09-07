@@ -402,6 +402,8 @@ dictionary from a parameter named-tuple (see :ref:`parameters`):
     #     'rt_backend':       'gordon',   # default; see RT Backends below
     #     'fit_Bp':           False,
     #     'Bp_value':         0.01,
+    #     'include_CDOM_fl':  False,      # see CDOM Fluorescence below
+    #     'cdom_fraction':    0.8,
     # }
 
     # Pass through to a fit
@@ -419,17 +421,20 @@ dictionary from a parameter named-tuple (see :ref:`parameters`):
    :returns: ``dict`` with keys ``variable_Gordon``, ``include_Raman``,
        ``include_Chl_fl``, ``phi_C``, ``double_gaussian`` (any attribute
        that is missing on ``p`` is set to ``None``), plus the RT-backend
-       keys ``rt_backend``, ``fit_Bp``, ``Bp_value``. Unlike the others,
-       the backend keys get real defaults — ``'gordon'`` / ``False`` /
-       ``0.01`` — so a legacy ``p`` (and any rt dict saved before the
-       backend integration) yields a fully valid, Gordon-backend dict.
+       keys ``rt_backend``, ``fit_Bp``, ``Bp_value`` and the
+       CDOM-fluorescence keys ``include_CDOM_fl``, ``cdom_fraction``.
+       Unlike the others, these five get real defaults — ``'gordon'`` /
+       ``False`` / ``0.01`` / ``False`` / ``0.8`` — so a legacy ``p``
+       (and any rt dict saved before the backend integration) yields a
+       fully valid, Gordon-backend dict.
    :rtype: dict
 
    The returned dictionary is the canonical way to pass radiative-transfer
    options into the forward model and the fitting routines. The
-   ``rt_backend``, ``fit_Bp`` and ``Bp_value`` keys are documented in
-   :ref:`rt-backends` below; :func:`bing.rt.defs.validate_rt_dict`
-   checks the combination once, at fit setup.
+   ``rt_backend``, ``fit_Bp``, ``Bp_value``, ``include_CDOM_fl`` and
+   ``cdom_fraction`` keys are documented in :ref:`rt-backends` below;
+   :func:`bing.rt.defs.validate_rt_dict` checks the combination once, at
+   fit setup.
 
 
 .. _rt-backends:
@@ -449,24 +454,28 @@ valid values live in ``bing.rt.defs.RT_BACKENDS``:
 
    * - Backend
      - Physics
-     - Inelastic (Raman/fluorescence)
+     - Inelastic (Raman / Chl fluorescence / CDOM fluorescence)
    * - ``'gordon'`` (default)
      - BING's own Gordon (1988) elastic model (``bing.rt.rrs``),
        everything documented above on this page
-     - Yes — BING's own ``bing.rt.raman`` / ``bing.rt.chl_fl`` physics
+     - Raman and Chl fluorescence — BING's own ``bing.rt.raman`` /
+       ``bing.rt.chl_fl`` physics. **No** CDOM fluorescence:
+       ``include_CDOM_fl=True`` raises ``ValueError``
    * - ``'robust_ztt'``
      - ``robust.rt``'s analytic (Zaneveld/Twardowski/Tassan-style)
        forward model
-     - Yes — via ``robust.rt.inelastic``
+     - All three — via ``robust.rt.inelastic`` and
+       ``robust.rt.cdom_fl``
    * - ``'robust_hybrid'``
      - ``robust_ztt`` plus a learned emulator correction; valid only
        for wavelengths inside 350–750 nm (its L23/HydroLight training
        domain)
-     - Yes — via ``robust.rt.inelastic``
+     - All three — via ``robust.rt.inelastic`` and
+       ``robust.rt.cdom_fl``
    * - ``'robust_baseline'``
      - ``robust``'s Gordon-compatible refit
-     - **No** — ``include_Raman``/``include_Chl_fl`` raises
-       ``ValueError``
+     - **None** — ``include_Raman`` / ``include_Chl_fl`` /
+       ``include_CDOM_fl`` all raise ``ValueError``
 
 When unset, ``rt_backend`` defaults to ``'gordon'`` and the fit is
 byte-identical to pre-integration BING — the integration is
@@ -560,6 +569,87 @@ model has no analog of. Two rt-dict keys control it:
 * ``Bp_value`` (default ``0.01``): the fixed value when
   ``fit_Bp=False``, and the walker-ball seed when ``fit_Bp=True``.
 
+.. _rt-cdom-fluorescence:
+
+CDOM fluorescence (``include_CDOM_fl``, ``cdom_fraction``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The robust backends can add a **third inelastic term** beside Raman
+and chlorophyll fluorescence: CDOM (yellow-matter) fluorescence, the
+analytic Hawes et al. (1992) FA7 kernel implemented in
+``robust.rt.cdom_fl``. Two rt-dict keys control it:
+
+* ``include_CDOM_fl`` (default ``False``): switch the term on. Robust
+  backends only — ``'gordon'`` has no CDOM-fluorescence physics at all,
+  and ``'robust_baseline'`` is elastic-only; both raise
+  ``ValueError`` at fit setup.
+* ``cdom_fraction`` (default ``0.8``, ``bing.rt.defs.CDOM_FRACTION_DEFAULT``):
+  the CDOM fraction of the a-model's combined dissolved+detrital
+  absorption — see the proxy note below. Consulted only when
+  ``include_CDOM_fl`` is ``True``.
+
+The kernel's emission source term is the **pure CDOM** absorption
+spectrum (:math:`b_{bY} = \tfrac12 a_{cdom}`). BING has no such
+spectrum: every a-model with a separable exponential term lumps CDOM
+and detritus into a single :math:`a_{dg}`. The adapter therefore
+supplies a **fixed-fraction proxy**
+
+.. math::
+
+    a_{cdom}(\lambda) = f_{cdom} \times a_{dg}(\lambda),
+    \qquad f_{cdom} = 0.8 \ \text{by default}
+
+where :math:`a_{dg}` comes from the a-model's separable component
+(``a_model.eval_a_dg``, i.e. ``eval_anw(..., retsub_comps=True)[0]``).
+
+.. warning::
+
+   :math:`f_{cdom} = 0.8` is a **project decision**, not a measured or
+   fitted quantity (JXP, 2026-09-05; ``claude_prompts/rt_tests.md``
+   Q32). It exists because BING's :math:`a_{dg}` is CDOM *plus*
+   detritus while the Hawes kernel expects CDOM alone, and no BING
+   a-model splits the two. Vary it per fit through
+   ``p.cdom_fraction`` / ``rt_dict['cdom_fraction']``; the Rrs
+   increment is essentially linear in it.
+
+The kernel amplitude ``robust.rt.CDOMFl.scale`` is held **fixed at
+1.0** (``bing.evaluate.CDOM_FL_SCALE``) — the reference kernel exactly
+as published. It is a differentiable leaf on robust's side (the
+``phi_C`` analogue for a future inversion), but BING does not fit it:
+``cdom_fraction`` is the only CDOM knob BING exposes.
+
+Requirements and caveats:
+
+* The a-model must expose a separable :math:`a_{dg}`
+  (``has_a_dg = True``): ``ExpBricaud``, ``ExpBricaudFix``,
+  ``ExpBricaudFree``, ``GIOP``, ``GSM``, ``ExpNMF``. Models with a
+  single lumped :math:`a_{nw}` (``Exp``, ``ExpFix``, ``Cst``,
+  ``Bricaud``, ``Chase2017``, ``Every``) raise at fit setup, naming
+  the offending class.
+* Emission is broad and featureless across the blue–green (roughly
+  465–570 nm for the kernel's fixed 350–490 nm excitation band) — no
+  685 nm-style line.
+* robust's kernel integrates excitation from 350 nm, but *clamps*
+  (constant extrapolation) any excitation wavelength below the model
+  wavelength grid. A fit starting at 400 nm therefore feeds
+  :math:`a_{cdom}(400)` to the whole 350–400 nm excitation band.
+* robust flags its own CDOM-fluorescence term as analytic-only and
+  **not yet validated** against HydroLight truth (its M5): the
+  :math:`\delta_C` learned-correction head is defined but untrained.
+
+.. code-block:: python
+
+    from bing.parameters import p_ntuple
+    from bing.rt import defs as rt_defs
+
+    p = p_ntuple.gen(model_names=['ExpBricaud', 'Pow'])
+    rt_dict = dict(rt_defs.rt_dict_from_p(p),
+                   rt_backend='robust_ztt',
+                   include_Raman=True,
+                   include_Chl_fl=True,
+                   include_CDOM_fl=True,
+                   cdom_fraction=0.8)
+
 Validation and error behavior
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -570,10 +660,16 @@ and raises ``ValueError`` on any illegal combination:
 * ``fit_Bp=True`` with ``rt_backend='gordon'``;
 * a robust backend with no ``geom`` (``theta_s`` never defaulted);
 * ``rt_backend='robust_hybrid'`` with any model wavelength outside
-  [350, 750] nm (the emulator's training range).
+  [350, 750] nm (the emulator's training range);
+* ``include_CDOM_fl=True`` with ``rt_backend='gordon'`` (no such
+  physics) or ``'robust_baseline'`` (elastic-only);
+* ``include_CDOM_fl=True`` with an a-model that has no separable
+  :math:`a_{dg}` component (``models[0].has_a_dg`` is ``False``) —
+  the error names the offending model class.
 
 Additionally, ``rt_backend='robust_baseline'`` combined with
-``include_Raman=True`` or ``include_Chl_fl=True`` raises in
+``include_Raman=True``, ``include_Chl_fl=True`` or
+``include_CDOM_fl=True`` raises in
 :func:`bing.evaluate.calc_Rrs_from_models_robust` — the baseline is
 elastic-only by construction.
 

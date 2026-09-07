@@ -111,7 +111,7 @@ All accept `**kwargs` that flow into the `p_ntuple.gen` config; common keys: `sa
 
 ### RT backend selection
 
-Three more `p_ntuple` keys pick the forward model that turns `(a, bb)`
+Five more `p_ntuple` keys pick the forward model that turns `(a, bb)`
 into `Rrs`, consumed by `rt_defs.rt_dict_from_p(p)`:
 
 | Key | Type | Default | Meaning |
@@ -119,6 +119,8 @@ into `Rrs`, consumed by `rt_defs.rt_dict_from_p(p)`:
 | `rt_backend` | str | `'gordon'` | One of `bing.rt.defs.RT_BACKENDS = ('gordon', 'robust_ztt', 'robust_hybrid', 'robust_baseline')`. `'gordon'` is BING's own Gordon (1988) model; the `'robust_*'` values dispatch to retrieve-or-bust's `robust.rt` forward models instead. |
 | `fit_Bp` | bool | `False` | Whether `B_p` (phase-function parameter, robust backends only) is a free MCMC parameter vs. fixed at `Bp_value`. Requires a robust backend — `fit_Bp=True` with `rt_backend='gordon'` raises. |
 | `Bp_value` | float | `0.01` | Fixed/seed value for `B_p`. |
+| `include_CDOM_fl` | bool | `False` | Add robust's CDOM-fluorescence term (the analytic Hawes 1992 kernel, `robust.rt.cdom_fl`) as a third inelastic process. Robust backends only, and not `'robust_baseline'` (elastic-only) — both raise. Also requires an a-model with a separable `a_dg` (`has_a_dg`: ExpBricaud family, GIOP, GSM, ExpNMF). The kernel amplitude `CDOMFl.scale` is held fixed at 1.0, never fitted. |
+| `cdom_fraction` | float | `0.8` | The `a_cdom = cdom_fraction * a_dg` proxy factor used to build the CDOM source term when `include_CDOM_fl=True`. **A fixed-fraction proxy, not a retrieval** — BING's `a_dg` is CDOM+detritus combined while the Hawes kernel wants pure CDOM (project decision, JXP 2026-09-05, `claude_prompts/rt_tests.md` Q32; see `bing.rt.defs.CDOM_FRACTION_DEFAULT`). |
 
 ```python
 p = standard.expb_pow(
@@ -126,6 +128,8 @@ p = standard.expb_pow(
     rt_backend='robust_ztt',   # or 'robust_hybrid', 'robust_baseline', 'gordon'
     fit_Bp=False,
     Bp_value=0.01,
+    include_CDOM_fl=False,     # True adds robust's CDOM-fluorescence term
+    cdom_fraction=0.8,         # a_cdom = 0.8 * a_dg proxy (see table)
 )
 rt_dict = rt_defs.rt_dict_from_p(p)
 ```
@@ -180,7 +184,9 @@ CSV format: `wave,Rrs,sigRrs[,anw,bbnw]`. See [bing/scripts/fit_Rrs.py](../../..
 - **`rt_dict` missing** → all forward-model calls now require it (added during the Raman/fluorescence refactor); pass `rt_defs.rt_dict_from_p(p)`.
 - **Wave grid mismatch** → `models` and `Rrs` must share `wave`. If you have hyperspectral data and a satellite grid, use [satellite-band-prep](../satellite-band-prep/SKILL.md) first.
 - **Tight priors near initial guess** → `log_prob = -inf` at p0; widen priors before MCMC.
-- **`rt_backend='robust_baseline'` + `include_Raman`/`include_Chl_fl`** → raises `ValueError`; `robust_baseline` is elastic-only (no `inelastic` composition path). Use `'robust_ztt'`/`'robust_hybrid'` for an inelastic fit on the robust side.
+- **`rt_backend='robust_baseline'` + `include_Raman`/`include_Chl_fl`/`include_CDOM_fl`** → raises `ValueError`; `robust_baseline` is elastic-only (no `inelastic` composition path). Use `'robust_ztt'`/`'robust_hybrid'` for an inelastic fit on the robust side.
+- **`include_CDOM_fl=True` with `rt_backend='gordon'`** → raises; BING's own Gordon path has no CDOM-fluorescence physics. Use `'robust_ztt'`/`'robust_hybrid'`.
+- **`include_CDOM_fl=True` with an a-model that has no separable `a_dg`** (`Exp`, `ExpFix`, `Cst`, `Bricaud`, `Chase2017*`, `Every`) → raises, naming the model class; the CDOM source term is `cdom_fraction * a_dg`.
 - **Any `robust_*` backend without `geom=`** → `validate_rt_dict` raises `ValueError`; `theta_s` is never silently defaulted. Pass a `bing.rt.geometry.ObsGeometry(...)` through to the forward-model call.
 - **`fit_Bp=True` with `rt_backend='gordon'`** → raises; `B_p` (phase-function parameter) only applies to robust backends.
 - **First `robust_hybrid` call is slow** → its emulator JIT-compiles on first use (~1s); subsequent calls in the same process are fast. In `fit_batch`, each `ProcessPoolExecutor` worker pays this cost once per worker, not once per fit.

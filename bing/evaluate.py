@@ -44,6 +44,19 @@ from robust import rt as robust_rt
 
 from IPython import embed
 
+#: Amplitude of robust's CDOM-fluorescence kernel, ``robust.rt.CDOMFl.scale``,
+#: whenever ``rt_dict['include_CDOM_fl']`` is True.
+#:
+#: **Held fixed at 1.0** -- the Hawes (1992) FA7 reference kernel exactly as
+#: published (``robust.rt.cdom_fl``). It is a differentiable pytree leaf on
+#: robust's side (the ``phi_C``-analogue handle for a future inversion), but
+#: BING does not fit it: the only CDOM knob BING exposes is
+#: ``rt_dict['cdom_fraction']``, the a_cdom = cdom_fraction * a_dg proxy
+#: (rob_cdom; ``bing.rt.defs.CDOM_FRACTION_DEFAULT``). Baked into the jitted
+#: closures as a Python constant, so it never participates in tracing.
+CDOM_FL_SCALE = 1.0
+
+
 def calc_stats(chains, names:list=None,
                perc=(14, 86)):
     """
@@ -312,14 +325,20 @@ def _robust_forward_jit(mode, inelastic_key, wave_key):
         'ztt', 'hybrid', or 'baseline' (`rt_dict['rt_backend']` with its
         'robust_' prefix stripped, or literally 'baseline').
     inelastic_key : tuple or None
-        `(raman: bool, fluorescence: bool, emission_shape: str)` -- the
-        *static* `Inelastic` configuration -- or `None` for the
-        elastic-only path. `None` is not the same as
+        `(raman: bool, fluorescence: bool, emission_shape: str,
+        cdom_fl: bool)` -- the *static* `Inelastic` configuration -- or
+        `None` for the elastic-only path. `None` is not the same as
         `Inelastic(raman=False, fluorescence=False)`: passing `None` to
         `robust.rt.forward` takes the pre-existing, bit-identical code
         route (robust.rt.types.Inelastic docstring; design §3.5), so the
         two are kept as genuinely different cache entries / closures,
-        never conflated.
+        never conflated. The trailing `cdom_fl` flag is the *presence* of
+        `robust.rt.CDOMFl` on the Inelastic pytree, which changes the
+        treedef (hence the trace) -- it belongs in the key for exactly
+        the reason raman/fluorescence/emission_shape do. The kernel's
+        amplitude `CDOMFl.scale` is a differentiable *leaf* and is
+        deliberately NOT part of the key; BING holds it fixed at 1.0
+        (rob_cdom), so it is baked into the closure as a Python constant.
     wave_key : bytes
         `a_model.wave` as float64 bytes (`np.asarray(wave,
         dtype=np.float64).tobytes()`).
@@ -361,12 +380,21 @@ def _robust_forward_jit(mode, inelastic_key, wave_key):
                                      corrections=False, emulator=emulator_obj)
         return jax.jit(_fn)
 
-    raman, fluorescence, emission_shape = inelastic_key
+    raman, fluorescence, emission_shape, cdom_fl = inelastic_key
+
+    # CDOM fluorescence (rob_cdom): `None` keeps the process off -- robust
+    # documents that as the bit-identical off-state, so it is never
+    # `CDOMFl(scale=0)`. `scale` is fixed at the published reference
+    # kernel's 1.0 and baked in here as a Python constant: BING does not
+    # (yet) fit it, so there is no reason to trace it. It is still a
+    # differentiable leaf on robust's side, which is why the *presence*
+    # of this object -- not its value -- is what the lru_cache key carries.
+    cdom_fl_obj = robust_rt.CDOMFl(scale=CDOM_FL_SCALE) if cdom_fl else None
 
     def _fn(iops, phase_params, geometry, phi_C):
         inelastic = robust_rt.Inelastic(
             raman=raman, fluorescence=fluorescence, phi_C=phi_C,
-            emission_shape=emission_shape)
+            emission_shape=emission_shape, cdom_fl=cdom_fl_obj)
         # corrections=False: explicit analytic-only inelastic physics (no
         # M3 learned correction heads). Not a simplification of scope --
         # it is the only inelastic behavior this integration ever resolved
@@ -390,11 +418,12 @@ def _robust_forward_jit(mode, inelastic_key, wave_key):
 _RobustInputs = collections.namedtuple(
     '_RobustInputs',
     ['rt_backend', 'iops', 'phase_params', 'geometry', 'a', 'bb',
-     'include_raman', 'include_fl', 'emission_shape', 'phi_C'])
+     'include_raman', 'include_fl', 'include_cdom', 'emission_shape',
+     'phi_C'])
 
 
 def _build_robust_inputs_from_iops(a, bb, wave, rt_dict, geom, Bp,
-                                   a_ph=None, Ed=None):
+                                   a_ph=None, a_cdom=None, Ed=None):
     """
     Validate and map raw IOP spectra onto robust.rt call inputs.
 
@@ -407,8 +436,8 @@ def _build_robust_inputs_from_iops(a, bb, wave, rt_dict, geom, Bp,
     pair routed into ``Geometry.Ed`` when Raman is requested (M4 task 2),
     and the inelastic flags. Also owns the argument-validity errors
     (missing ``geom``, a non-robust ``rt_backend``, ``robust_baseline`` +
-    inelastic, fluorescence without ``a_ph``), so every consumer fails
-    identically.
+    inelastic, fluorescence without ``a_ph``, CDOM fluorescence without
+    ``a_cdom``), so every consumer fails identically.
 
     Parameters
     ----------
@@ -428,6 +457,12 @@ def _build_robust_inputs_from_iops(a, bb, wave, rt_dict, geom, Bp,
     a_ph : np.ndarray, optional
         Phytoplankton absorption on ``wave`` -- the fluorescence source
         term. Required when rt_dict['include_Chl_fl'] is True.
+    a_cdom : np.ndarray, optional
+        CDOM absorption on ``wave`` -- the CDOM-fluorescence source term
+        (``b_bY = 0.5 a_cdom``). Required when
+        rt_dict['include_CDOM_fl'] is True. Callers holding BING model
+        parameters get ``cdom_fraction * a_dg`` built for them by
+        `_build_robust_inputs`; raw-spectrum callers must supply it.
     Ed : tuple, optional
         A raw ``(wave_Ed, Ed)`` downwelling-irradiance pair for robust's
         ``Geometry.Ed`` seam; consulted only when rt_dict['include_Raman']
@@ -457,14 +492,17 @@ def _build_robust_inputs_from_iops(a, bb, wave, rt_dict, geom, Bp,
 
     include_raman = rt_dict.get('include_Raman', False)
     include_fl = rt_dict.get('include_Chl_fl', False)
+    include_cdom = rt_dict.get('include_CDOM_fl', False)
 
-    if rt_backend == 'robust_baseline' and (include_raman or include_fl):
+    if rt_backend == 'robust_baseline' and (include_raman or include_fl
+                                            or include_cdom):
         raise ValueError(
             "rt_dict['rt_backend']='robust_baseline' has no inelastic "
             "composition path -- robust.rt.baselines.Rrs_gordon takes "
             "no `inelastic` argument and is elastic-only by "
-            "construction. Disable include_Raman/include_Chl_fl, or "
-            "use rt_backend='robust_ztt'/'robust_hybrid' instead.")
+            "construction. Disable include_Raman/include_Chl_fl/"
+            "include_CDOM_fl, or use "
+            "rt_backend='robust_ztt'/'robust_hybrid' instead.")
 
     if include_fl and a_ph is None:
         raise ValueError(
@@ -473,8 +511,20 @@ def _build_robust_inputs_from_iops(a, bb, wave, rt_dict, geom, Bp,
             "source term is phi_C * a_ph, and bulk absorption cannot "
             "stand in for the phytoplankton component.")
 
-    iops = robust_rt.IOPs.from_total_bb(a, bb, wave=wave,
-                                        a_ph=a_ph if include_fl else None)
+    if include_cdom and a_cdom is None:
+        raise ValueError(
+            "rt_dict['include_CDOM_fl']=True requires a_cdom (CDOM "
+            "absorption on the same wavelength grid) -- the "
+            "CDOM-fluorescence source term is b_Y = 0.5 * a_cdom, and "
+            "bulk absorption cannot stand in for the CDOM component. "
+            "Model-parameter callers get a_cdom = cdom_fraction * a_dg "
+            "built for them; raw-spectrum callers must pass a_cdom= "
+            "explicitly.")
+
+    iops = robust_rt.IOPs.from_total_bb(
+        a, bb, wave=wave,
+        a_ph=a_ph if include_fl else None,
+        a_cdom=a_cdom if include_cdom else None)
 
     B_p = Bp if Bp is not None else rt_dict['Bp_value']
     phase_params = robust_rt.PhaseParams(B_p=B_p)
@@ -500,7 +550,8 @@ def _build_robust_inputs_from_iops(a, bb, wave, rt_dict, geom, Bp,
     return _RobustInputs(
         rt_backend=rt_backend, iops=iops, phase_params=phase_params,
         geometry=geometry, a=a, bb=bb, include_raman=include_raman,
-        include_fl=include_fl, emission_shape=emission_shape,
+        include_fl=include_fl, include_cdom=include_cdom,
+        emission_shape=emission_shape,
         phi_C=rt_dict.get('phi_C', 0.02))
 
 
@@ -518,8 +569,12 @@ def _build_robust_inputs(a_model, a_params, bb_model, bb_params,
     then delegates the IOPs/PhaseParams/Geometry construction and the
     shared validity errors to `_build_robust_inputs_from_iops`, so the
     model-parameter and raw-spectrum entry points can never drift apart.
-    Owns one model-specific error of its own: fluorescence without
-    ``a_model.a_ph`` (M4 task 3), so the fix (``set_aph``) is named.
+    Owns two model-specific pieces of its own: the fluorescence guard on
+    ``a_model.a_ph`` (M4 task 3), so the fix (``set_aph``) is named, and
+    the **CDOM-fluorescence source term** ``a_cdom = cdom_fraction *
+    a_dg`` (rob_cdom), built from the a-model's separable a_dg component
+    via ``a_model.eval_a_dg`` -- see the inline comment there and
+    `calc_Rrs_from_models_robust`'s Notes for why that is a proxy.
 
     Parameters and error semantics are exactly those documented on
     `calc_Rrs_from_models_robust`; see its docstring.
@@ -531,6 +586,7 @@ def _build_robust_inputs(a_model, a_params, bb_model, bb_params,
         (plus the raw ``a``/``bb`` arrays for ``full_return``).
     """
     include_fl = rt_dict.get('include_Chl_fl', False)
+    include_cdom = rt_dict.get('include_CDOM_fl', False)
 
     # IOPs for model wave -- identical evaluation to the Gordon path.
     a = a_model.eval_a(a_params)
@@ -556,13 +612,41 @@ def _build_robust_inputs(a_model, a_params, bb_model, bb_params,
             "component.")
     a_ph = (10**a_params[..., -1:]) * a_model.a_ph if include_fl else None
 
+    # ---------------------------------------------------------------
+    # CDOM-fluorescence source term (rob_cdom).
+    #
+    #     a_cdom = cdom_fraction * a_dg      (default cdom_fraction = 0.8)
+    #
+    # THIS IS A FIXED-FRACTION PROXY, NOT A RETRIEVAL. robust's Hawes
+    # (1992) kernel wants the *pure CDOM* absorption as its emission
+    # source (b_bY = 0.5 * a_cdom), but BING's a_dg is the **combined**
+    # dissolved + detrital absorption -- no BING a-model splits the two,
+    # so no fitted quantity can. The 0.8 fraction is a project decision
+    # (JXP, 2026-09-05; claude_prompts/rt_tests.md Q32), documented in
+    # bing.rt.defs.CDOM_FRACTION_DEFAULT, and is carried per-fit in
+    # rt_dict['cdom_fraction'] so a sweep can vary it.
+    #
+    # eval_a_dg raises a clear, model-naming ValueError for a-models with
+    # no separable a_dg (rt_defs.validate_rt_dict raises the same way at
+    # fit setup, before ever reaching here). Batched-safe: eval_a_dg
+    # follows eval_anw's shape contract, so a (nsamples, nparam) chain
+    # yields (nsamples, nwave), exactly like ``a`` above.
+    # ---------------------------------------------------------------
+    if include_cdom:
+        cdom_fraction = rt_dict.get('cdom_fraction',
+                                    rt_defs.CDOM_FRACTION_DEFAULT)
+        a_cdom = cdom_fraction * a_model.eval_a_dg(a_params)
+    else:
+        a_cdom = None
+
     # The a-model's stashed raw Ed pair (set_raman_Ed, M4 task 1, CQ2) --
     # the shared layer routes it into Geometry.Ed when Raman is on.
     Ed = ((a_model.wave_Ed_raw, a_model.Ed_raw)
           if a_model.wave_Ed_raw is not None else None)
 
     return _build_robust_inputs_from_iops(a, bb, a_model.wave, rt_dict,
-                                          geom, Bp, a_ph=a_ph, Ed=Ed)
+                                          geom, Bp, a_ph=a_ph,
+                                          a_cdom=a_cdom, Ed=Ed)
 
 
 def calc_Rrs_from_models_robust(a_model, a_params, bb_model, bb_params,
@@ -615,6 +699,15 @@ def calc_Rrs_from_models_robust(a_model, a_params, bb_model, bb_params,
           is True and the a-model carries the raw Ed pair stashed by
           aNWModel.set_raman_Ed, that pair is routed into robust's
           Geometry.Ed (see Notes, "Ed routing").
+        - 'include_CDOM_fl' : bool - add robust's CDOM-fluorescence term
+          (the analytic Hawes 1992 kernel, robust.rt.cdom_fl) as a third
+          inelastic process. Its amplitude, robust.rt.CDOMFl.scale, is
+          held fixed at CDOM_FL_SCALE = 1.0 (not fitted). Requires an
+          a-model with a separable a_dg -- see Notes, "CDOM
+          fluorescence".
+        - 'cdom_fraction' : float - the a_cdom = cdom_fraction * a_dg
+          proxy factor (default bing.rt.defs.CDOM_FRACTION_DEFAULT =
+          0.8); consulted only when 'include_CDOM_fl' is True.
         - 'Bp_value' : float - constant B_p when Bp is not given.
     geom : bing.rt.geometry.ObsGeometry, optional
         Fixed per-pixel viewing/illumination geometry. Required (non-None)
@@ -641,16 +734,44 @@ def calc_Rrs_from_models_robust(a_model, a_params, bb_model, bb_params,
     ------
     ValueError
         If geom is None; if rt_dict['rt_backend'] is not a robust backend;
-        if rt_dict['rt_backend'] == 'robust_baseline' while Raman or
-        chlorophyll fluorescence is requested (robust.rt.baselines.Rrs_gordon
-        takes no `inelastic` argument -- it is elastic-only by
-        construction, see Notes); or if rt_dict['include_Chl_fl'] is True
-        but the a-model has no a_ph spectrum set after eval_a (the
-        fluorescence source term is phi_C * a_ph -- call a_model.set_aph
-        first; M4 task 3).
+        if rt_dict['rt_backend'] == 'robust_baseline' while any inelastic
+        term (Raman, chlorophyll fluorescence, CDOM fluorescence) is
+        requested (robust.rt.baselines.Rrs_gordon takes no `inelastic`
+        argument -- it is elastic-only by construction, see Notes); if
+        rt_dict['include_Chl_fl'] is True but the a-model has no a_ph
+        spectrum set after eval_a (the fluorescence source term is
+        phi_C * a_ph -- call a_model.set_aph first; M4 task 3); or if
+        rt_dict['include_CDOM_fl'] is True and the a-model has no
+        separable a_dg component (``a_model.has_a_dg`` False --
+        a_model.eval_a_dg raises, naming the model class).
 
     Notes
     -----
+    **CDOM fluorescence (rob_cdom): a_cdom is a fixed-fraction proxy.**
+    When rt_dict['include_CDOM_fl'] is True the CDOM absorption spectrum
+    robust's Hawes kernel needs as its emission source
+    (``b_bY = 0.5 a_cdom``) is built here as::
+
+        a_cdom = rt_dict['cdom_fraction'] * a_dg      (default 0.8)
+
+    with ``a_dg`` the a-model's separable dissolved+detrital component
+    (``a_model.eval_a_dg``). **This is a proxy, not a retrieval**: BING's
+    a_dg lumps CDOM *and* detritus into one exponential term, while the
+    Hawes kernel expects pure CDOM absorption, and no BING a-model splits
+    them. The 0.8 fraction is a project decision (JXP, 2026-09-05;
+    ``claude_prompts/rt_tests.md`` Q32), recorded in
+    ``bing.rt.defs.CDOM_FRACTION_DEFAULT``. The kernel amplitude
+    ``robust.rt.CDOMFl.scale`` is held fixed at
+    :data:`CDOM_FL_SCALE` = 1.0 -- the published reference kernel; it is
+    a differentiable leaf on robust's side but BING does not fit it.
+    Two further caveats worth knowing: robust's kernel integrates
+    excitation over a fixed 350-490 nm grid and *clamps* (constant
+    extrapolation, ``robust.rt.conventions.interp_spectrum``) any
+    excitation wavelength below the model grid, so a fit starting at
+    400 nm feeds a_cdom(400) to the whole 350-400 nm excitation band;
+    and robust flags its own CDOM-fluorescence term as analytic-only and
+    unvalidated against HydroLight truth as of its M5.
+
     Unlike calc_Rrs_from_models, this function never evaluates a_model/
     bb_model at separate Raman-excitation wavelengths (eval_a_ex/eval_bb_ex):
     robust.rt.inelastic derives its own excitation-grid IOPs by interpolating
@@ -712,8 +833,9 @@ def _dispatch_robust_forward(inp, wave):
 
     The single definition of the backend -> jitted-closure dispatch
     (robust_baseline -> baselines.Rrs_gordon; robust_ztt/robust_hybrid ->
-    forward(), with the inelastic-configured closure when Raman or
-    fluorescence is on), shared by `calc_Rrs_from_models_robust` and
+    forward(), with the inelastic-configured closure when Raman,
+    chlorophyll fluorescence, or CDOM fluorescence is on), shared by
+    `calc_Rrs_from_models_robust` and
     `calc_Rrs_from_iops_robust` so the two entry points can never drift
     apart on how the `_robust_forward_jit` cache is keyed or called.
 
@@ -739,9 +861,13 @@ def _dispatch_robust_forward(inp, wave):
     else:
         # 'robust_ztt' -> mode='ztt'; 'robust_hybrid' -> mode='hybrid'.
         mode = inp.rt_backend[len('robust_'):]
-        if inp.include_raman or inp.include_fl:
+        # CDOM fluorescence counts as an active process here exactly like
+        # Raman/Chl-fl: robust's own _apply_inelastic does the same, so a
+        # cdom-only configuration must still build an Inelastic instance
+        # (otherwise the term would silently vanish).
+        if inp.include_raman or inp.include_fl or inp.include_cdom:
             inelastic_key = (inp.include_raman, inp.include_fl,
-                             inp.emission_shape)
+                             inp.emission_shape, inp.include_cdom)
             jit_fn = _robust_forward_jit(mode, inelastic_key, wave_key)
             Rrs = jit_fn(inp.iops, inp.phase_params, inp.geometry, inp.phi_C)
         else:
@@ -752,7 +878,8 @@ def _dispatch_robust_forward(inp, wave):
 
 
 def calc_Rrs_from_iops_robust(a, bb, wave, rt_dict:dict, geom=None,
-                              Bp:float=None, a_ph=None, Ed=None):
+                              Bp:float=None, a_ph=None, a_cdom=None,
+                              Ed=None):
     """
     Calculate Rrs from raw IOP spectra using the robust.rt backend
     (PR #27, Bugbot finding 1).
@@ -782,7 +909,10 @@ def calc_Rrs_from_iops_robust(a, bb, wave, rt_dict:dict, geom=None,
     rt_dict : dict
         Radiative transfer configuration; same consulted keys as
         `calc_Rrs_from_models_robust` ('rt_backend', 'include_Raman',
-        'include_Chl_fl', 'phi_C', 'double_gaussian', 'Bp_value').
+        'include_Chl_fl', 'include_CDOM_fl', 'phi_C', 'double_gaussian',
+        'Bp_value'). Note 'cdom_fraction' is **not** consulted here: this
+        entry point takes ``a_cdom`` directly, already built by the
+        caller (the model-parameter path applies the fraction to a_dg).
     geom : bing.rt.geometry.ObsGeometry, optional
         Fixed viewing/illumination geometry. Required (non-None) for every
         robust backend -- theta_s is never silently defaulted.
@@ -791,6 +921,18 @@ def calc_Rrs_from_iops_robust(a, bb, wave, rt_dict:dict, geom=None,
     a_ph : np.ndarray, optional
         Phytoplankton absorption on ``wave`` [m^-1] -- the fluorescence
         source term. Required when rt_dict['include_Chl_fl'] is True.
+    a_cdom : np.ndarray, optional
+        CDOM absorption on ``wave`` [m^-1] -- the **CDOM-fluorescence**
+        source term (``b_bY = 0.5 a_cdom``; robust's Hawes 1992 kernel).
+        Required when rt_dict['include_CDOM_fl'] is True; a ValueError
+        names the requirement otherwise. Analogous to ``a_ph``, and
+        deliberately taken as a spectrum rather than derived here: this
+        entry point has no a-model, so it cannot apply the
+        ``cdom_fraction * a_dg`` proxy the model-parameter path uses (see
+        `calc_Rrs_from_models_robust`'s Notes). Callers holding *true*
+        CDOM absorption (e.g. L23's ``ag``) should pass it directly --
+        that is the physically correct source term, and the proxy exists
+        only because a retrieval has nothing better.
     Ed : tuple, optional
         A raw ``(wave_Ed, Ed)`` downwelling-irradiance pair routed into
         robust's ``Geometry.Ed`` when rt_dict['include_Raman'] is True;
@@ -807,9 +949,10 @@ def calc_Rrs_from_iops_robust(a, bb, wave, rt_dict:dict, geom=None,
     ------
     ValueError
         If geom is None; if rt_dict['rt_backend'] is not a robust backend;
-        if rt_dict['rt_backend'] == 'robust_baseline' while Raman or
-        fluorescence is requested; or if rt_dict['include_Chl_fl'] is True
-        with a_ph=None.
+        if rt_dict['rt_backend'] == 'robust_baseline' while any inelastic
+        term (Raman, chlorophyll fluorescence, CDOM fluorescence) is
+        requested; if rt_dict['include_Chl_fl'] is True with a_ph=None; or
+        if rt_dict['include_CDOM_fl'] is True with a_cdom=None.
 
     See Also
     --------
@@ -820,7 +963,7 @@ def calc_Rrs_from_iops_robust(a, bb, wave, rt_dict:dict, geom=None,
     wave = np.asarray(wave, dtype=np.float64)
 
     inp = _build_robust_inputs_from_iops(a, bb, wave, rt_dict, geom, Bp,
-                                         a_ph=a_ph, Ed=Ed)
+                                         a_ph=a_ph, a_cdom=a_cdom, Ed=Ed)
     return _dispatch_robust_forward(inp, wave)
 
 
@@ -901,7 +1044,8 @@ def robust_domain_check(a_model, a_params, bb_model, bb_params,
     ------
     ValueError
         Same argument-validity errors as `calc_Rrs_from_models_robust`
-        (missing geom, non-robust backend, robust_baseline + inelastic).
+        (missing geom, non-robust backend, robust_baseline + inelastic,
+        include_CDOM_fl with an a-model that has no a_dg).
 
     See Also
     --------
@@ -915,11 +1059,19 @@ def robust_domain_check(a_model, a_params, bb_model, bb_params,
     if inp.rt_backend != 'robust_hybrid':
         return
 
+    # Same inelastic configuration the jitted closures build (including
+    # the CDOM-fluorescence term at the fixed CDOM_FL_SCALE), so the
+    # checked configuration really is the fitted one. CDOM fluorescence
+    # adds no domain of its own -- the emulator's trained ranges are over
+    # the elastic inputs (IOPs, B_p, geometry) -- but the term still has
+    # to be present for the forward call to trace the same program.
     inelastic = None
-    if inp.include_raman or inp.include_fl:
+    if inp.include_raman or inp.include_fl or inp.include_cdom:
         inelastic = robust_rt.Inelastic(
             raman=inp.include_raman, fluorescence=inp.include_fl,
-            phi_C=inp.phi_C, emission_shape=inp.emission_shape)
+            phi_C=inp.phi_C, emission_shape=inp.emission_shape,
+            cdom_fl=(robust_rt.CDOMFl(scale=CDOM_FL_SCALE)
+                     if inp.include_cdom else None))
 
     # Un-jitted, concrete-array call: the whole point. Same
     # corrections=False / explicit-emulator configuration as the jitted
@@ -952,6 +1104,11 @@ def reconstruct_from_chains(models:list, chains:np.ndarray, rt_dict:dict,
     as the adapter's ``Bp``, per-sample (broadcast across wavelength,
     robust's batched B_p convention; robust.rt.validation uses the same
     ``(sample, wave)`` layout).
+
+    An ``include_CDOM_fl`` rt_dict needs nothing extra here: the CDOM
+    source term ``a_cdom = cdom_fraction * a_dg`` is rebuilt inside the
+    adapter from the same chain samples that give ``a``/``bb``, batched
+    over the sample axis exactly like them (rob_cdom).
 
     Parameters
     ----------
@@ -1086,6 +1243,11 @@ def reconstruct_chisq_fits(models:list, params:np.ndarray, rt_dict:dict,
             raises otherwise; theta_s is never silently defaulted); ignored
             by the default Gordon backend.
 
+    Notes:
+        Like ``reconstruct_from_chains``, an ``include_CDOM_fl`` rt_dict
+        needs nothing extra: ``chisq_fit.fit_func`` -> the robust adapter
+        rebuilds ``a_cdom = cdom_fraction * a_dg`` from the same fitted
+        parameters (rob_cdom).
 
     Returns:
         - a_mean (ndarray): The mean of the parameter 'a' across the fits.

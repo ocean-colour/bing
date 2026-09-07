@@ -318,7 +318,9 @@ def prep_one_l23(p, idx, chk:bool=False):
         If satellite type is not recognized; or, via
         bing.rt.defs.validate_rt_dict, for an illegal rt_dict/geom
         combination (unknown rt_backend, fit_Bp with the Gordon backend,
-        or a robust_hybrid grid outside its trained wavelength range).
+        a robust_hybrid grid outside its trained wavelength range, or
+        include_CDOM_fl with the Gordon/robust_baseline backends or an
+        a-model with no separable a_dg component).
 
     See Also
     --------
@@ -465,16 +467,30 @@ def prep_one_l23(p, idx, chk:bool=False):
     else:
         # Robust backend: same raw true-IOP spectra on the native L23
         # grid, pushed through robust.rt via the shared adapter
-        # (bing.evaluate.calc_Rrs_from_iops_robust). Raman/fluorescence
-        # are composed inside robust.rt.forward when requested -- the
-        # true a_ph spectrum is the fluorescence source term, and the
-        # same downwelling-Ed pair stashed on the model above (for the
-        # fit's own Raman term) is routed into robust's Geometry.Ed.
-        # The variable-Gordon coefficients (G0/G1/G2/Gb) are meaningless
-        # to robust's physics and deliberately not consulted here.
+        # (bing.evaluate.calc_Rrs_from_iops_robust). Raman/fluorescence/
+        # CDOM fluorescence are composed inside robust.rt.forward when
+        # requested -- the true a_ph spectrum is the Chl-fluorescence
+        # source term, the true a_g (CDOM) spectrum is the
+        # CDOM-fluorescence one, and the same downwelling-Ed pair stashed
+        # on the model above (for the fit's own Raman term) is routed
+        # into robust's Geometry.Ed. The variable-Gordon coefficients
+        # (G0/G1/G2/Gb) are meaningless to robust's physics and
+        # deliberately not consulted here.
+        #
+        # NOTE (rob_cdom): the *observation* uses L23's true CDOM
+        # absorption odict['ag'], exactly as it uses the true odict['aph']
+        # for chlorophyll fluorescence. The *fit* cannot -- no BING
+        # a-model splits CDOM from detritus -- so it uses the
+        # a_cdom = cdom_fraction * a_dg proxy (default 0.8; JXP
+        # 2026-09-05, claude_prompts/rt_tests.md Q32, see
+        # bing.rt.defs.CDOM_FRACTION_DEFAULT). That mismatch is
+        # deliberate and is precisely what the retrieval tests measure;
+        # it is not a bug in this generator.
         synth_Rrs = bing_eval.calc_Rrs_from_iops_robust(
             odict['a'], odict['bb'], l23_wave, rt_dict, geom=geom,
             a_ph=odict['aph'] if p.include_Chl_fl else None,
+            a_cdom=(odict['ag'] if rt_dict.get('include_CDOM_fl', False)
+                    else None),
             Ed=_Ed_pair)
     #embed(header='254 of l23.py')
 

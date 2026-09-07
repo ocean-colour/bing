@@ -31,6 +31,25 @@ ROBUST_HYBRID_WAVE_MAX = 750.
 BP_PRIOR_PMIN = 0.004
 BP_PRIOR_PMAX = 0.05
 
+#: Default value of rt_dict['cdom_fraction'] -- the fraction of BING's
+#: **combined** dissolved+detrital absorption a_dg that is taken to be
+#: *pure CDOM* when the robust CDOM-fluorescence term is switched on
+#: (``rt_dict['include_CDOM_fl']``):
+#:
+#: .. math:: a_{cdom}(\\lambda) = f_{cdom} \\times a_{dg}(\\lambda)
+#:
+#: **This is a fixed-fraction proxy, not a retrieval.** robust's Hawes
+#: (1992) kernel (``robust.rt.cdom_fl.cdom_kernel``) wants the *pure*
+#: CDOM absorption as its emission source term (``b_bY = 0.5 a_cdom``),
+#: but every BING a-model with a separable exponential term lumps CDOM
+#: and detritus together into one a_dg -- there is no free parameter that
+#: splits them. The fraction 0.8 is a project decision (JXP, 2026-09-05;
+#: ``claude_prompts/rt_tests.md`` Q32: "a_cdom = 0.8 x a_dg -- fixed CDOM
+#: fraction 0.8, to be documented prominently in code, provenance, and
+#: report text"), *not* a measured or fitted quantity. Override it per
+#: fit with ``p.cdom_fraction`` / ``rt_dict['cdom_fraction']``.
+CDOM_FRACTION_DEFAULT = 0.8
+
 
 def rt_dict_from_p(p):
     """
@@ -97,15 +116,40 @@ def rt_dict_from_p(p):
             Bp_value (float): the fixed/seed value for B_p, used
                 whenever fit_Bp is False (B_p held fixed) and as the
                 walker-ball seed when fit_Bp is True. Default 0.01.
+            include_CDOM_fl (bool): include robust's **CDOM
+                fluorescence** term (the analytic Hawes et al. 1992
+                kernel, ``robust.rt.cdom_fl``) as a third inelastic
+                process alongside Raman and chlorophyll fluorescence.
+                Default False. Robust backends only -- and not
+                'robust_baseline', which is elastic-only
+                (validate_rt_dict raises in both cases). The amplitude
+                ``robust.rt.CDOMFl.scale`` is held **fixed at 1.0** (the
+                published reference kernel); it is not a free parameter.
+                The kernel's emission source term is the *CDOM*
+                absorption spectrum, which BING supplies as
+                ``cdom_fraction * a_dg`` -- see below and
+                :func:`bing.evaluate.calc_Rrs_from_models_robust`.
+            cdom_fraction (float): the fraction of the a-model's
+                **combined** dissolved+detrital absorption a_dg treated
+                as pure CDOM when include_CDOM_fl is True:
+                ``a_cdom = cdom_fraction * a_dg``. Default
+                CDOM_FRACTION_DEFAULT = 0.8. A **fixed-fraction proxy**,
+                not a retrieved quantity -- BING's a_dg is CDOM +
+                detritus combined while the Hawes kernel expects pure
+                CDOM absorption (project decision, JXP 2026-09-05,
+                ``claude_prompts/rt_tests.md`` Q32). Consulted only when
+                include_CDOM_fl is True; carried (and ignored)
+                otherwise.
 
     Returns:
         dict: rt_dict with keys 'variable_Gordon', 'variable_Gordon_G0',
             'variable_Gordon_bbp', 'include_Raman', 'include_Chl_fl',
             'phi_C', 'double_gaussian' (each taken verbatim from `p`, or
             None if `p` lacks the attribute), plus 'rt_backend',
-            'fit_Bp', 'Bp_value' (each taken from `p` if present, else
-            the Gordon-backend defaults 'gordon' / False / 0.01
-            documented above).
+            'fit_Bp', 'Bp_value', 'include_CDOM_fl', 'cdom_fraction'
+            (each taken from `p` if present, else the Gordon-backend
+            defaults 'gordon' / False / 0.01 / False / 0.8 documented
+            above).
     """
 
     rt_dict = {}
@@ -129,6 +173,16 @@ def rt_dict_from_p(p):
     rt_dict['fit_Bp'] = getattr(p, 'fit_Bp', False)
     rt_dict['Bp_value'] = getattr(p, 'Bp_value', 0.01)
 
+    # CDOM fluorescence (rob_cdom). Same "real default, never None"
+    # pattern as the three keys above, for the same reason: a legacy `p`
+    # (or an rt_dict pickled before this branch) must still describe a
+    # complete, valid configuration -- here, one with the process off.
+    # NOTE: cdom_fraction is the a_cdom = cdom_fraction * a_dg proxy
+    # factor -- see CDOM_FRACTION_DEFAULT for the full rationale.
+    rt_dict['include_CDOM_fl'] = getattr(p, 'include_CDOM_fl', False)
+    rt_dict['cdom_fraction'] = getattr(p, 'cdom_fraction',
+                                       CDOM_FRACTION_DEFAULT)
+
     # Return
     return rt_dict
 
@@ -145,9 +199,10 @@ def validate_rt_dict(rt_dict, models=None, geom=None):
 
     Args:
         rt_dict (dict): RT configuration, as built by rt_dict_from_p.
-        models (list, optional): [a_model, bb_model] for this fit. Only
-            consulted for the robust_hybrid wavelength-grid check (uses
-            models[0].wave).
+        models (list, optional): [a_model, bb_model] for this fit.
+            Consulted for the robust_hybrid wavelength-grid check (uses
+            models[0].wave) and for the CDOM-fluorescence a_dg check
+            (uses models[0].has_a_dg).
         geom (ObsGeometry, optional): fixed per-pixel geometry for this fit.
             Required (non-None) whenever rt_dict['rt_backend'] selects a
             robust backend -- theta_s is never silently defaulted
@@ -160,7 +215,16 @@ def validate_rt_dict(rt_dict, models=None, geom=None):
                 phase-function input);
             (iii) a robust backend with geom is None;
             (iv) rt_backend='robust_hybrid' with any model wavelength
-                outside [ROBUST_HYBRID_WAVE_MIN, ROBUST_HYBRID_WAVE_MAX].
+                outside [ROBUST_HYBRID_WAVE_MIN, ROBUST_HYBRID_WAVE_MAX];
+            (v) include_CDOM_fl=True with rt_backend='gordon' (BING's own
+                Gordon path has no CDOM-fluorescence physics);
+            (vi) include_CDOM_fl=True with rt_backend='robust_baseline'
+                (elastic-only by construction, like the other two
+                inelastic flags);
+            (vii) include_CDOM_fl=True with an a-model that has no
+                separable a_dg component (``models[0].has_a_dg`` False) --
+                the CDOM source term is ``cdom_fraction * a_dg``, so there
+                is nothing to build it from. Skipped when models is None.
     """
     rt_backend = rt_dict.get('rt_backend', 'gordon')
     if rt_backend not in RT_BACKENDS:
@@ -187,3 +251,36 @@ def validate_rt_dict(rt_dict, models=None, geom=None):
                 f"wavelengths within [{ROBUST_HYBRID_WAVE_MIN}, "
                 f"{ROBUST_HYBRID_WAVE_MAX}] nm (the emulator's training "
                 f"range); got range [{wave.min()}, {wave.max()}]")
+
+    # --- CDOM fluorescence (rob_cdom) ---
+    if rt_dict.get('include_CDOM_fl', False):
+        if rt_backend == 'gordon':
+            raise ValueError(
+                "rt_dict['include_CDOM_fl']=True requires a robust "
+                "backend -- CDOM fluorescence is robust.rt's Hawes (1992) "
+                "kernel (robust.rt.cdom_fl), and BING's own Gordon path "
+                "has no CDOM-fluorescence physics at all. Use "
+                "rt_backend='robust_ztt' or 'robust_hybrid'")
+        if rt_backend == 'robust_baseline':
+            raise ValueError(
+                "rt_dict['include_CDOM_fl']=True is illegal with "
+                "rt_dict['rt_backend']='robust_baseline' -- "
+                "robust.rt.baselines.Rrs_gordon takes no `inelastic` "
+                "argument and is elastic-only by construction (the same "
+                "rule as include_Raman/include_Chl_fl). Use "
+                "rt_backend='robust_ztt' or 'robust_hybrid'")
+        if models is not None and not getattr(models[0], 'has_a_dg', False):
+            # The CDOM source term is a_cdom = cdom_fraction * a_dg (see
+            # CDOM_FRACTION_DEFAULT), so an a-model with no separable
+            # dissolved+detrital component simply cannot supply it.
+            a_model = models[0]
+            raise ValueError(
+                "rt_dict['include_CDOM_fl']=True requires an absorption "
+                "model with a separable a_dg (dissolved + detrital) "
+                f"component, but {type(a_model).__name__} "
+                f"(name={getattr(a_model, 'name', None)!r}) has none "
+                "(has_a_dg is False) -- the CDOM-fluorescence source term "
+                "is a_cdom = cdom_fraction * a_dg. Use an a-model with an "
+                "explicit a_dg term (ExpBricaud/ExpBricaudFix/"
+                "ExpBricaudFree, GIOP, GSM, ExpNMF), or disable "
+                "include_CDOM_fl")

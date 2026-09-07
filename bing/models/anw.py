@@ -229,6 +229,26 @@ class aNWModel:
     Does the model use chlorophyll (for absorption)?
     """
 
+    has_a_dg:bool = False
+    """
+    Does the model carry a *separable* dissolved+detrital component a_dg?
+
+    True only for the parameterizations whose ``eval_anw(...,
+    retsub_comps=True)`` returns the ``(a_dg, a_ph)`` pair -- i.e. the
+    models with an explicit exponential a_dg term alongside a distinct
+    phytoplankton term (ExpBricaud family, GIOP, GSM, ExpNMF). Models
+    with a single lumped a_nw (Cst, Every, Exp, ExpFix, Bricaud,
+    Chase2017*) leave this False: their a_nw is *not* an a_dg, and
+    pretending otherwise would silently feed phytoplankton absorption
+    into a CDOM-only calculation.
+
+    Read by :meth:`eval_a_dg` and by
+    :func:`bing.rt.defs.validate_rt_dict`, which rejects
+    ``rt_dict['include_CDOM_fl']=True`` for a model that lacks the split
+    (the robust CDOM-fluorescence source term needs a CDOM absorption
+    spectrum -- see :func:`bing.evaluate.calc_Rrs_from_models_robust`).
+    """
+
     fix_Chl:bool = None
     """
     If Chl, is it fixed?
@@ -413,6 +433,56 @@ class aNWModel:
                 return a_dg + a_ph
         else:
             raise ValueError(f"Unknown model: {self.name}")
+
+    def eval_a_dg(self, params:np.ndarray, wave:np.ndarray=None):
+        """
+        Evaluate the dissolved + detrital absorption component a_dg.
+
+        The single, named entry point for the separable a_dg component --
+        a thin, documented wrapper on ``eval_anw(..., retsub_comps=True)``
+        that raises a clear error (naming the model class) for the models
+        that have no such component, instead of silently returning the
+        lumped a_nw or a bare tuple.
+
+        Introduced for the CDOM-fluorescence path of the robust RT
+        backend (``rt_dict['include_CDOM_fl']``), which builds its CDOM
+        absorption source term as ``cdom_fraction * a_dg`` -- see
+        :func:`bing.evaluate.calc_Rrs_from_models_robust`.
+
+        Parameters
+        ----------
+        params : np.ndarray
+            Model parameters, ``(nparam,)`` or batched
+            ``(nsamples, nparam)`` -- the same contract as
+            :meth:`eval_anw`.
+        wave : np.ndarray, optional
+            Wavelengths for evaluation; defaults to ``self.wave``.
+
+        Returns
+        -------
+        np.ndarray
+            a_dg [m^-1], shape ``(1, nwave)`` for a 1-D parameter vector
+            and ``(nsamples, nwave)`` for a batch -- ``eval_anw``'s own
+            "always multi-dimensional" convention, matching
+            :meth:`eval_a`.
+
+        Raises
+        ------
+        ValueError
+            If the model has no separable a_dg component
+            (``has_a_dg`` is False), naming the model class and its
+            ``name``.
+        """
+        if not self.has_a_dg:
+            raise ValueError(
+                f"{self.__class__.__name__} (name={self.name!r}) has no "
+                "separable a_dg component -- eval_anw returns a single "
+                "lumped a_nw, so there is no dissolved+detrital spectrum "
+                "to extract. Use one of the models with an explicit a_dg "
+                "term (ExpBricaud/ExpBricaudFix/ExpBricaudFree, GIOP, "
+                "GSM, ExpNMF).")
+        a_dg, _ = self.eval_anw(params, retsub_comps=True, wave=wave)
+        return a_dg
 
     def eval_a(self, params:np.ndarray):
         """
@@ -923,6 +993,7 @@ class aNWExpBricaud(aNWBricaud):
     """
     name = 'ExpBricaud'
     nparam = 3
+    has_a_dg = True   # eval_anw(retsub_comps=True) -> (a_dg, a_ph)
     pnames = ['Adg', 'Sdg', 'Aph']
     log_params = [True, False, True]
     pivot = 400.
@@ -1109,6 +1180,7 @@ class aNWGIOP(aNWModel):
     """
     name = 'GIOP'
     nparam = 2
+    has_a_dg = True   # eval_anw(retsub_comps=True) -> (a_dg, a_ph)
     pnames = ['Aexp', 'Aph']
     pivot = 400.
     uses_Chl = True
@@ -1168,6 +1240,7 @@ class aNWExpNMF(aNWModel):
     """
     name = 'ExpNMF'
     nparam = 4
+    has_a_dg = True   # eval_anw(retsub_comps=True) -> (a_dg, a_ph)
     pnames = ['Aexp', 'Sdg', 'H1', 'H2']
     log_params = [True, False, True, True]
     pivot = 400.
@@ -1229,6 +1302,7 @@ class aNWGSM(aNWModel):
     """
     name = 'GSM'
     nparam = 2
+    has_a_dg = True   # eval_anw(retsub_comps=True) -> (a_dg, a_ph)
     pnames = ['Aexp', 'Chl']
     pivot = 443.
     uses_Chl = True

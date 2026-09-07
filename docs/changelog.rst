@@ -11,6 +11,56 @@ than by release. ``git log`` remains the authoritative history.
 Unreleased
 ----------
 
+CDOM fluorescence on the robust backends (2026-09, ``rob_cdom``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A third inelastic term is now selectable on the robust backends:
+CDOM (yellow-matter) fluorescence, the analytic Hawes et al. (1992)
+FA7 kernel from ``robust.rt.cdom_fl``. See
+:ref:`rt-cdom-fluorescence`. **Non-breaking and off by default** —
+with ``include_CDOM_fl`` absent or ``False`` the forward model is
+byte-identical to before (regression-pinned).
+
+* **Two new rt-dict keys**, both with real (non-``None``) defaults so
+  legacy ``p`` objects and saved rt dicts stay valid:
+  ``include_CDOM_fl`` (default ``False``) and ``cdom_fraction``
+  (default ``0.8``, ``bing.rt.defs.CDOM_FRACTION_DEFAULT``).
+* **The CDOM source term is a fixed-fraction proxy.** robust's kernel
+  needs *pure* CDOM absorption; BING's a-models only carry the
+  combined dissolved+detrital :math:`a_{dg}`. The adapter supplies
+  ``a_cdom = cdom_fraction * a_dg``, with the 0.8 fraction a project
+  decision (JXP, 2026-09-05; ``claude_prompts/rt_tests.md`` Q32), not
+  a measured or fitted quantity. It is documented in
+  ``bing.rt.defs.CDOM_FRACTION_DEFAULT``, at the construction site in
+  ``bing.evaluate._build_robust_inputs``, and in the adapter's
+  docstring.
+* **The kernel amplitude is fixed at 1.0** (``robust.rt.CDOMFl.scale``
+  = ``bing.evaluate.CDOM_FL_SCALE``) — the reference kernel as
+  published. It is a differentiable leaf on robust's side but BING
+  does not fit it; ``cdom_fraction`` is the only CDOM knob exposed.
+* **New a-model API**: ``aNWModel.eval_a_dg(params)`` returns the
+  separable a_dg component (a thin wrapper on ``eval_anw(...,
+  retsub_comps=True)[0]``), plus a class flag ``has_a_dg``, ``True``
+  for ExpBricaud/ExpBricaudFix/ExpBricaudFree, GIOP, GSM and ExpNMF.
+* **Validation**: ``include_CDOM_fl=True`` raises at fit setup with
+  ``rt_backend='gordon'`` (no such physics), with
+  ``'robust_baseline'`` (elastic-only), or with an a-model that has no
+  separable a_dg (the error names the class).
+  ``calc_Rrs_from_iops_robust`` gains an ``a_cdom=`` argument and
+  raises when CDOM fluorescence is on without one.
+* **L23 synthetic observations** (``l23.prep_one_l23``) generate the
+  CDOM-fluorescence truth from the dataset's *true* CDOM absorption
+  (``odict['ag']``), the way they already use the true ``aph`` for
+  chlorophyll fluorescence. The fit then retrieves through the
+  ``0.8 * a_dg`` proxy — a deliberate, documented forward-model
+  mismatch that the retrieval tests are meant to measure.
+* **Caveats.** robust flags its own CDOM-fluorescence term as
+  analytic-only and not yet validated against HydroLight truth (its
+  M5; the :math:`\delta_C` correction head is defined but untrained).
+  robust's kernel also clamps excitation below the model wavelength
+  grid, so a 400 nm-limited fit feeds ``a_cdom(400)`` to the whole
+  350–400 nm excitation band.
+
 robust.rt backend integration (2026-08/09, PR #27)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

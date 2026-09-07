@@ -127,6 +127,25 @@ shape = calc_fluorescence_spectrum(wave, peak_nm=685., fwhm_nm=25.)
 
 `calc_fluorescence_line_height`, `calc_R_fluorescence`, and `fluorescence_backscattering_coeff` give you the low-level pieces.
 
+## Adding CDOM fluorescence (robust backends only)
+
+The third inelastic term, `rt_dict['include_CDOM_fl']` — robust's analytic Hawes et al. (1992) FA7 kernel (`robust.rt.cdom_fl`). There is **no Gordon-path equivalent**: `include_CDOM_fl=True` with `rt_backend='gordon'` (or `'robust_baseline'`) raises at fit setup.
+
+```python
+rt_dict = dict(rt_defs.rt_dict_from_p(p),
+               rt_backend='robust_ztt',
+               include_CDOM_fl=True,
+               cdom_fraction=0.8)   # a_cdom = 0.8 * a_dg  (see below)
+```
+
+- **`a_cdom = cdom_fraction * a_dg` is a fixed-fraction proxy, not a retrieval.** The kernel's source term is pure CDOM absorption; BING's `a_dg` is CDOM *plus* detritus, and no a-model splits them. The 0.8 default is a project decision (JXP, 2026-09-05; `claude_prompts/rt_tests.md` Q32) recorded in `bing.rt.defs.CDOM_FRACTION_DEFAULT`. The Rrs increment is essentially linear in the fraction.
+- Requires an a-model with a separable `a_dg` (`has_a_dg`: ExpBricaud family, GIOP, GSM, ExpNMF); anything else raises, naming the class.
+- The kernel amplitude `robust.rt.CDOMFl.scale` is held **fixed at 1.0** (`bing.evaluate.CDOM_FL_SCALE`) — never fitted.
+- Emission is broad and featureless across the blue–green (~465–570 nm), not a 685 nm line.
+- robust flags its own CDOM-fl term as analytic-only and **not yet validated** against HydroLight truth (its M5).
+
+See [radiative_transfer.rst](../../../docs/radiative_transfer.rst) (`rt-cdom-fluorescence`) for the full write-up.
+
 ## Variable Gordon coefficients
 
 Either correction is usually paired with wavelength-dependent G₁(λ), G₂(λ):
