@@ -1725,10 +1725,16 @@ def test_fit_Bp_false_matches_provisional_pin(threading_setup):
     task-3-complete code on 2026-08-31.  M2 Q5 (a true pre-M3 pin) is
     still open; this fixture stands in for it and freezes the dispatch
     behavior the M3 task-1 byte-identity tests verified against M2, so
-    any *future* change to the fixed-B_p path fails here.  If this test
-    ever fails on a new environment (BLAS/emcee version) while
-    test_fit_Bp_false_or_absent_byte_identical_to_m2 stays green,
-    regenerate the fixture rather than suspecting a regression."""
+    any *future* change to the fixed-B_p path fails here.
+
+    Machine independence (2026-09-07, rt_tests Q39): every comparison
+    against the fixture uses a tight *tolerance*, never bitwise
+    equality, because ``ts['Rrs']`` is recomputed live through the
+    Gordon forward model and a 1-ULP BLAS difference between machines
+    is expected and meaningless.  The recipe guard's rtol of 1e-12 is
+    ~4 decades above ULP noise yet ~6 decades below any real recipe
+    change; the fitters below consume the *stored* ``pin['Rrs']``, so
+    their rtol=1e-6 pins are insensitive to the live regeneration."""
     import os
     ts = threading_setup
     models = ts['models']
@@ -1736,8 +1742,9 @@ def test_fit_Bp_false_matches_provisional_pin(threading_setup):
                                'm3_fixed_bp_pin.npz'))
 
     # The fixture recipe is threading_setup's: same truth, p0, and
-    # observation (guards against the two drifting apart).
-    np.testing.assert_allclose(ts['Rrs'], pin['Rrs'], rtol=0, atol=0)
+    # observation (guards against the two drifting apart). Tolerance,
+    # not bitwise: the live spectrum crosses BLAS on every machine.
+    np.testing.assert_allclose(ts['Rrs'], pin['Rrs'], rtol=1e-12, atol=0)
     assert np.array_equal(pin['truth'], _THREAD_TRUTH)
     assert np.array_equal(pin['p0'], _THREAD_P0)
 
